@@ -16,7 +16,7 @@ const SCORING_RULE: Record<string, string> = {
   stableford: "Stableford: points per hole against net par (net par 2, net birdie 3, and so on). More points wins.",
   stroke: "Stroke play: fewest net strokes wins.",
   match: "Match play: each hole is won, lost or halved on net score. More holes won wins.",
-  skins: "Skins: each hole is a skin, won outright by the best net score. Ties carry the skin to the next hole.",
+  skins: "Skins: each hole is a skin, won outright by the best net score. Ties carry the skin to the next hole. Skins still carried after the 18th are void.",
 };
 
 export default function Rules() {

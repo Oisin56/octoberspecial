@@ -40,9 +40,11 @@ export async function POST(req: Request) {
   const scores: Record<string, BallHole> = {};
   for (const [ball, v] of Object.entries((body.scores ?? {}) as Record<string, BallHole>)) {
     if (!balls.includes(ball)) return bad(`${ball} isn't in this match`);
-    const gross = v?.gross == null ? null : Math.round(Number(v.gross));
+    const pickedUp = !!v?.pickedUp;
+    if (pickedUp && cfg.scoring === "stroke" && cfg.play !== "fourball") return bad("You can't pick up in stroke play. Enter the score.");
+    const gross = pickedUp || v?.gross == null ? null : Math.round(Number(v.gross));
     if (gross != null && !(gross >= 1 && gross <= 15)) return bad("That score looks wrong (1–15 allowed)");
-    scores[ball] = { gross, pickedUp: !!v?.pickedUp, gir: !!v?.gir };
+    scores[ball] = { gross, pickedUp, gir: !!v?.gir };
   }
   const pick = (w: unknown) => (typeof w === "string" && balls.includes(w) ? w : null);
   const ctp = h.par === 3 ? pick(body.ctpWinner) : null;

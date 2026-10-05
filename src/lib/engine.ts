@@ -80,6 +80,9 @@ export interface RoundCfg {
   games: Game[];
   points: PointsRule;
   handicap: HandicapRule;
+  /** Organiser has closed the round (e.g. abandoned). Unplayed segments stay unawarded,
+   *  but the tournament can still finish. */
+  closed?: boolean;
 }
 
 export type SideGameKind = "ctp" | "ld" | "gir" | "birdies" | "eagles";
@@ -254,6 +257,8 @@ export interface SegmentResult {
   leaders: string[];
   points: Record<string, number>; // by side id; 0 until complete
   matchLabel?: string;
+  /** Skins: skins currently carried over (void if still carried after the 18th). */
+  carry?: number;
 }
 
 function rank(values: Record<string, number>, lowerBetter: boolean) {
@@ -297,6 +302,7 @@ export function segmentResult(
   let carry = 0;
   const skinPts = round.points.skin ?? 1;
 
+  let decided: { leader: string; up: number; remaining: number } | null = null;
   for (const n of holes) {
     const gh = gameHole(round, game, shots, entries.find((e) => e.hole === n && e.game === game.id));
     if (!gh.complete) continue;
@@ -316,6 +322,12 @@ export function segmentResult(
         value[gh.winner] += 1 + carry;
         carry = 0;
       } else carry += 1;
+    }
+    if (round.scoring === "match" && game.sides.length === 2 && !decided) {
+      const [a, b] = game.sides;
+      const diff = value[a.id] - value[b.id];
+      const remaining = holes.length - played;
+      if (remaining > 0 && Math.abs(diff) > remaining) decided = { leader: diff > 0 ? a.id : b.id, up: Math.abs(diff), remaining };
     }
   }
 
@@ -342,8 +354,12 @@ export function segmentResult(
 
   const res: SegmentResult = { segment, holesPlayed: played, complete, value, ranking, leaders, points };
   if (round.scoring === "match" && game.sides.length === 2) {
-    res.matchLabel = matchLabel(value, game.sides, players, played, holes.length);
+    const d = decided as { leader: string; up: number; remaining: number } | null;
+    res.matchLabel = d
+      ? `${sideName(game.sides.find((x) => x.id === d.leader)!, players)} won ${d.up}&${d.remaining}`
+      : matchLabel(value, game.sides, players, played, holes.length);
   }
+  if (round.scoring === "skins") res.carry = carry;
   return res;
 }
 
@@ -442,11 +458,12 @@ export function roundSummary(round: RoundCfg, players: Player[], teams: Team[], 
       };
       for (const ball of ballsOfGame(g, round.play)) {
         const b = e.scores[ball];
-        if (!b || b.gross == null || b.pickedUp) continue;
+        if (!b) continue;
+        if (b.gir) credit(ball, "gir"); // a green hit still counts if the player later picks up
+        if (b.gross == null || b.pickedUp) continue;
         const d = b.gross - h.par;
         if (d === -1) credit(ball, "birdies");
         if (d <= -2) credit(ball, "eagles");
-        if (b.gir) credit(ball, "gir");
       }
       const balls = ballsOfGame(g, round.play);
       if (h.par === 3 && e.ctpWinner && balls.includes(e.ctpWinner)) credit(e.ctpWinner, "ctp");
@@ -504,7 +521,7 @@ export function tournamentSummary(cfg: TournamentCfg, entriesByRound: Record<str
   const pids = cfg.players.map((p) => p.id);
   const tids = cfg.teams.map((t) => t.id);
   const rounds = cfg.rounds.map((r) => roundSummary(r, cfg.players, cfg.teams, entriesByRound[r.id] ?? []));
-  const complete = rounds.length > 0 && rounds.every((r) => r.complete);
+  const complete = rounds.length > 0 && rounds.every((r, i) => r.complete || cfg.rounds[i].closed);
 
   const tallies: Tallies = { birdies: zero(pids), eagles: zero(pids), gir: zero(pids), ctp: zero(pids), ld: zero(pids) };
   const playerRoundPoints = zero(pids);
@@ -550,10 +567,11 @@ export function tournamentSummary(cfg: TournamentCfg, entriesByRound: Record<str
   let pointsRemaining = 0;
   cfg.rounds.forEach((r, i) => {
     const rs = rounds[i];
+    if (r.closed) return;
     r.games.forEach((g, gi) => {
       const gs = rs.games[gi];
       if (r.scoring === "skins") {
-        pointsRemaining += (18 - gs.holesPlayed) * (r.points.skin ?? 1);
+        if (gs.holesPlayed < 18) pointsRemaining += (18 - gs.holesPlayed + (gs.full.carry ?? 0)) * (r.points.skin ?? 1);
         return;
       }
       if (!gs.front.complete) pointsRemaining += r.points.front;

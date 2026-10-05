@@ -114,7 +114,8 @@ describe("regression: new engine == October Special engine", () => {
           expect(g[seg].points, `R${i + 1} ${seg} points`).toEqual(ra[seg].points);
           expect(g[seg].complete).toBe(ra[seg].complete);
           expect([...g[seg].leaders].sort()).toEqual([...ra[seg].leaders].sort());
-          if (ra[seg].matchLabel) expect(g[seg].matchLabel).toBe(ra[seg].matchLabel);
+          // New engine keeps "won X&Y" once a match is decided; otherwise labels must match exactly
+          if (ra[seg].matchLabel && !g[seg].matchLabel!.includes("&")) expect(g[seg].matchLabel).toBe(ra[seg].matchLabel);
         }
         expect(rb.playerPoints).toEqual(ra.points);
         expect(rb.tallies.birdies).toEqual(ra.birdies);
@@ -215,7 +216,7 @@ describe("fourball (better ball)", () => {
     // Hole 1: CD best -1 beats AB 0. Others AB par beats CD bogey. AB wins 17 holes.
     expect(gs.full.value).toEqual({ AB: 17, CD: 1 });
     expect(gs.points).toEqual({ AB: 1, CD: 0 });
-    expect(gs.full.matchLabel).toBe("Aoife & Brian win 16 UP");
+    expect(gs.full.matchLabel).toBe("Aoife & Brian won 9&7");
   });
   it("stableford better ball takes the best points per hole", () => {
     const r = round("fourball", "stableford", [pairs], { points: { front: 0, back: 0, full: 2 } });
@@ -330,5 +331,62 @@ describe("team event (Ryder Cup style)", () => {
     expect(rs.games[0].full.matchLabel).toBe("Aoife 5 UP thru 5");
     expect(rs.games[0].points).toEqual({ a: 0, c: 0 }); // not decided until complete
     expect(rs.complete).toBe(false);
+  });
+});
+
+// ------------------------------------------------------------ fixes from the independent review
+
+describe("review fixes", () => {
+  const two: Game = { id: "g", sides: [{ id: "a", playerIds: ["a"] }, { id: "c", playerIds: ["c"] }] };
+
+  it("GIR still counts when the player then picks up", () => {
+    const r = round("singles", "stableford", [two]);
+    const e = entries("g", { a: flat(0), c: flat(0) });
+    e[0].scores.a = { gross: null, pickedUp: true, gir: true };
+    e[1].scores.a = { gross: 4, gir: true };
+    const rs = roundSummary(r, players, [], e);
+    expect(rs.tallies.gir.a).toBe(2);
+  });
+
+  it("match decided early keeps its result after being played out", () => {
+    const r = round("singles", "match", [two]);
+    // a wins 1-4 (4 up thru 4), all square 5-15 (4 up with 3 to play => won 4&3), c wins 16-18
+    const a = flat(0), c = flat(0);
+    for (let i = 0; i < 4; i++) c[i] = 1;
+    for (let i = 15; i < 18; i++) a[i] = 1;
+    const gs = gameSummary(r, two, players, entries("g", { a, c }));
+    expect(gs.full.matchLabel).toBe("Aoife won 4&3");
+    expect(gs.full.value).toEqual({ a: 4, c: 3 });
+    expect(gs.points).toEqual({ a: 1, c: 0 });
+  });
+
+  it("skins: carried skins count in points still to play, and a carry past 18 is void", () => {
+    const g: Game = { id: "s", sides: ["a", "b"].map((p) => ({ id: p, playerIds: [p] })) };
+    const r = { ...round("singles", "skins", [g], { points: { front: 0, back: 0, full: 0, skin: 1 } }), id: "sk" };
+    const a = flat(0), b = flat(1); // a wins holes 1-15
+    b[15] = 0;
+    b[16] = 0; // 16, 17 halved -> 2 carried
+    const cfg: TournamentCfg = { players, teams: [], rounds: [r], sideGames: [], sideGamesBy: "player" };
+    const partial = entries("s", { a, b }).slice(0, 17);
+    expect(tournamentSummary(cfg, { sk: partial }).pointsRemaining).toBe(3);
+    b[17] = 0; // 18 halved too -> 3 carried, void
+    const done = tournamentSummary(cfg, { sk: entries("s", { a, b }) });
+    expect(done.pointsRemaining).toBe(0);
+    expect(done.playerRoundPoints.a).toBe(15);
+  });
+
+  it("an organiser-closed round lets the tournament finish and pays the side games", () => {
+    const r1 = { ...round("singles", "stableford", [two], { points: { front: 10, back: 10, full: 20 } }), id: "r1" };
+    const r2 = { ...round("singles", "stableford", [two], { points: { front: 10, back: 10, full: 20 } }), id: "r2" };
+    const e1 = entries("g", { a: flat(0), c: flat(1) }).map((e) => (e.hole === 3 ? { ...e, ctpWinner: "a" } : e));
+    const e2 = entries("g", { a: flat(0), c: flat(1) }).slice(0, 9); // rained off after 9
+    const cfg: TournamentCfg = { players, teams: [], rounds: [r1, r2], sideGames: [{ kind: "ctp", points: 10, enabled: true }], sideGamesBy: "player" };
+    const open = tournamentSummary(cfg, { r1: e1, r2: e2 });
+    expect(open.complete).toBe(false);
+    expect(open.pointsRemaining).toBe(10 + 20 + 10);
+    const closed = tournamentSummary({ ...cfg, rounds: [r1, { ...r2, closed: true }] }, { r1: e1, r2: e2 });
+    expect(closed.complete).toBe(true);
+    expect(closed.pointsRemaining).toBe(0);
+    expect(closed.playerTotal.a).toBe(40 + 10 + 10); // R1 + R2 front nine + CTP
   });
 });

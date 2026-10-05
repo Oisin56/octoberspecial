@@ -192,6 +192,7 @@ export function toRoundCfg(r: RoundRow, players: PlayerRow[]): RoundCfg {
     games: roundGames(r, players),
     points: r.points_rule ?? { front: r.nine_points, back: r.nine_points, full: r.full_points },
     handicap: r.handicap_rule ?? { mode: "manual", shots: r.shots ?? {} },
+    closed: r.status === "complete",
   };
 }
 
