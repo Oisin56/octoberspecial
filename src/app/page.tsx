@@ -1,96 +1,54 @@
-"use client";
-
 import Link from "next/link";
-import { useT } from "@/components/Providers";
-import { Board, Feed, Loading, RoundItem, SegmentBoxes, Paras, dateLabel } from "@/components/ui";
-import { FORMAT_LABEL } from "@/lib/types";
-import { courseBySlug } from "@/data/courses";
+import { redirect } from "next/navigation";
+import { adminClient } from "@/lib/admin";
 
-export default function Home() {
-  const { state, summary } = useT();
-  if (!state || !summary) return <Loading />;
+export const dynamic = "force-dynamic";
 
-  const live = state.rounds.find((r) => r.status === "live");
-  const next = live ?? state.rounds.find((r) => r.status === "upcoming");
-  const nextIdx = next ? state.rounds.indexOf(next) : -1;
-  const lastDone = [...state.rounds].reverse().find((r) => r.status === "complete");
+export default async function Landing() {
+  const home = process.env.HOME_TOURNAMENT;
+  if (home) redirect(`/t/${home}`);
 
-  const published = state.pieces.filter((p) => p.status === "published");
-  const preview = next && published.find((p) => p.kind === "preview" && p.round_id === next.id);
-  const report = lastDone && published.find((p) => p.kind === "report" && p.round_id === lastDone.id);
-  const lead = live ? null : report ?? preview;
+  const { data } = await adminClient()
+    .from("public_tournaments")
+    .select("slug,name,subtitle,start_date,end_date")
+    .eq("published", true)
+    .order("start_date", { ascending: false, nullsFirst: false });
 
   return (
-    <>
-      <Board />
-
-      {live && nextIdx >= 0 && (
-        <section className="section">
-          <div className="row" style={{ justifyContent: "space-between", marginBottom: 10 }}>
-            <h2>
-              Live: Round {live.number}, {live.course_name}
-            </h2>
-            <Link href="/live" className="btn">
-              Follow live
-            </Link>
-          </div>
-          <SegmentBoxes rs={summary.rounds[nextIdx]} round={live} />
-        </section>
-      )}
-
-      <div className="grid2 section">
-        <div className="stack">
-          {lead ? (
-            <article className="article">
-              <div className="byline">
-                {lead.kind === "preview" ? "Preview" : "Match report"} · Round{" "}
-                {state.rounds.find((r) => r.id === lead.round_id)?.number}
-              </div>
-              <h2 style={{ fontSize: 30 }}>{lead.title}</h2>
-              <Paras text={lead.body.split(/\n\s*\n/).slice(0, 2).join("\n\n")} />
-              <p style={{ marginTop: 12 }}>
-                <Link
-                  className="btn secondary"
-                  href={`/rounds/${state.rounds.find((r) => r.id === lead.round_id)?.number}`}
-                >
-                  Read the full {lead.kind === "preview" ? "preview" : "report"}
-                </Link>
-              </p>
-            </article>
-          ) : (
-            next &&
-            !live && (
-              <article className="article">
-                <div className="byline">Next up · {dateLabel(next.play_date)}</div>
-                <h2 style={{ fontSize: 30 }}>
-                  Round {next.number}: {next.course_name}
-                </h2>
-                <p>
-                  {FORMAT_LABEL[next.format]}, worth {next.nine_points * 2 + next.full_points} points.{" "}
-                  {courseBySlug(next.course_slug)?.blurb}
-                </p>
-              </article>
-            )
-          )}
-
-          <h2 style={{ marginTop: 24 }}>The rounds</h2>
-          <div className="round-list">
-            {state.rounds.map((r, i) => (
-              <RoundItem key={r.id} round={r} rs={summary.rounds[i]} />
-            ))}
-          </div>
+    <div className="theme-root" data-theme="clubhouse">
+      <header className="site-head">
+        <div className="wrap" style={{ padding: "22px 16px" }}>
+          <span className="site-title">Tournament Live</span>
         </div>
-
-        <aside>
-          <div className="row" style={{ justifyContent: "space-between", marginBottom: 10 }}>
-            <h2>Latest</h2>
-            <Link href="/feed" className="small display">
-              Full feed
+      </header>
+      <main className="wrap">
+        <section className="board" style={{ marginTop: 8 }}>
+          <div className="board-title">Your golf trip, scored live</div>
+          <p style={{ color: "var(--tile)", fontSize: 20, margin: "0 0 14px", maxWidth: "52ch" }}>
+            Hole-by-hole scoring for any format, a live leaderboard for everyone at home, and match reports written for you.
+          </p>
+          <Link href="/new" className="btn" style={{ background: "var(--tile)", color: "var(--board)" }}>
+            Create a tournament
+          </Link>
+        </section>
+        <h2 className="section" style={{ marginBottom: 10 }}>
+          Tournaments
+        </h2>
+        <div className="round-list">
+          {(data ?? []).map((t) => (
+            <Link key={t.slug} href={`/t/${t.slug}`} className="round-item" style={{ gridTemplateColumns: "1fr auto" }}>
+              <span>
+                <span className="display" style={{ fontSize: 21, fontWeight: 700, display: "block" }}>
+                  {t.name}
+                </span>
+                {t.subtitle && <span className="meta">{t.subtitle}</span>}
+              </span>
+              <span className="res small">{t.start_date ?? ""}</span>
             </Link>
-          </div>
-          <Feed limit={6} />
-        </aside>
-      </div>
-    </>
+          ))}
+          {!data?.length && <p className="muted">No tournaments published yet.</p>}
+        </div>
+      </main>
+    </div>
   );
 }

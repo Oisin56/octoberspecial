@@ -7,12 +7,19 @@ export type Role = "organiser" | "player" | "contributor";
 export interface Session {
   role: Role;
   name: string;
-  playerId?: string; // organiser + players
+  playerId?: string;
+}
+
+/** One cookie holds a session per tournament (keyed by tournament id),
+ *  plus an optional site-owner flag (can create tournaments). */
+interface Jar {
+  t: Record<string, Session>;
+  owner?: boolean;
   iat: number;
 }
 
 const COOKIE = "os_session";
-const MAX_AGE = 60 * 60 * 24 * 30; // 30 days
+const MAX_AGE = 60 * 60 * 24 * 60; // 60 days
 
 function secret() {
   const s = process.env.SESSION_SECRET;
@@ -34,8 +41,23 @@ export function safeEqual(a: string, b: string) {
   return ab.length === bb.length && timingSafeEqual(ab, bb);
 }
 
-export async function setSession(s: Omit<Session, "iat">) {
-  const payload = Buffer.from(JSON.stringify({ ...s, iat: Date.now() })).toString("base64url");
+async function readJar(): Promise<Jar> {
+  const jar = await cookies();
+  const raw = jar.get(COOKIE)?.value;
+  const empty: Jar = { t: {}, iat: Date.now() };
+  if (!raw) return empty;
+  const [payload, sig] = raw.split(".");
+  if (!payload || !sig || !safeEqual(sig, sign(payload))) return empty;
+  try {
+    const j = JSON.parse(Buffer.from(payload, "base64url").toString());
+    return { t: j.t ?? {}, owner: !!j.owner, iat: j.iat ?? Date.now() };
+  } catch {
+    return empty;
+  }
+}
+
+async function writeJar(j: Jar) {
+  const payload = Buffer.from(JSON.stringify({ ...j, iat: Date.now() })).toString("base64url");
   const jar = await cookies();
   jar.set(COOKIE, `${payload}.${sign(payload)}`, {
     httpOnly: true,
@@ -46,27 +68,39 @@ export async function setSession(s: Omit<Session, "iat">) {
   });
 }
 
-export async function clearSession() {
-  const jar = await cookies();
-  jar.delete(COOKIE);
+export async function getSession(tournamentId: string): Promise<Session | null> {
+  const j = await readJar();
+  return j.t[tournamentId] ?? null;
 }
 
-export async function getSession(): Promise<Session | null> {
-  const jar = await cookies();
-  const raw = jar.get(COOKIE)?.value;
-  if (!raw) return null;
-  const [payload, sig] = raw.split(".");
-  if (!payload || !sig || !safeEqual(sig, sign(payload))) return null;
-  try {
-    return JSON.parse(Buffer.from(payload, "base64url").toString()) as Session;
-  } catch {
-    return null;
-  }
+export async function setSession(tournamentId: string, s: Session) {
+  const j = await readJar();
+  j.t[tournamentId] = s;
+  await writeJar(j);
 }
 
-export function canPost(s: Session | null) {
-  return !!s;
+export async function clearSession(tournamentId: string) {
+  const j = await readJar();
+  delete j.t[tournamentId];
+  await writeJar(j);
 }
+
+export async function isOwner(): Promise<boolean> {
+  return (await readJar()).owner === true;
+}
+
+export async function setOwner() {
+  const j = await readJar();
+  j.owner = true;
+  await writeJar(j);
+}
+
+/** The site owner's PIN (env) lets you create tournaments and run any of them. */
+export function checkOwnerPin(pin: string) {
+  const expected = process.env.ORGANISER_PIN ?? "";
+  return !!expected && safeEqual(pin.trim(), expected);
+}
+
 export function isOrganiser(s: Session | null) {
   return s?.role === "organiser";
 }

@@ -31,6 +31,22 @@
   --font-serif: var(--font-serif);
 }
 
+/* ---- themes (original designs, set per tournament) ---- */
+.theme-root { background: var(--mist); min-height: 100vh; color: var(--ink); }
+[data-theme="links"] {
+  --board: #1d3150; --board-deep: #142339; --board-line: #2d4669;
+  --tile: #f4ecd6; --mist: #ebe7dc; --rule: #d3ccba; --bracken: #9a6b1c; --red: #b3261e;
+}
+[data-theme="championship"] {
+  --board: #10264a; --board-deep: #0a1a33; --board-line: #213d6b;
+  --tile: #ffffff; --mist: #eef1f6; --rule: #cbd3e1; --red: #d0021b; --bracken: #8a6d1e; --ink: #121a29;
+}
+[data-theme="championship"] .site-head { box-shadow: inset 0 -5px 0 var(--red); }
+[data-theme="teamcup"] {
+  --board: #262a33; --board-deep: #1a1d24; --board-line: #3a3f4b;
+  --tile: #ffffff; --mist: #ecedf0; --rule: #cfd2d9; --bracken: #8f6a20;
+}
+
 * { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
 body {
@@ -220,3 +236,21 @@ table.stats th, table.stats td { padding: 7px 6px; border-bottom: 1px solid var(
 table.stats th:first-child, table.stats td:first-child { text-align: left; }
 table.stats thead th { color: var(--ink-soft); font-weight: 600; font-size: 15px; }
 table.stats tfoot td { font-weight: 700; font-size: 19px; border-top: 2px solid var(--ink); }
+
+/* theme picker */
+.theme-picks { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+.theme-pick {
+  appearance: none; text-align: left; cursor: pointer; display: grid; gap: 4px; padding: 10px;
+  border-radius: 10px; border: 2px solid var(--rule); background: var(--paper); color: var(--ink); font: inherit;
+}
+.theme-pick[aria-pressed="true"] { border-color: var(--ink); box-shadow: 0 0 0 2px var(--paper) inset; }
+.theme-pick strong { font-family: var(--font-display); font-size: 18px; }
+.swatch { display: flex; height: 26px; border-radius: 6px; overflow: hidden; border: 1px solid var(--rule); }
+.swatch span { flex: 1; }
+
+/* setup steps */
+.steps { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* handicap shots on a scorecard */
+.shotdot { display: block; font-size: 10px; line-height: 6px; color: var(--bracken); letter-spacing: 1px; }
+table.card td { vertical-align: top; }

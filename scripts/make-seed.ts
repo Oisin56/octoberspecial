@@ -22,8 +22,8 @@ const q = (s: string) => `'${s.replace(/'/g, "''")}'`;
 let sql = `-- October Special 2026 — starting data
 -- Paste into Supabase → SQL Editor AFTER schema.sql and run once.
 
-insert into tournaments (slug, name, subtitle)
-values (${q(TOURNAMENT_SLUG)}, 'The October Special', 'Seven rounds. Two men. 360 points.')
+insert into tournaments (slug, name, subtitle, organiser_player_id, start_date, theme, tone)
+values (${q(TOURNAMENT_SLUG)}, 'The October Special', 'Seven rounds. Two men. 360 points.', 'oisin', '2026-10-08', 'clubhouse', 'broadsheet')
 on conflict (slug) do nothing;
 
 insert into players (id, tournament_id, name, sort)
@@ -39,8 +39,8 @@ for (const r of ROUNDS) {
   const yards = c.tees[r.tee] ?? Object.values(c.tees)[0];
   const holes = c.par.map((par, i) => ({ number: i + 1, par, si: c.si[i], yards: yards[i] }));
   sql += `
-insert into rounds (tournament_id, number, course_slug, course_name, tee, format, full_points, shots, holes, scorer_id)
-select t.id, ${r.n}, ${q(c.slug)}, ${q(c.name)}, ${q(r.tee)}, ${q(r.format)}, ${r.full},
+insert into rounds (tournament_id, number, course_slug, course_name, course_location, course_blurb, lat, lon, tee, format, full_points, shots, holes, scorer_id)
+select t.id, ${r.n}, ${q('local:' + c.slug)}, ${q(c.name)}, ${q(c.location)}, ${q(c.blurb)}, ${c.lat}, ${c.lon}, ${q(r.tee)}, ${q(r.format)}, ${r.full},
   '{"oisin":0,"neil":0}'::jsonb, ${q(JSON.stringify(holes))}::jsonb, 'oisin'
 from tournaments t where t.slug = ${q(TOURNAMENT_SLUG)}
 on conflict (tournament_id, number) do nothing;

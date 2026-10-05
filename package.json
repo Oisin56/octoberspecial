@@ -8,10 +8,15 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
-    "seed": "tsx scripts/make-seed.ts"
+    "seed": "tsx scripts/make-seed.ts",
+    "prebuild": "node scripts/copy-ffmpeg.mjs",
+    "predev": "node scripts/copy-ffmpeg.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.131.0",
+    "@ffmpeg/core": "^0.12.10",
+    "@ffmpeg/ffmpeg": "^0.12.15",
+    "@ffmpeg/util": "^0.12.2",
     "@fontsource/barlow-condensed": "^5.3.0",
     "@fontsource/newsreader": "^5.3.0",
     "@supabase/supabase-js": "^2.117.2",
