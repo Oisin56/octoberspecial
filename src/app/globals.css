@@ -33,6 +33,10 @@
 
 /* ---- themes (original designs, set per tournament) ---- */
 .theme-root { background: var(--mist); min-height: 100vh; color: var(--ink); }
+[data-theme="clubhouse"] {
+  --board: #1f3d2b; --board-deep: #142a1d; --board-line: #2f5a40;
+  --tile: #f7f7f2; --mist: #e4e9e5; --rule: #c9d3cc; --red: #c8102e; --bracken: #a8741f; --ink: #18231d;
+}
 [data-theme="links"] {
   --board: #1d3150; --board-deep: #142339; --board-line: #2d4669;
   --tile: #f4ecd6; --mist: #ebe7dc; --rule: #d3ccba; --bracken: #9a6b1c; --red: #b3261e;
@@ -254,3 +258,6 @@ table.stats tfoot td { font-weight: 700; font-size: 19px; border-top: 2px solid 
 /* handicap shots on a scorecard */
 .shotdot { display: block; font-size: 10px; line-height: 6px; color: var(--bracken); letter-spacing: 1px; }
 table.card td { vertical-align: top; }
+
+/* Let wide tables scroll inside their column instead of stretching the page */
+.grid2 > *, .stack > *, .round-list > * { min-width: 0; }

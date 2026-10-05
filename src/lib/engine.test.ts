@@ -215,7 +215,7 @@ describe("fourball (better ball)", () => {
     // Hole 1: CD best -1 beats AB 0. Others AB par beats CD bogey. AB wins 17 holes.
     expect(gs.full.value).toEqual({ AB: 17, CD: 1 });
     expect(gs.points).toEqual({ AB: 1, CD: 0 });
-    expect(gs.full.matchLabel).toBe("Aoife & Brian wins 16 UP");
+    expect(gs.full.matchLabel).toBe("Aoife & Brian win 16 UP");
   });
   it("stableford better ball takes the best points per hole", () => {
     const r = round("fourball", "stableford", [pairs], { points: { front: 0, back: 0, full: 2 } });

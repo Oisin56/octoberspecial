@@ -32,6 +32,7 @@ export default function Leaderboard() {
             <thead>
               <tr>
                 <th>{teamMode ? "Team" : "Player"}</th>
+                <th>Total</th>
                 {state.rounds.map((r) => (
                   <th key={r.id} title={`${r.course_name}: ${formatLabel(r)}`}>
                     R{r.number}
@@ -42,13 +43,15 @@ export default function Leaderboard() {
                     {a.kind.toUpperCase()}
                   </th>
                 ))}
-                <th>Total</th>
               </tr>
             </thead>
             <tbody>
               {entities.map((e) => (
                 <tr key={e.id}>
                   <td>{e.name}</td>
+                  <td className="num" style={{ fontWeight: 700 }}>
+                    {pts(e.total)}
+                  </td>
                   {e.perRound.map((v, i) => (
                     <td key={i} className="num">
                       {summary.rounds[i].games.some((g) => g.holesPlayed) ? pts(v) : ""}
@@ -59,9 +62,6 @@ export default function Leaderboard() {
                       {fin ? pts(a.points[e.id] ?? 0) : <span className="muted">({pts(a.projected[e.id] ?? 0)})</span>}
                     </td>
                   ))}
-                  <td className="num" style={{ fontWeight: 700 }}>
-                    {pts(e.total)}
-                  </td>
                 </tr>
               ))}
             </tbody>

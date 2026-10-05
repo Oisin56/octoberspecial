@@ -359,9 +359,11 @@ export function matchLabel(
   const remaining = total - played;
   if (played === 0) return "Not started";
   if (diff === 0) return remaining === 0 ? "Halved" : `All square thru ${played}`;
-  const leader = sideName(diff > 0 ? a : b, players);
+  const lead = diff > 0 ? a : b;
+  const leader = sideName(lead, players);
+  const plural = lead.playerIds.length > 1 && !lead.name;
   const up = Math.abs(diff);
-  if (remaining === 0) return `${leader} wins ${up} UP`;
+  if (remaining === 0) return `${leader} ${plural ? "win" : "wins"} ${up} UP`;
   if (up > remaining) return `${leader} won ${up}&${remaining}`;
   if (up === remaining) return `${leader} ${up} UP (dormie) thru ${played}`;
   return `${leader} ${up} UP thru ${played}`;
