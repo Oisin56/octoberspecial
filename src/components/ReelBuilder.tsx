@@ -25,6 +25,8 @@ export function ReelBuilder() {
   const [pct, setPct] = useState(0);
   const ff = useRef<FFmpegLike | null>(null);
   const logSink = useRef<((m: string) => void) | null>(null);
+  const logTail = useRef<string[]>([]);
+  const [details, setDetails] = useState<string | null>(null);
 
   const clips = useMemo(() => {
     if (!state) return [];
@@ -41,7 +43,11 @@ export function ReelBuilder() {
     const mod = await import(/* webpackIgnore: true */ /* turbopackIgnore: true */ "/ffmpeg/index.js" as string);
     const inst = new mod.FFmpeg() as FFmpegLike;
     await inst.load({ coreURL: "/ffmpeg/core/ffmpeg-core.js", wasmURL: "/ffmpeg/core/ffmpeg-core.wasm" });
-    inst.on("log", (e) => logSink.current?.(e.message ?? ""));
+    inst.on("log", (e) => {
+      const m = e.message ?? "";
+      logSink.current?.(m);
+      logTail.current = [...logTail.current.slice(-11), m];
+    });
     inst.on("progress", (e) => setPct(Math.round((e.progress ?? 0) * 100)));
     ff.current = inst;
     return inst;
@@ -51,15 +57,20 @@ export function ReelBuilder() {
     if (!clips.length) return;
     setBusy(true);
     setOut(null);
+    setDetails(null);
     try {
       const f = await getFF();
       const h = quality === "720" ? 720 : 540;
       const parts: string[] = [];
+      const skipped: string[] = [];
       for (const [i, c] of clips.entries()) {
         setStatus(`Preparing clip ${i + 1} of ${clips.length}…`);
         setPct(0);
         const res = await fetch(mediaUrl(c.media_path)!);
-        if (!res.ok) throw new Error(`Couldn't download clip ${i + 1}`);
+        if (!res.ok) {
+          skipped.push(`hole ${c.hole ?? "–"} by ${c.author_name} (download failed)`);
+          continue;
+        }
         const inName = `in${i}`;
         await f.writeFile(inName, new Uint8Array(await res.arrayBuffer()));
         const partName = `p${i}.mp4`;
@@ -82,9 +93,13 @@ export function ReelBuilder() {
           partName,
         ]);
         await f.deleteFile(inName);
-        if (code !== 0) throw new Error(`Clip ${i + 1} couldn't be converted`);
+        if (code !== 0) {
+          skipped.push(`hole ${c.hole ?? "–"} by ${c.author_name}`);
+          continue;
+        }
         parts.push(partName);
       }
+      if (!parts.length) throw new Error("None of the clips could be read");
       setStatus("Joining the clips…");
       const list = parts.map((p) => `file '${p}'`).join("\n");
       await f.writeFile("list.txt", new TextEncoder().encode(list));
@@ -94,9 +109,13 @@ export function ReelBuilder() {
       for (const p of parts) await f.deleteFile(p);
       const blob = new Blob([data as Uint8Array<ArrayBuffer>], { type: "video/mp4" });
       setOut({ url: URL.createObjectURL(blob), blob });
-      setStatus(`Reel ready: ${clips.length} clips, ${(blob.size / 1048576).toFixed(1)} MB.`);
+      setStatus(
+        `Reel ready: ${parts.length} clip${parts.length === 1 ? "" : "s"}, ${(blob.size / 1048576).toFixed(1)} MB.` +
+          (skipped.length ? ` Skipped ${skipped.length} that couldn't be read: ${skipped.join("; ")}.` : ""),
+      );
     } catch (e) {
       setStatus(e instanceof Error ? e.message : "Something went wrong building the reel");
+      setDetails(logTail.current.join("\n"));
     } finally {
       setBusy(false);
       setPct(0);
@@ -183,6 +202,12 @@ export function ReelBuilder() {
           {status}
           {busy && pct > 0 ? ` ${pct}%` : ""}
         </p>
+      )}
+      {details && (
+        <details>
+          <summary className="small">Technical details</summary>
+          <pre className="small" style={{ whiteSpace: "pre-wrap" }}>{details}</pre>
+        </details>
       )}
       {out && <video src={out.url} controls playsInline style={{ width: "100%", maxHeight: "60vh", background: "#000", borderRadius: 6 }} />}
     </section>
