@@ -30,6 +30,11 @@ About 30 minutes. Do the steps in order. Never paste keys into a chat. They only
 | `SESSION_SECRET` | any long random text, at least 32 characters (mash the keyboard) |
 | `ORGANISER_PIN` | your **site owner** PIN: runs every tournament and creates new ones. 6+ digits. |
 | `CONTRIBUTOR_PIN` | a PIN for caddies and friends who post (you can also set one per tournament in Admin) |
+| `SHOTSTACK_API_KEY` | from shotstack.io (AI director renders). Start with the free **sandbox** key: films are watermarked |
+| `SHOTSTACK_ENV` | `stage` while testing; change to `v1` with your production key to remove the watermark |
+| `ELEVENLABS_API_KEY` | from elevenlabs.io (AI voice-over) |
+| `ELEVENLABS_VOICE_ID` | optional: a voice from your ElevenLabs Voice Library. Leave blank for the default narrator |
+| `GEMINI_API_KEY` | from aistudio.google.com (Veo cinematic shots; needs billing turned on for Veo) |
 | `HOME_TOURNAMENT` | `october-special-2026`, so the main address opens straight onto your trip. Remove it later to show the tournament list. |
 
 4. Press **Deploy**. After a minute or two you get a link like `october-special.vercel.app`.
@@ -54,3 +59,10 @@ About 30 minutes. Do the steps in order. Never paste keys into a chat. They only
 
 ## Making a new tournament (another group, another year)
 Go to the site's address followed by `/new`, fill in the name and an organiser PIN, and enter your site owner PIN. The step-by-step setup then walks through look, players and teams, courses and formats, side games, writing style and invites. Each tournament gets its own address (`/t/its-name`) and its own PINs.
+
+## The AI director (Admin → Highlights film)
+1. Upload a music track once (royalty-free, e.g. Pixabay Music or Uppbeat).
+2. Choose the round or whole tournament, the length and the shape (landscape for TV, portrait for phones), then **Write the plan**.
+3. Check the plan: reorder or remove clips, fix captions, trim clips (From / to, in seconds), edit the narration. Scores on the cards come straight from the scoreboard.
+4. Optional: **Generate** any AI shots (1–5 minutes each). They're skipped until generated.
+5. **Render the film.** It takes a minute or two and appears in Highlights automatically. Each render costs a little on Shotstack, ElevenLabs and Veo; nothing is charged until you press Render or Generate.

@@ -15,6 +15,7 @@ import {
   type AdminData,
 } from "@/components/editors";
 import { ReelBuilder } from "@/components/ReelBuilder";
+import { DirectorPanel } from "@/components/DirectorPanel";
 import type { AiPieceRow } from "@/lib/types";
 
 const TABS = [
@@ -22,7 +23,7 @@ const TABS = [
   ["players", "Players and teams"],
   ["writing", "AI writing"],
   ["moderate", "Moderate"],
-  ["reel", "Highlights reel"],
+  ["reel", "Highlights film"],
   ["sides", "Side games"],
   ["look", "Look"],
   ["content", "Writing style"],
@@ -64,7 +65,12 @@ export default function Admin() {
       {tab === "players" && <PlayersEditor data={data} onSaved={reload} />}
       {tab === "writing" && <Writing data={data} onSaved={reload} />}
       {tab === "moderate" && <Moderate data={data} onSaved={reload} />}
-      {tab === "reel" && <ReelBuilder />}
+      {tab === "reel" && (
+        <>
+          <DirectorPanel />
+          <ReelBuilder />
+        </>
+      )}
       {tab === "sides" && <SideGamesEditor data={data} onSaved={reload} />}
       {tab === "look" && <BasicsEditor data={data} onSaved={reload} />}
       {tab === "content" && <ContentEditor data={data} onSaved={reload} />}
@@ -98,8 +104,8 @@ function Writing({ data, onSaved }: { data: AdminData; onSaved: () => void }) {
   return (
     <div className="stack">
       <section className="panel stack">
-        <div className="field">
-          <label>Round</label>
+        <label className="field">
+          <span className="lbl">Round</span>
           <select value={roundId} onChange={(e) => setRoundId(e.target.value)}>
             {data.state.rounds.map((r) => (
               <option key={r.id} value={r.id}>
@@ -107,11 +113,11 @@ function Writing({ data, onSaved }: { data: AdminData; onSaved: () => void }) {
               </option>
             ))}
           </select>
-        </div>
-        <div className="field">
-          <label>Steer for the writer (optional)</label>
+        </label>
+        <label className="field">
+          <span className="lbl">Steer for the writer (optional)</span>
           <input value={extra} onChange={(e) => setExtra(e.target.value)} placeholder="e.g. mention Neil's new driver" />
-        </div>
+        </label>
         <div className="row">
           {(
             [

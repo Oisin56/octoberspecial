@@ -188,7 +188,7 @@ table.card td.sum { background: #f3f6f4; font-weight: 700; }
 .btn.danger { background: var(--red); }
 .btn.block { display: block; width: 100%; }
 .field { display: grid; gap: 4px; }
-.field label { font-family: var(--font-display); font-weight: 600; font-size: 15px; }
+.field label, .field > .lbl { font-family: var(--font-display); font-weight: 600; font-size: 15px; }
 input, textarea, select {
   font: inherit; font-size: 17px; padding: 10px 12px; border: 1.5px solid var(--rule); border-radius: 8px; background: var(--paper); color: var(--ink); width: 100%;
 }
@@ -261,3 +261,6 @@ table.card td { vertical-align: top; }
 
 /* Let wide tables scroll inside their column instead of stretching the page */
 .grid2 > *, .stack > *, .round-list > * { min-width: 0; }
+
+/* AI director edit list */
+.director-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }

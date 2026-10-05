@@ -116,22 +116,22 @@ export function BasicsEditor({ data, onSaved }: { data: AdminData; onSaved: () =
     <section className="panel stack">
       <h2>Basics and look</h2>
       <div className="row">
-        <div className="field" style={{ flex: "2 1 260px" }}>
-          <label>Tournament name</label>
+        <label className="field" style={{ flex: "2 1 260px" }}>
+          <span className="lbl">Tournament name</span>
           <input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} />
-        </div>
-        <div className="field" style={{ flex: "2 1 260px" }}>
-          <label>Strapline</label>
+        </label>
+        <label className="field" style={{ flex: "2 1 260px" }}>
+          <span className="lbl">Strapline</span>
           <input value={f.subtitle} onChange={(e) => setF({ ...f, subtitle: e.target.value })} placeholder="e.g. Seven rounds. Two men. 360 points." />
-        </div>
-        <div className="field" style={{ flex: "1 1 150px" }}>
-          <label>First day</label>
+        </label>
+        <label className="field" style={{ flex: "1 1 150px" }}>
+          <span className="lbl">First day</span>
           <input type="date" value={f.start_date} onChange={(e) => setF({ ...f, start_date: e.target.value })} />
-        </div>
-        <div className="field" style={{ flex: "1 1 150px" }}>
-          <label>Last day</label>
+        </label>
+        <label className="field" style={{ flex: "1 1 150px" }}>
+          <span className="lbl">Last day</span>
           <input type="date" value={f.end_date} onChange={(e) => setF({ ...f, end_date: e.target.value })} />
-        </div>
+        </label>
       </div>
       <div className="field">
         <label>Theme</label>
@@ -167,22 +167,22 @@ export function BasicsEditor({ data, onSaved }: { data: AdminData; onSaved: () =
               ["background", "Page background"],
             ] as const
           ).map(([k, label]) => (
-            <div className="field" key={k} style={{ flex: "1 1 160px" }}>
-              <label>{label}</label>
+            <label className="field" key={k} style={{ flex: "1 1 160px" }}>
+              <span className="lbl">{label}</span>
               <input type="color" value={f.custom_colors[k] ?? "#000000"} onChange={(e) => setF({ ...f, custom_colors: { ...f.custom_colors, [k]: e.target.value } })} style={{ height: 46, padding: 4 }} />
-            </div>
+            </label>
           ))}
         </div>
       )}
       <div className="row">
-        <div className="field" style={{ flex: "1 1 220px" }}>
-          <label>Logo (square works best)</label>
+        <label className="field" style={{ flex: "1 1 220px" }}>
+          <span className="lbl">Logo (square works best)</span>
           <input type="file" accept="image/*" onChange={(e) => setLogo(e.target.files?.[0] ?? null)} />
-        </div>
-        <div className="field" style={{ flex: "1 1 220px" }}>
-          <label>Homepage photo</label>
+        </label>
+        <label className="field" style={{ flex: "1 1 220px" }}>
+          <span className="lbl">Homepage photo</span>
           <input type="file" accept="image/*" onChange={(e) => setHero(e.target.files?.[0] ?? null)} />
-        </div>
+        </label>
       </div>
       <div className="row">
         <button className="btn" disabled={s.busy} onClick={save}>
@@ -306,17 +306,17 @@ function PlayerCard({ player, teams, pinSet, onSaved }: { player: PlayerRow; tea
       {open && (
         <>
           <div className="row">
-            <div className="field" style={{ flex: "2 1 200px" }}>
-              <label>Name</label>
+            <label className="field" style={{ flex: "2 1 200px" }}>
+              <span className="lbl">Name</span>
               <input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} />
-            </div>
-            <div className="field" style={{ flex: "1 1 100px" }}>
-              <label>Handicap</label>
+            </label>
+            <label className="field" style={{ flex: "1 1 100px" }}>
+              <span className="lbl">Handicap</span>
               <input inputMode="decimal" value={f.handicap} onChange={(e) => setF({ ...f, handicap: e.target.value })} />
-            </div>
+            </label>
             {teams.length > 0 && (
-              <div className="field" style={{ flex: "1 1 140px" }}>
-                <label>Team</label>
+              <label className="field" style={{ flex: "1 1 140px" }}>
+                <span className="lbl">Team</span>
                 <select value={f.team_id} onChange={(e) => setF({ ...f, team_id: e.target.value })}>
                   <option value="">None</option>
                   {teams.map((tm) => (
@@ -325,28 +325,28 @@ function PlayerCard({ player, teams, pinSet, onSaved }: { player: PlayerRow; tea
                     </option>
                   ))}
                 </select>
-              </div>
+              </label>
             )}
             {PROFILE_FIELDS.map(([k, label]) => (
-              <div className="field" key={k} style={{ flex: "1 1 200px" }}>
-                <label>{label}</label>
+              <label className="field" key={k} style={{ flex: "1 1 200px" }}>
+                <span className="lbl">{label}</span>
                 <input value={f[k]} onChange={(e) => setF({ ...f, [k]: e.target.value })} />
-              </div>
+              </label>
             ))}
           </div>
-          <div className="field">
-            <label>Bio (the AI writer uses this)</label>
+          <label className="field">
+            <span className="lbl">Bio (the AI writer uses this)</span>
             <textarea value={f.bio} onChange={(e) => setF({ ...f, bio: e.target.value })} />
-          </div>
+          </label>
           <div className="row">
-            <div className="field" style={{ flex: "1 1 200px" }}>
-              <label>Photo</label>
+            <label className="field" style={{ flex: "1 1 200px" }}>
+              <span className="lbl">Photo</span>
               <input type="file" accept="image/*" onChange={(e) => setPhoto(e.target.files?.[0] ?? null)} />
-            </div>
-            <div className="field" style={{ flex: "1 1 200px" }}>
-              <label>{pinSet ? "Change login PIN" : "Set login PIN"}</label>
+            </label>
+            <label className="field" style={{ flex: "1 1 200px" }}>
+              <span className="lbl">{pinSet ? "Change login PIN" : "Set login PIN"}</span>
               <input value={pin} onChange={(e) => setPin(e.target.value)} inputMode="numeric" placeholder="4–8 digits" />
-            </div>
+            </label>
           </div>
           <div className="row">
             <button className="btn" disabled={s.busy} onClick={save}>
@@ -520,8 +520,8 @@ function AddRound({ data, onDone, onCancel }: { data: AdminData; onDone: () => v
           <p className="display" style={{ fontSize: 20, margin: 0 }}>
             {course.name} <span className="muted small">{course.location}</span>
           </p>
-          <div className="field">
-            <label>Tees</label>
+          <label className="field">
+            <span className="lbl">Tees</span>
             <select value={tee} onChange={(e) => setTee(e.target.value)}>
               {course.tees.map((t) => (
                 <option key={t.name} value={t.name}>
@@ -529,7 +529,7 @@ function AddRound({ data, onDone, onCancel }: { data: AdminData; onDone: () => v
                 </option>
               ))}
             </select>
-          </div>
+          </label>
           <p className="small muted" style={{ margin: 0 }}>
             You&apos;ll set the format, matches, points and handicaps on the next screen.
           </p>
@@ -537,10 +537,10 @@ function AddRound({ data, onDone, onCancel }: { data: AdminData; onDone: () => v
       )}
       {manual && (
         <>
-          <div className="field">
-            <label>Course name</label>
+          <label className="field">
+            <span className="lbl">Course name</span>
             <input value={mName} onChange={(e) => setMName(e.target.value)} />
-          </div>
+          </label>
           <CardTable card={card} setCard={setCard} />
         </>
       )}
@@ -682,14 +682,14 @@ function RoundCard({ round, data, onSaved }: { round: RoundRow; data: AdminData;
       {open && (
         <>
           <div className="row">
-            <div className="field" style={{ flex: "1 1 140px" }}>
-              <label>Date</label>
+            <label className="field" style={{ flex: "1 1 140px" }}>
+              <span className="lbl">Date</span>
               <input type="date" value={f.play_date} onChange={(e) => setF({ ...f, play_date: e.target.value })} />
-            </div>
-            <div className="field" style={{ flex: "1 1 100px" }}>
-              <label>Tee time</label>
+            </label>
+            <label className="field" style={{ flex: "1 1 100px" }}>
+              <span className="lbl">Tee time</span>
               <input value={f.tee_time} onChange={(e) => setF({ ...f, tee_time: e.target.value })} placeholder="10:30" />
-            </div>
+            </label>
             <div className="field" style={{ flex: "1 1 140px" }}>
               <label>Tees</label>
               {tees.length > 1 ? (
@@ -702,14 +702,14 @@ function RoundCard({ round, data, onSaved }: { round: RoundRow; data: AdminData;
                 <input value={tee} onChange={(e) => setTee(e.target.value)} />
               )}
             </div>
-            <div className="field" style={{ flex: "1 1 120px" }}>
-              <label>Status</label>
+            <label className="field" style={{ flex: "1 1 120px" }}>
+              <span className="lbl">Status</span>
               <select value={f.status} onChange={(e) => setF({ ...f, status: e.target.value as RoundRow["status"] })}>
                 <option value="upcoming">Upcoming</option>
                 <option value="live">Live</option>
                 <option value="complete">Complete</option>
               </select>
-            </div>
+            </label>
           </div>
 
           <h4 className="display" style={{ margin: "8px 0 0", fontSize: 18 }}>
@@ -717,8 +717,8 @@ function RoundCard({ round, data, onSaved }: { round: RoundRow; data: AdminData;
           </h4>
           {scored && <p className="notice small" style={{ margin: 0 }}>Scores already entered. Changing the format or matches recalculates everything from them.</p>}
           <div className="row">
-            <div className="field" style={{ flex: "1 1 200px" }}>
-              <label>How it&apos;s played</label>
+            <label className="field" style={{ flex: "1 1 200px" }}>
+              <span className="lbl">How it&apos;s played</span>
               <select value={f.play} onChange={(e) => setPlay(e.target.value as PlayType)}>
                 {(Object.keys(PLAY_LABEL) as PlayType[]).map((p) => (
                   <option key={p} value={p}>
@@ -726,9 +726,9 @@ function RoundCard({ round, data, onSaved }: { round: RoundRow; data: AdminData;
                   </option>
                 ))}
               </select>
-            </div>
-            <div className="field" style={{ flex: "1 1 160px" }}>
-              <label>Scoring</label>
+            </label>
+            <label className="field" style={{ flex: "1 1 160px" }}>
+              <span className="lbl">Scoring</span>
               <select value={f.format} onChange={(e) => setF({ ...f, format: e.target.value as ScoringType })}>
                 {(Object.keys(SCORING_LABEL) as ScoringType[]).map((x) => (
                   <option key={x} value={x}>
@@ -736,34 +736,34 @@ function RoundCard({ round, data, onSaved }: { round: RoundRow; data: AdminData;
                   </option>
                 ))}
               </select>
-            </div>
+            </label>
           </div>
 
           <h4 className="display" style={{ margin: "8px 0 0", fontSize: 18 }}>
             Points
           </h4>
           {f.format === "skins" ? (
-            <div className="field" style={{ maxWidth: 200 }}>
-              <label>Points per skin</label>
+            <label className="field" style={{ maxWidth: 200 }}>
+              <span className="lbl">Points per skin</span>
               <input inputMode="decimal" value={points.skin ?? 1} onChange={(e) => setPoints({ ...points, skin: Number(e.target.value) || 0 })} />
-            </div>
+            </label>
           ) : (
             <div className="row">
               {(["front", "back", "full"] as const).map((k) => (
-                <div className="field" key={k} style={{ flex: "1 1 110px" }}>
-                  <label>{k === "front" ? "Front 9" : k === "back" ? "Back 9" : field ? "18 (if no positions)" : "Full 18"}</label>
+                <label className="field" key={k} style={{ flex: "1 1 110px" }}>
+                  <span className="lbl">{k === "front" ? "Front 9" : k === "back" ? "Back 9" : field ? "18 (if no positions)" : "Full 18"}</span>
                   <input inputMode="decimal" value={points[k]} onChange={(e) => setPoints({ ...points, [k]: Number(e.target.value) || 0 })} />
-                </div>
+                </label>
               ))}
               {field && (
-                <div className="field" style={{ flex: "2 1 220px" }}>
-                  <label>Points by position (1st, 2nd…)</label>
+                <label className="field" style={{ flex: "2 1 220px" }}>
+                  <span className="lbl">Points by position (1st, 2nd…)</span>
                   <input
                     value={(points.positions ?? []).join(", ")}
                     onChange={(e) => setPoints({ ...points, positions: e.target.value.split(/[,\s]+/).filter(Boolean).map(Number) })}
                     placeholder="e.g. 10, 6, 4, 2"
                   />
-                </div>
+                </label>
               )}
               <p className="small muted" style={{ flexBasis: "100%", margin: 0 }}>
                 Ryder Cup style: front 0, back 0, 18 = 1. A tie splits the points.
@@ -842,10 +842,10 @@ function HandicapEditor({
       {hcp.mode === "allowance" && (
         <div className="row">
           {play !== "greensomes" && play !== "scramble" && (
-            <div className="field" style={{ flex: "1 1 140px" }}>
-              <label>{play === "foursomes" ? "% of combined handicaps" : "% of handicap"}</label>
+            <label className="field" style={{ flex: "1 1 140px" }}>
+              <span className="lbl">{play === "foursomes" ? "% of combined handicaps" : "% of handicap"}</span>
               <input inputMode="numeric" value={hcp.pct} onChange={(e) => setHcp({ ...hcp, pct: Number(e.target.value) || 0 })} />
-            </div>
+            </label>
           )}
           <label className="row display" style={{ flex: "1 1 220px" }}>
             <input type="checkbox" checked={hcp.relative} onChange={(e) => setHcp({ ...hcp, relative: e.target.checked })} style={{ width: 22, height: 22 }} />
@@ -859,14 +859,14 @@ function HandicapEditor({
       {hcp.mode === "manual" && (
         <div className="row">
           {balls.map((b) => (
-            <div className="field" key={b.id} style={{ flex: "1 1 140px" }}>
-              <label>{b.name} gets</label>
+            <label className="field" key={b.id} style={{ flex: "1 1 140px" }}>
+              <span className="lbl">{b.name} gets</span>
               <input
                 inputMode="numeric"
                 value={hcp.shots[b.id] ?? 0}
                 onChange={(e) => setHcp({ mode: "manual", shots: { ...hcp.shots, [b.id]: Math.max(0, Number(e.target.value) || 0) } })}
               />
-            </div>
+            </label>
           ))}
         </div>
       )}
@@ -1034,10 +1034,10 @@ export function SideGamesEditor({ data, onSaved }: { data: AdminData; onSaved: (
               {g.kind === "ctp" ? "par 3s, on the green" : g.kind === "ld" ? "par 5s, on the fairway" : g.kind === "gir" ? "every hole" : "gross"}
             </span>
           </label>
-          <div className="field" style={{ flex: "1 1 120px" }}>
-            <label>Points</label>
+          <label className="field" style={{ flex: "1 1 120px" }}>
+            <span className="lbl">Points</span>
             <input inputMode="decimal" value={g.points} disabled={!g.enabled} onChange={(e) => setGames(games.map((x, j) => (j === i ? { ...x, points: Number(e.target.value) || 0 } : x)))} />
-          </div>
+          </label>
         </div>
       ))}
       {(t.teams ?? []).length >= 2 && (
@@ -1153,14 +1153,14 @@ export function InviteEditor({ data, onSaved }: { data: AdminData; onSaved: () =
         {missingPins.length > 0 && <span className="error"> Still no PIN: {missingPins.map((p) => p.name).join(", ")}.</span>}
       </p>
       <div className="row">
-        <div className="field" style={{ flex: "1 1 200px" }}>
-          <label>{data.organiserPinSet ? "Change organiser PIN" : "Organiser PIN"}</label>
+        <label className="field" style={{ flex: "1 1 200px" }}>
+          <span className="lbl">{data.organiserPinSet ? "Change organiser PIN" : "Organiser PIN"}</span>
           <input value={orgPin} onChange={(e) => setOrgPin(e.target.value)} inputMode="numeric" placeholder="4–8 digits" />
-        </div>
-        <div className="field" style={{ flex: "1 1 200px" }}>
-          <label>{data.contributorPinSet ? "Change caddie and friends PIN" : "Caddie and friends PIN"}</label>
+        </label>
+        <label className="field" style={{ flex: "1 1 200px" }}>
+          <span className="lbl">{data.contributorPinSet ? "Change caddie and friends PIN" : "Caddie and friends PIN"}</span>
           <input value={cPin} onChange={(e) => setCPin(e.target.value)} inputMode="numeric" placeholder="4–8 digits" />
-        </div>
+        </label>
       </div>
       <div className="row">
         <button className="btn secondary" disabled={s.busy || (!orgPin && !cPin)} onClick={savePins}>

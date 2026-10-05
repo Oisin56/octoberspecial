@@ -155,7 +155,7 @@ export function ReelBuilder() {
   if (!state) return null;
   return (
     <section className="panel stack">
-      <h2>Highlights reel</h2>
+      <h2>Quick reel (free, on this computer)</h2>
       <p className="small muted" style={{ margin: 0 }}>
         Joins the video clips in round and hole order into one video, right here on this computer. Use a laptop: it takes a minute or two per few clips.
       </p>

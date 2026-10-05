@@ -37,6 +37,7 @@ export interface TournamentRow {
   video_enabled: boolean;
   organiser_player_id: string | null;
   published: boolean;
+  reel_music_path?: string | null;
 }
 
 export interface PlayerRow {

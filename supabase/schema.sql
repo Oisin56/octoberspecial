@@ -30,6 +30,7 @@ alter table tournaments add column if not exists organiser_pin_hash text;
 alter table tournaments add column if not exists organiser_player_id text;
 alter table tournaments add column if not exists contributor_pin_hash text;
 alter table tournaments add column if not exists published boolean not null default true;
+alter table tournaments add column if not exists reel_music_path text;
 
 create table if not exists players (
   id text primary key,
@@ -198,7 +199,7 @@ revoke select on tournaments from anon, authenticated;
 drop view if exists public_tournaments;
 create view public_tournaments with (security_invoker = false) as
   select id, slug, name, subtitle, start_date, end_date, theme, custom_colors, logo_path, hero_path, tone,
-         side_games, side_games_by, teams, auto_bulletins, video_enabled, organiser_player_id, published, created_at
+         side_games, side_games_by, teams, auto_bulletins, video_enabled, organiser_player_id, published, created_at, reel_music_path
   from tournaments;
 grant select on public_tournaments to anon, authenticated;
 
@@ -227,3 +228,22 @@ end $$;
 insert into storage.buckets (id, name, public, file_size_limit)
 values ('media', 'media', true, 52428800)  -- 50 MB per file (Supabase free plan max)
 on conflict (id) do update set public = true, file_size_limit = 52428800;
+
+-- ------------------------------------------------------------ AI director reels
+
+create table if not exists reels (
+  id uuid primary key default gen_random_uuid(),
+  tournament_id uuid not null references tournaments(id) on delete cascade,
+  round_id uuid references rounds(id) on delete set null,
+  brief jsonb not null default '{}'::jsonb,
+  plan jsonb,
+  status text not null default 'draft' check (status in ('planning','draft','rendering','done','failed')),
+  render_id text,
+  error text,
+  video_path text,
+  post_id uuid,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists reels_t_idx on reels (tournament_id, created_at desc);
+alter table reels enable row level security;  -- organiser-only, via the server
