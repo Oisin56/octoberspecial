@@ -1,6 +1,7 @@
 import { Providers } from "@/components/Providers";
 import { SiteHeader } from "@/components/SiteHeader";
 import { ThemeRoot } from "@/components/ThemeRoot";
+import { ClipQueue } from "@/components/ClipQueue";
 
 export default async function TournamentLayout({ children, params }: LayoutProps<"/t/[slug]">) {
   const { slug } = await params;
@@ -8,6 +9,7 @@ export default async function TournamentLayout({ children, params }: LayoutProps
     <Providers slug={slug}>
       <ThemeRoot>
         <SiteHeader />
+        <ClipQueue />
         <main className="wrap">{children}</main>
       </ThemeRoot>
     </Providers>

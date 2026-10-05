@@ -122,6 +122,10 @@ create table if not exists posts (
   created_at timestamptz not null default now()
 );
 
+alter table posts add column if not exists player_ids text[] not null default '{}';   -- who played the shot in a clip
+alter table posts add column if not exists clip_start numeric;                       -- where the cut came from in the original recording
+alter table posts add column if not exists clip_end numeric;
+
 create table if not exists comments (
   id uuid primary key default gen_random_uuid(),
   tournament_id uuid not null references tournaments(id) on delete cascade,

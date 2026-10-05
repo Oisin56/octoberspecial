@@ -123,6 +123,9 @@ export interface PostRow {
   visibility: "public" | "report";
   hidden: boolean;
   created_at: string;
+  player_ids?: string[];
+  clip_start?: number | null;
+  clip_end?: number | null;
 }
 
 export interface CommentRow {

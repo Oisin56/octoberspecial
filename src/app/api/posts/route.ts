@@ -18,6 +18,12 @@ export async function POST(req: Request) {
   if (mediaPath && !/^(photo|video)\/[\w-]+\/[\w-]+\.[a-z0-9]+$/.test(mediaPath)) return bad("Bad media path");
 
   const tags = Array.isArray(b.tags) ? b.tags.filter((x: string) => TAGS.has(x)).slice(0, 5) : [];
+  let playerIds: string[] = [];
+  if (Array.isArray(b.playerIds) && b.playerIds.length) {
+    const { data: ps } = await adminClient().from("players").select("id").eq("tournament_id", t.id).in("id", b.playerIds.map(String).slice(0, 8));
+    playerIds = (ps ?? []).map((p) => p.id);
+  }
+  const num = (v: unknown) => (v == null || v === "" || !Number.isFinite(Number(v)) ? null : Math.max(0, Number(v)));
   const hole = b.hole ? Math.max(1, Math.min(18, Number(b.hole))) : null;
   let roundId: string | null = b.roundId || null;
   if (roundId) {
@@ -38,6 +44,9 @@ export async function POST(req: Request) {
       tags,
       media_path: mediaPath,
       visibility: b.visibility === "report" ? "report" : "public",
+      player_ids: playerIds,
+      clip_start: num(b.clipStart),
+      clip_end: num(b.clipEnd),
     })
     .select()
     .single();

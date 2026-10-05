@@ -194,7 +194,7 @@ function ScoreInner() {
           )}
         </div>
         <Link className="display small" href={href(`/post?round=${round.number}&hole=${hole}`)}>
-          Add note for this hole
+          Add clip or note for this hole
         </Link>
       </div>
 

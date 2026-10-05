@@ -47,7 +47,10 @@ About 30 minutes. Do the steps in order. Never paste keys into a chat. They only
 5. Send Neil the link and his PIN. Send everyone else just the link.
 
 ## On the course
-- **Phone camera:** Settings → Camera → Formats → **Most Compatible**, and film at 1080p, not 4K. Keep clips under 30 seconds.
+- **Night before, on Wi-Fi:** open the site, go to **Post**, and tap **Get the trimmer ready** so the video tools are saved on the phone.
+- **Phone camera:** film at 1080p, not 4K. Long tripod recordings are fine.
+- **Trimming:** on the scoring page tap **Add clip or note for this hole**, pick the video, drag to each shot and tap **Add this cut** (several cuts per recording, each tagged with hole and player). Only the cuts are uploaded.
+- **No signal for clips?** Cuts are saved on the phone and send themselves when signal returns. Don't clear the browser until the banner disappears.
 - **No signal?** Keep scoring. Holes save on the phone and send themselves when signal comes back.
 - **Wrong score?** Go back to the hole and save it again. That replaces the old score.
 - **Paper card as backup**, always.

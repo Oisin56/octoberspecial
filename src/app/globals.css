@@ -264,3 +264,17 @@ table.card td { vertical-align: top; }
 
 /* AI director edit list */
 .director-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
+
+/* trimmer */
+.thumbs { display: flex; gap: 4px; overflow-x: auto; padding-bottom: 4px; -webkit-overflow-scrolling: touch; }
+.thumbs button { flex: 0 0 auto; padding: 0; border: 2px solid transparent; border-radius: 6px; background: none; cursor: pointer; position: relative; }
+.thumbs button.on { border-color: var(--red); }
+.thumbs img { width: 96px; height: 54px; object-fit: cover; border-radius: 4px; display: block; }
+.thumbs span { position: absolute; left: 4px; bottom: 2px; font-family: var(--font-display); font-size: 11px; color: #fff; text-shadow: 0 0 3px #000; }
+.trim-bar { position: relative; height: 18px; background: var(--rule); border-radius: 4px; overflow: hidden; }
+.trim-bar .sel { position: absolute; top: 0; bottom: 0; background: var(--board); opacity: 0.85; }
+.trim-bar .cut { position: absolute; top: 0; bottom: 0; background: var(--bracken); opacity: 0.7; }
+.trim-bar .head { position: absolute; top: -2px; bottom: -2px; width: 3px; background: var(--red); }
+.trim-buttons { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 6px; }
+.trim-buttons .btn { padding: 12px 8px; font-size: 17px; }
+.queue-banner { background: #fff6e0; border-bottom: 1px solid #ecd59a; padding: 8px 16px; font-family: var(--font-display); font-size: 15px; text-align: center; }

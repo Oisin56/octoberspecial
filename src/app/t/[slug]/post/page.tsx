@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useT } from "@/components/Providers";
 import { Loading } from "@/components/ui";
+import { ClipTrimmer } from "@/components/ClipTrimmer";
+import { TrimmerReady } from "@/components/TrimmerReady";
 
 const TAGS = [
   "birdie", "eagle", "chip-in", "long putt", "3-putt", "water", "bunker", "OB",
@@ -67,6 +69,8 @@ function PostInner() {
   const [progress, setProgress] = useState<number | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [warn, setWarn] = useState<string | null>(null);
+  const [trim, setTrim] = useState(false);
+  const [done, setDone] = useState<string | null>(null);
 
   useEffect(() => {
     if (defaultRound && !roundId) setRoundId(defaultRound.id);
@@ -90,7 +94,12 @@ function PostInner() {
   async function pick(f: File | null) {
     setWarn(null);
     setFile(f);
+    setDone(null);
     if (!f) return;
+    if (f.type.startsWith("video") || /\.(mov|mp4|m4v)$/i.test(f.name)) {
+      setTrim(true); // videos go through the trimmer first
+      return;
+    }
     if (f.size > MAX_BYTES) setWarn(`That file is ${(f.size / 1048576).toFixed(0)} MB. The limit is 50 MB, so trim the clip or film at 1080p.`);
     if (f.type.startsWith("video")) {
       const v = document.createElement("video");
@@ -140,9 +149,40 @@ function PostInner() {
     }
   }
 
+  if (trim && file) {
+    return (
+      <div className="scorer stack">
+        <h1>Trim your video</h1>
+        <p className="small muted" style={{ margin: 0 }}>
+          Find each shot, mark its start and end, and add it as a cut. Only the cuts are uploaded; the full recording stays on your phone.
+        </p>
+        <ClipTrimmer
+          file={file}
+          roundId={roundId || null}
+          defaultHole={hole ? Number(hole) : null}
+          onCancel={() => (setTrim(false), setFile(null))}
+          onDone={(posted, queued) => {
+            setTrim(false);
+            setFile(null);
+            setDone(
+              `${posted ? `${posted} clip${posted > 1 ? "s" : ""} posted. ` : ""}${queued ? `${queued} saved on this phone; they'll send when there's signal.` : ""}`,
+            );
+          }}
+        />
+        {file.size <= MAX_BYTES && (
+          <button className="chip" onClick={() => setTrim(false)}>
+            Post the whole video instead
+          </button>
+        )}
+      </div>
+    );
+  }
+
   return (
     <form className="scorer stack" onSubmit={submit}>
       <h1>Post from the course</h1>
+      {done && <p className="notice">{done}</p>}
+      {state.tournament.video_enabled && <TrimmerReady />}
       <div className="row" style={{ flexWrap: "nowrap" }}>
         <div className="field" style={{ flex: 2 }}>
           <label htmlFor="rd">Round</label>
