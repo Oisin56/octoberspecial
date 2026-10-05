@@ -2,8 +2,11 @@ import { adminClient } from "@/lib/admin";
 import { isOrganiser } from "@/lib/auth";
 import { bad, context, json } from "@/lib/server-data";
 import { mediaUrl } from "@/lib/supabase";
+import { loadServerState } from "@/lib/server-data";
+import { cardUrl } from "@/lib/cards";
 import {
   buildTimeline,
+  clipBugs,
   configured,
   publishReel,
   sanitisePlan,
@@ -160,6 +163,19 @@ export async function POST(req: Request) {
       return json({ segment: seg });
     }
 
+    case "bugCards": {
+      // Preview the score panels for the (possibly unsaved) plan on the review screen
+      const plan = sanitisePlan(b.plan as Plan);
+      const bugs = clipBugs(await loadServerState(t.id), plan);
+      const portrait = plan.aspect === "9:16";
+      const wholeTrip = new Set(plan.segments.filter((x) => x.kind === "clip" && x.round != null).map((x) => (x.kind === "clip" ? x.round : null))).size > 1;
+      const url = (bug: (typeof bugs)[string]["before"]) =>
+        cardUrl(origin(req), { k: "bug", h: "", b: bug, wt: wholeTrip, theme: t.theme, colors: t.custom_colors, w: portrait ? 1080 : 1920, ht: portrait ? 1920 : 1080 });
+      return json({
+        bugs: Object.fromEntries(Object.entries(bugs).map(([id, x]) => [id, { before: x.before, after: x.after, beforeUrl: url(x.before), afterUrl: x.after ? url(x.after) : null }])),
+      });
+    }
+
     case "render": {
       if (!cfg.shotstack) return bad("SHOTSTACK_API_KEY isn't set, so the film can't be rendered", 500);
       const reel = await getReel(String(b.reelId));
@@ -182,6 +198,7 @@ export async function POST(req: Request) {
         colors: t.custom_colors,
         music: mediaUrl(t.reel_music_path ?? null),
         narration,
+        bugs: clipBugs(await loadServerState(t.id), plan),
       });
       try {
         const id = await shotstackRender(edit);

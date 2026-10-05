@@ -1,13 +1,16 @@
 import "server-only";
 import { createHmac } from "node:crypto";
 import type { ThemeId } from "./types";
+import type { ScoreBug } from "./scorebug";
 
 export interface CardSpec {
-  k: "title" | "chapter" | "result" | "standings" | "caption";
+  k: "title" | "chapter" | "result" | "standings" | "caption" | "bug";
   h: string; // heading
   s?: string; // sub line
   l?: [string, string][]; // rows: label, value
   e?: string; // small line above the heading
+  b?: ScoreBug; // score panel (k = bug)
+  wt?: boolean; // score panel: show the round and course too (whole-trip films)
   theme: ThemeId;
   colors?: { primary?: string; accent?: string; background?: string } | null;
   w: number;

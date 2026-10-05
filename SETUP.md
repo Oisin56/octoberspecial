@@ -67,5 +67,6 @@ Go to the site's address followed by `/new`, fill in the name and an organiser P
 1. Upload a music track once (royalty-free, e.g. Pixabay Music or Uppbeat).
 2. Choose the round or whole tournament, the length and the shape (landscape for TV, portrait for phones), then **Write the plan**.
 3. Check the plan: reorder or remove clips, fix captions, trim clips (From / to, in seconds), edit the narration. Scores on the cards come straight from the scoreboard.
+   - **Score panel:** each clip shows a TV-style panel in the top corner with the hole, par, yards and the score as it stood when the shot was played. Fix the round or hole if it's wrong; the preview updates. Tick **Finishes the hole** for putts and chip-ins: the panel then switches to the new score near the end, with a BIRDIE / EAGLE / WINS THE HOLE flash. If an earlier hole wasn't entered, the panel shows the hole details only.
 4. Optional: **Generate** any AI shots (1–5 minutes each). They're skipped until generated.
 5. **Render the film.** It takes a minute or two and appears in Highlights automatically. Each render costs a little on Shotstack, ElevenLabs and Veo; nothing is charged until you press Render or Generate.

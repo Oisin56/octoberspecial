@@ -32,6 +32,12 @@ export interface ClipSegment extends Base {
   duration?: number | null;
   round?: number | null;
   hole?: number | null;
+  /** Players in the shot (from the post); picks the match shown on the score panel */
+  playerIds?: string[];
+  /** TV-style score panel in the corner (default on) */
+  bug?: boolean;
+  /** The clip finishes the hole: the panel updates near the end, with a BIRDIE / HOLE WON flash */
+  finishes?: boolean;
 }
 
 export interface VeoSegment extends Base {

@@ -38,7 +38,9 @@ export async function GET(req: Request) {
   const u = Math.min(W, H) / 1080; // scale unit
 
   let body: React.ReactElement;
-  if (spec.k === "caption") {
+  if (spec.k === "bug" && spec.b) {
+    body = <Bug spec={spec} p={p} W={W} H={H} u={u} portrait={portrait} />;
+  } else if (spec.k === "caption") {
     // Transparent lower third: sits over a clip
     body = (
       <div style={{ width: W, height: H, display: "flex", flexDirection: "column", justifyContent: "flex-end", padding: `${60 * u}px ${70 * u}px ${portrait ? 260 * u : 70 * u}px` }}>
@@ -129,4 +131,54 @@ export async function GET(req: Request) {
     ],
     headers: { "cache-control": "public, max-age=86400, immutable" },
   });
+}
+
+/** TV-style score panel: top-left (landscape) or top-centre (portrait), transparent elsewhere. */
+function Bug({ spec, p, W, H, u, portrait }: { spec: CardSpec; p: ReturnType<typeof paletteFor>; W: number; H: number; u: number; portrait: boolean }) {
+  const b = spec.b!;
+  const PW = (portrait ? 640 : 560) * u;
+  const font = { fontFamily: "Barlow", fontWeight: 700 } as const;
+  return (
+    <div style={{ width: W, height: H, display: "flex", flexDirection: "column", alignItems: portrait ? "center" : "flex-start", padding: portrait ? `${150 * u}px 0 0` : `${44 * u}px ${52 * u}px` }}>
+      <div style={{ display: "flex", flexDirection: "column", width: PW, boxShadow: "0 6px 24px rgba(0,0,0,0.35)" }}>
+        {spec.wt && (
+          <div style={{ display: "flex", background: p.boardDeep, color: "#c9d6cd", ...font, fontWeight: 600, fontSize: 26 * u, padding: `${6 * u}px ${18 * u}px`, letterSpacing: 1 }}>
+            {`ROUND ${b.round} · ${b.course.toUpperCase()}`}
+          </div>
+        )}
+        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", background: p.board, color: p.tile, padding: `${8 * u}px ${18 * u}px ${10 * u}px` }}>
+          <div style={{ display: "flex", ...font, fontSize: 52 * u, lineHeight: 1 }}>{`HOLE ${b.hole}`}</div>
+          <div style={{ display: "flex", ...font, fontWeight: 600, fontSize: 32 * u, color: "#e7ece9" }}>{`PAR ${b.par}${b.yards ? ` · ${b.yards} YDS` : ""}`}</div>
+        </div>
+        {b.rows.map((r, i) => (
+          <div key={i} style={{ display: "flex", alignItems: "stretch", background: p.tile, borderTop: i ? `${2 * u}px solid ${p.mist}` : "none" }}>
+            <div style={{ display: "flex", width: 10 * u, background: r.lead ? p.red : "transparent" }} />
+            <div style={{ display: "flex", flex: 1, alignItems: "center", ...font, fontSize: 40 * u, color: p.ink, padding: `${6 * u}px ${14 * u}px` }}>
+              {r.name.toUpperCase()}
+              {Array.from({ length: Math.min(r.dots, 3) }, (_, k) => (
+                <div key={k} style={{ display: "flex", width: 12 * u, height: 12 * u, borderRadius: 99, background: p.red, marginLeft: (k ? 6 : 14) * u }} />
+              ))}
+            </div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minWidth: 130 * u, ...font, fontSize: 40 * u, background: r.value ? (r.lead ? p.red : p.board) : p.tile, color: p.tile, padding: `0 ${14 * u}px` }}>
+              {r.value.toUpperCase()}
+            </div>
+          </div>
+        ))}
+        {b.mode !== "none" && (
+          <div style={{ display: "flex", justifyContent: "space-between", background: p.board, color: p.tile, ...font, fontWeight: 600, fontSize: 28 * u, padding: `${5 * u}px ${18 * u}px` }}>
+            <div style={{ display: "flex" }}>{b.status ?? ""}</div>
+            <div style={{ display: "flex" }}>{b.thru > 0 ? `THRU ${b.thru}` : "STARTING"}</div>
+          </div>
+        )}
+        {b.footer && (
+          <div style={{ display: "flex", background: "rgba(0,0,0,0.6)", color: "#ffffff", ...font, fontWeight: 600, fontSize: 24 * u, padding: `${5 * u}px ${18 * u}px` }}>{`OVERALL  ${b.footer}`}</div>
+        )}
+      </div>
+      {b.flash && (
+        <div style={{ display: "flex", marginTop: 14 * u, background: p.red, color: "#ffffff", ...font, fontSize: 60 * u, padding: `${6 * u}px ${26 * u}px`, letterSpacing: 2, boxShadow: "0 6px 24px rgba(0,0,0,0.35)" }}>
+          {b.flash}
+        </div>
+      )}
+    </div>
+  );
 }

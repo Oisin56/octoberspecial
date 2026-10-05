@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useT } from "./Providers";
 import { mediaUrl } from "@/lib/supabase";
+import { bugText, type ScoreBug } from "@/lib/scorebug";
 import { planSeconds, segmentSeconds, voiceSeconds, type Brief, type Plan, type ReelRow, type Segment } from "@/lib/director-types";
 
 interface Configured {
@@ -12,6 +13,19 @@ interface Configured {
   shotstackEnv: string;
   voice: boolean;
   veo: boolean;
+}
+
+type BugPreview = { before: ScoreBug; after: ScoreBug | null; beforeUrl: string; afterUrl: string | null };
+const TAGS_FINISH = ["birdie", "eagle", "chip-in", "long putt", "hole in one"];
+
+/** Shows just the corner of the full-frame panel image, at half size. */
+function PanelImg({ src, portrait, alt }: { src: string; portrait: boolean; alt: string }) {
+  return (
+    <div style={{ width: 310, height: 240, overflow: "hidden", background: "#3a4a40", borderRadius: 6, position: "relative", flex: "0 0 auto" }}>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={src} alt={alt} style={{ position: "absolute", width: portrait ? 540 : 960, left: portrait ? -115 : 0, top: portrait ? -60 : 0, maxWidth: "none" }} />
+    </div>
+  );
 }
 
 const fmtTime = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
@@ -30,6 +44,19 @@ export function DirectorPanel() {
   const [progress, setProgress] = useState<string | null>(null);
 
   const call = useCallback((body: Record<string, unknown>) => api("/api/director", body), [api]);
+  const [bugs, setBugs] = useState<Record<string, BugPreview>>({});
+
+  // Score panel previews follow the plan as you edit it
+  const bugKey = plan ? JSON.stringify([plan.aspect, plan.segments.map((x) => (x.kind === "clip" ? [x.id, x.round, x.hole, x.bug, x.finishes, x.playerIds] : null))]) : "";
+  useEffect(() => {
+    if (!plan) return;
+    const tm = setTimeout(async () => {
+      const r = await call({ action: "bugCards", plan });
+      if (r.ok) setBugs(r.j.bugs as Record<string, BugPreview>);
+    }, 500);
+    return () => clearTimeout(tm);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bugKey, call]);
 
   const load = useCallback(async () => {
     const r = await call({ action: "list" });
@@ -178,12 +205,17 @@ export function DirectorPanel() {
       kind: "clip",
       postId: p.id,
       src: mediaUrl(p.media_path)!,
-      caption: `Hole ${p.hole ?? "–"} · ${p.author_name}`,
+      caption: (p.player_ids ?? []).length
+        ? (p.player_ids ?? []).map((id) => state?.players.find((x) => x.id === id)?.name ?? id).join(" & ")
+        : `Hole ${p.hole ?? "–"} · ${p.author_name}`,
       sub: p.body?.slice(0, 50) ?? undefined,
       in: 0,
       out: null,
       round: r?.number ?? null,
       hole: p.hole,
+      playerIds: p.player_ids ?? [],
+      bug: true,
+      finishes: p.tags.some((t) => TAGS_FINISH.includes(t)),
     };
     const lastCard = plan.segments.map((s) => s.kind === "card" && s.card === "standings").lastIndexOf(true);
     const at = lastCard >= 0 ? lastCard : plan.segments.length;
@@ -388,6 +420,51 @@ export function DirectorPanel() {
                         </label>
                         <span className="muted">{s.duration ? `clip is ${s.duration}s` : ""}</span>
                       </div>
+                    </div>
+                    <div className="stack" style={{ flexBasis: "100%" }}>
+                      <div className="row small">
+                        <label className="row">
+                          Round
+                          <select value={s.round ?? ""} disabled={locked} onChange={(e) => updateSeg(s.id, { ...s, round: e.target.value === "" ? null : Number(e.target.value) })} aria-label="Round">
+                            <option value="">–</option>
+                            {state.rounds.map((r) => (
+                              <option key={r.id} value={r.number}>
+                                {r.number}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="row">
+                          Hole
+                          <select value={s.hole ?? ""} disabled={locked} onChange={(e) => updateSeg(s.id, { ...s, hole: e.target.value === "" ? null : Number(e.target.value) })} aria-label="Hole">
+                            <option value="">–</option>
+                            {Array.from({ length: 18 }, (_, k) => (
+                              <option key={k} value={k + 1}>
+                                {k + 1}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="row">
+                          <input type="checkbox" checked={s.bug !== false} disabled={locked} onChange={(e) => updateSeg(s.id, { ...s, bug: e.target.checked })} style={{ width: 18, height: 18 }} />
+                          Score panel
+                        </label>
+                        <label className="row">
+                          <input type="checkbox" checked={!!s.finishes} disabled={locked || s.bug === false} onChange={(e) => updateSeg(s.id, { ...s, finishes: e.target.checked })} style={{ width: 18, height: 18 }} />
+                          Finishes the hole
+                        </label>
+                      </div>
+                      {s.bug !== false && bugs[s.id] && (
+                        <div className="row" style={{ alignItems: "flex-start" }}>
+                          <PanelImg src={bugs[s.id].beforeUrl} portrait={plan.aspect === "9:16"} alt="Score panel during the clip" />
+                          {bugs[s.id].afterUrl && <PanelImg src={bugs[s.id].afterUrl!} portrait={plan.aspect === "9:16"} alt="Score panel after the hole" />}
+                          <pre className="small bug-text" style={{ whiteSpace: "pre-wrap", margin: 0, flex: "1 1 200px", fontFamily: "inherit" }}>
+                            {bugText(bugs[s.id].before)}
+                            {bugs[s.id].after ? `\nThen: ${bugText(bugs[s.id].after).split("\n").slice(1).join(" · ")}` : s.finishes ? "\n(This hole isn't scored yet, so the panel won't update.)" : ""}
+                          </pre>
+                        </div>
+                      )}
+                      {s.bug !== false && (s.round == null || s.hole == null) && <span className="small muted">Set the round and hole to show the score panel.</span>}
                     </div>
                   </div>
                 )}
