@@ -4,6 +4,7 @@
  */
 import { writeFileSync } from "node:fs";
 import { COURSES } from "../src/data/courses";
+import { GUIDES } from "../src/data/course-guides";
 
 const TOURNAMENT_SLUG = "october-special-2026";
 
@@ -20,7 +21,9 @@ const ROUNDS: { n: number; slug: string; format: string; full: number; tee: stri
 const q = (s: string) => `'${s.replace(/'/g, "''")}'`;
 
 let sql = `-- October Special 2026 — starting data
--- Paste into Supabase → SQL Editor AFTER schema.sql and run once.
+-- Paste into Supabase → SQL Editor AFTER schema.sql and run.
+-- Safe to run again: it refreshes the course cards and guides (until a round has scores),
+-- and leaves dates, tee times, handicaps and anything else you've set alone.
 
 insert into tournaments (slug, name, subtitle, organiser_player_id, start_date, theme, tone)
 values (${q(TOURNAMENT_SLUG)}, 'The October Special', 'Seven rounds. Two men. 360 points.', 'oisin', '2026-10-08', 'clubhouse', 'broadsheet')
@@ -37,13 +40,19 @@ on conflict (id) do nothing;
 for (const r of ROUNDS) {
   const c = COURSES.find((x) => x.slug === r.slug)!;
   const yards = c.tees[r.tee] ?? Object.values(c.tees)[0];
+  const g = GUIDES[c.slug];
+  const guide = g ? `${q(JSON.stringify({ overview: g.overview, signature: g.signature, holes: g.holes }))}::jsonb` : "null";
   const holes = c.par.map((par, i) => ({ number: i + 1, par, si: c.si[i], yards: yards[i] }));
   sql += `
-insert into rounds (tournament_id, number, course_slug, course_name, course_location, course_blurb, lat, lon, tee, format, full_points, shots, holes, scorer_id)
-select t.id, ${r.n}, ${q('local:' + c.slug)}, ${q(c.name)}, ${q(c.location)}, ${q(c.blurb)}, ${c.lat}, ${c.lon}, ${q(r.tee)}, ${q(r.format)}, ${r.full},
+insert into rounds (tournament_id, number, course_slug, course_name, course_location, course_blurb, course_guide, lat, lon, tee, format, full_points, shots, holes, scorer_id)
+select t.id, ${r.n}, ${q('local:' + c.slug)}, ${q(c.name)}, ${q(c.location)}, ${q(c.blurb)}, ${guide}, ${c.lat}, ${c.lon}, ${q(r.tee)}, ${q(r.format)}, ${r.full},
   '{"oisin":0,"neil":0}'::jsonb, ${q(JSON.stringify(holes))}::jsonb, 'oisin'
 from tournaments t where t.slug = ${q(TOURNAMENT_SLUG)}
-on conflict (tournament_id, number) do nothing;
+on conflict (tournament_id, number) do update set
+  course_slug = excluded.course_slug, course_name = excluded.course_name, course_location = excluded.course_location,
+  course_blurb = excluded.course_blurb, course_guide = excluded.course_guide, lat = excluded.lat, lon = excluded.lon,
+  tee = excluded.tee, holes = excluded.holes
+where not exists (select 1 from hole_entries e where e.round_id = rounds.id);
 `;
 }
 

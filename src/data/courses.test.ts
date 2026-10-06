@@ -21,7 +21,7 @@ describe("course data sanity", () => {
   it("pars", () => {
     const pars = Object.fromEntries(COURSES.map((c) => [c.slug, c.par.reduce((a, b) => a + b, 0)]));
     expect(pars).toEqual({
-      "druids-heath": 72,
+      "druids-heath": 71,
       wicklow: 71,
       macreddin: 72,
       rathsallagh: 72,

@@ -5,6 +5,8 @@ import { useT } from "./Providers";
 import { pts } from "./ui";
 import type { Game, HandicapRule, PlayType, PointsRule, ScoringType, SideGameCfg, Team } from "@/lib/engine";
 import { ONE_BALL, roundPointsAvailable } from "@/lib/engine";
+import { GUIDES } from "@/data/course-guides";
+import type { CourseGuide } from "@/lib/types";
 import {
   PLAY_LABEL,
   SCORING_LABEL,
@@ -627,6 +629,12 @@ function RoundCard({ round, data, onSaved }: { round: RoundRow; data: AdminData;
   const [tees, setTees] = useState<string[]>(round.tee ? [round.tee] : []);
   const [showCard, setShowCard] = useState(false);
   const [card, setCard] = useState(round.holes.map((h) => ({ par: h.par, si: h.si, yards: h.yards ?? 0 })));
+  const localGuide = GUIDES[round.course_slug.replace(/^local:/, "")];
+  const [guide, setGuide] = useState<CourseGuide>(
+    round.course_guide ?? (localGuide ? { overview: localGuide.overview, signature: localGuide.signature, holes: localGuide.holes } : { overview: "", signature: "", holes: {} }),
+  );
+  const [showGuide, setShowGuide] = useState(false);
+  const [guideDirty, setGuideDirty] = useState(false);
   const s = useSave();
   const scored = data.state.entries.some((e) => e.round_id === round.id);
 
@@ -646,7 +654,9 @@ function RoundCard({ round, data, onSaved }: { round: RoundRow; data: AdminData;
     const r: Record<string, unknown> = { id: round.id, ...f, points_rule: points, handicap_rule: hcp, games };
     if (tee && tee !== round.tee) r.tee = tee;
     if (showCard) r.holes = card;
+    if (guideDirty) r.course_guide = guide;
     const res = await s.run({ action: "saveRound", round: r });
+    if (res.ok) setGuideDirty(false);
     if (res.ok) onSaved();
   }
   async function del() {
@@ -786,6 +796,21 @@ function RoundCard({ round, data, onSaved }: { round: RoundRow; data: AdminData;
           </button>
           {showCard && <CardTable card={card} setCard={setCard} />}
 
+          <button type="button" className="chip" aria-pressed={showGuide} onClick={() => setShowGuide(!showGuide)}>
+            {showGuide ? "Hide course guide" : `Course guide for the AI writer (${Object.keys(guide.holes).length} hole notes)`}
+          </button>
+          {showGuide && (
+            <GuideEditor
+              roundId={round.id}
+              pars={round.holes.map((h) => h.par)}
+              guide={guide}
+              setGuide={(g) => {
+                setGuide(g);
+                setGuideDirty(true);
+              }}
+            />
+          )}
+
           <div className="row">
             <button className="btn" disabled={s.busy} onClick={save}>
               Save round {round.number}
@@ -798,6 +823,83 @@ function RoundCard({ round, data, onSaved }: { round: RoundRow; data: AdminData;
         </>
       )}
     </section>
+  );
+}
+
+/** The background the AI writer uses for this course: overview, signature holes, notes per hole. */
+function GuideEditor({ roundId, pars, guide, setGuide }: { roundId: string; pars: number[]; guide: CourseGuide; setGuide: (g: CourseGuide) => void }) {
+  const s = useSave();
+  const [found, setFound] = useState<{ sources: string[]; searched: boolean; warnings?: string } | null>(null);
+  async function draft() {
+    if ((guide.overview || Object.keys(guide.holes).length) && !confirm("Replace the current guide with a fresh draft?")) return;
+    const r = await s.run({ action: "draftGuide", roundId }, "Draft ready: check it, then save the round");
+    if (!r.ok) return;
+    setGuide(r.j.guide as CourseGuide);
+    setFound({ sources: (r.j.sources as string[]) ?? [], searched: !!r.j.searched, warnings: r.j.warnings as string | undefined });
+  }
+  return (
+    <div className="stack guide-editor">
+      <p className="small muted" style={{ margin: 0 }}>
+        The AI uses this to write about the course like someone who knows it: in previews, live bulletins, reports and the highlights film. It never treats it as
+        something that happened. Leave a hole blank if you don&apos;t know it.
+      </p>
+      <label className="field">
+        <span className="lbl">Overview</span>
+        <textarea value={guide.overview} onChange={(e) => setGuide({ ...guide, overview: e.target.value })} style={{ minHeight: 90 }} />
+      </label>
+      <label className="field">
+        <span className="lbl">Signature holes</span>
+        <textarea value={guide.signature} onChange={(e) => setGuide({ ...guide, signature: e.target.value })} style={{ minHeight: 60 }} />
+      </label>
+      <div className="guide-holes">
+        {pars.map((par, i) => {
+          const k = String(i + 1);
+          return (
+            <label key={k} className="field">
+              <span className="lbl">
+                Hole {k} · par {par}
+              </span>
+              <textarea
+                value={guide.holes[k] ?? ""}
+                onChange={(e) => {
+                  const holes = { ...guide.holes };
+                  if (e.target.value) holes[k] = e.target.value;
+                  else delete holes[k];
+                  setGuide({ ...guide, holes });
+                }}
+                placeholder="e.g. Dogleg left, water short of the green"
+                style={{ minHeight: 76 }}
+              />
+            </label>
+          );
+        })}
+      </div>
+      <div className="row">
+        <button type="button" className="btn secondary" disabled={s.busy} onClick={draft}>
+          {s.busy ? "Researching the course (up to a minute)…" : "Draft it for me"}
+        </button>
+        <Msg msg={s.msg} />
+      </div>
+      {found && (
+        <div className="small">
+          {!found.searched && <p className="error">Drafted without web search (it isn&apos;t switched on for your Anthropic account), so check every line.</p>}
+          {found.warnings && <p className="muted">Notes from the research: {found.warnings}</p>}
+          {found.sources.length > 0 && (
+            <p className="muted" style={{ overflowWrap: "anywhere" }}>
+              Sources:{" "}
+              {found.sources.map((u, i) => (
+                <span key={u}>
+                  {i ? ", " : ""}
+                  <a href={u} target="_blank" rel="noreferrer">
+                    {new URL(u).hostname.replace(/^www\./, "")}
+                  </a>
+                </span>
+              ))}
+            </p>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 

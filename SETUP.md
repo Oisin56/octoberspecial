@@ -5,7 +5,8 @@ About 30 minutes. Do the steps in order. Never paste keys into a chat. They only
 ## 1. Supabase (database, live updates, photo and video storage)
 1. Go to supabase.com and create a free project. Pick the **Europe (Ireland)** region and choose a database password (save it somewhere).
 2. When it's ready, open **SQL Editor → New query**. Paste the whole of `supabase/schema.sql` and press **Run**. You should see "Success".
-3. Open a new query, paste the whole of `supabase/seed.sql` and press **Run**. This loads the seven rounds and both players.
+3. Open a new query, paste the whole of `supabase/seed.sql` and press **Run**. This loads the seven rounds, both players, the scorecards and the course guides.
+   - **Already ran these before 6 October?** Run both files again (latest versions from GitHub). It's safe: it corrects the Druids Heath card (the earlier one was wrong) and adds the course guides, and keeps your dates, tee times, handicaps and PINs. Rounds that already have scores are never touched.
 4. Go to **Project Settings → API** (or **Data API**). Keep this tab open. You need three values from it:
    - Project URL
    - `anon` / publishable key
@@ -42,9 +43,10 @@ About 30 minutes. Do the steps in order. Never paste keys into a chat. They only
 ## 4. First visit
 1. Open the site (it goes straight to the October Special) → **Log in → Organiser** with your `ORGANISER_PIN`.
 2. **Admin → Players and PINs:** set Neil's PIN and fill in both profiles (the AI uses them).
-3. **Admin → Rounds:** open each round with **Edit** and set the date, tee time, tees and handicaps (Set shots by hand, or Flat). The scorer is chosen under Matches and groups. Tap **Check par and stroke index** and compare with the real card on the day.
-4. **Admin → AI writing:** write the Round 1 preview, read it, then publish.
-5. Send Neil the link and his PIN. Send everyone else just the link.
+3. **Admin → Rounds:** open each round with **Edit** and set the date, tee time, tees and handicaps (Set shots by hand, or Flat). The scorer is chosen under Matches and groups. Tap **Check par and stroke index** and compare with the real card on the day. **Rathsallagh:** ask in the pro shop whether the holes are still in the original order (the club may have re-ordered them in 2017; the app uses the original order, with a par 5 1st).
+4. **Course guide (optional):** each round has a **Course guide for the AI writer**: an overview, the signature holes and notes per hole, researched from the clubs' own guides and reviews. Read it, fix anything you know better, and add your own local knowledge. For a new course, **Draft it for me** researches it on the web for you to check and save.
+5. **Admin → AI writing:** write the Round 1 preview, read it, then publish.
+6. Send Neil the link and his PIN. Send everyone else just the link.
 
 ## On the course
 - **Night before, on Wi-Fi:** open the site, go to **Post**, and tap **Get the trimmer ready** so the video tools are saved on the phone.

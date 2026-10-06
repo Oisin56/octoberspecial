@@ -6,6 +6,7 @@ import { useT } from "@/components/Providers";
 import { Article, Comments, Feed, GameStatus, Loading, Scorecard, dateLabel, pts } from "@/components/ui";
 import { PLAY_LABEL, SCORING_LABEL, ballName, toRoundCfg } from "@/lib/types";
 import { courseBySlug } from "@/data/courses";
+import { GUIDES } from "@/data/course-guides";
 import { mediaUrl } from "@/lib/supabase";
 import { gameShots } from "@/lib/engine";
 
@@ -19,6 +20,7 @@ export default function RoundPage({ params }: { params: Promise<{ n: string }> }
   const local = courseBySlug(round.course_slug.replace(/^local:/, ""));
   const blurb = round.course_blurb ?? local?.blurb;
   const location = round.course_location ?? local?.location;
+  const guide = round.course_guide ?? (local ? GUIDES[local.slug] : null);
   const pieces = state.pieces.filter((p) => p.round_id === round.id && p.status === "published");
   const preview = pieces.find((p) => p.kind === "preview");
   const report = pieces.find((p) => p.kind === "report");
@@ -91,6 +93,28 @@ export default function RoundPage({ params }: { params: Promise<{ n: string }> }
               </div>
             </div>
           ))}
+
+          {guide && (guide.overview || Object.keys(guide.holes).length > 0) && (
+            <details className="article course-guide">
+              <summary>
+                <h2 style={{ display: "inline" }}>Course guide</h2>
+              </summary>
+              {location && <div className="byline">{location}</div>}
+              {guide.overview && <p>{guide.overview}</p>}
+              {guide.signature && <p>{guide.signature}</p>}
+              <ol className="hole-guide">
+                {round.holes.map((h) => (
+                  <li key={h.number}>
+                    <span className="display">
+                      {h.number} · Par {h.par}
+                      {h.yards ? ` · ${h.yards} yds` : ""} · SI {h.si}
+                    </span>
+                    {guide.holes[String(h.number)] && <span> {guide.holes[String(h.number)]}</span>}
+                  </li>
+                ))}
+              </ol>
+            </details>
+          )}
 
           {clips.length > 0 && (
             <>

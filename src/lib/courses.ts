@@ -1,5 +1,7 @@
 import "server-only";
 import { COURSES, type CourseData } from "@/data/courses";
+import { GUIDES } from "@/data/course-guides";
+import type { CourseGuide } from "./types";
 
 /** A course ready to drop into a round: par/SI/yards per tee. */
 export interface CourseOption {
@@ -9,6 +11,7 @@ export interface CourseOption {
   lat: number | null;
   lon: number | null;
   blurb?: string;
+  guide?: CourseGuide | null;
   tees: { name: string; par: number[]; si: number[]; yards: number[]; rating?: number; slope?: number }[];
 }
 
@@ -33,6 +36,7 @@ function localOption(c: CourseData): CourseOption {
     lat: c.lat,
     lon: c.lon,
     blurb: c.blurb,
+    guide: GUIDES[c.slug] ? { overview: GUIDES[c.slug].overview, signature: GUIDES[c.slug].signature, holes: GUIDES[c.slug].holes } : null,
     tees: Object.entries(c.tees).map(([name, yards]) => ({ name, par: c.par, si: c.si, yards })),
   };
 }

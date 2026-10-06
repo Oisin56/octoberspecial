@@ -78,6 +78,7 @@ alter table rounds add column if not exists games jsonb;            -- [{id,name
 alter table rounds add column if not exists points_rule jsonb;      -- {front,back,full,positions,skin}
 alter table rounds add column if not exists handicap_rule jsonb;    -- {mode:'manual',shots} | {mode:'allowance',pct,relative}
 alter table rounds add column if not exists course_location text;
+alter table rounds add column if not exists course_guide jsonb;     -- {overview, signature, holes:{"1":note}} for the AI writer
 alter table rounds add column if not exists course_blurb text;
 alter table rounds add column if not exists lat double precision;
 alter table rounds add column if not exists lon double precision;

@@ -24,14 +24,15 @@ export const COURSES: CourseData[] = [
     location: "Newtownmountkennedy, Co. Wicklow",
     lat: 53.075,
     lon: -6.085,
-    par: [5, 4, 5, 4, 4, 4, 3, 5, 4, 4, 3, 4, 5, 3, 4, 3, 4, 4],
-    si: [9, 7, 11, 17, 15, 3, 13, 5, 1, 14, 16, 2, 6, 18, 8, 10, 4, 12],
+    // Druids Glen Resort card (par 71). SI from the resort's published card (hole 12 = index 1).
+    par: [4, 5, 3, 5, 3, 4, 4, 4, 4, 4, 3, 4, 4, 3, 5, 4, 4, 4],
+    si: [2, 8, 14, 18, 16, 6, 4, 12, 10, 7, 13, 1, 5, 17, 15, 3, 9, 11],
     tees: {
-      Blue: [527, 368, 546, 300, 334, 440, 189, 563, 433, 304, 158, 425, 567, 121, 387, 233, 421, 349],
-      White: [516, 328, 487, 291, 314, 424, 183, 541, 415, 289, 151, 410, 505, 114, 359, 222, 415, 338],
+      White: [420, 540, 185, 503, 178, 454, 408, 351, 391, 385, 185, 457, 338, 159, 475, 449, 375, 367],
+      Green: [406, 528, 168, 491, 148, 370, 352, 313, 347, 373, 147, 413, 329, 148, 407, 415, 335, 359],
     },
     blurb:
-      "Druids Glen's younger, wilder sibling: heathland and links-style holes on open ground above the Irish Sea, with views to Wicklow Head.",
+      "Pat Ruddy's 2003 course at the Druids Glen resort: heathland with links-like touches, gorse, deep bunkers, lakes and sea breezes, with views of the mountains and the Irish Sea.",
   },
   {
     slug: "wicklow",

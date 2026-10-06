@@ -1,7 +1,8 @@
 import { adminClient } from "@/lib/admin";
 import { hashPin, isOrganiser } from "@/lib/auth";
 import { bad, context, json, loadServerState, slugify } from "@/lib/server-data";
-import { generatePiece, type PieceKind } from "@/lib/ai";
+import { draftGuide, generatePiece, type PieceKind } from "@/lib/ai";
+import { cleanGuide } from "@/lib/types";
 import { getCourse } from "@/lib/courses";
 import type { Game, HandicapRule, PointsRule } from "@/lib/engine";
 
@@ -127,6 +128,7 @@ export async function POST(req: Request) {
       const r = b.round ?? {};
       const patch: Record<string, unknown> = {};
       for (const k of ["play_date", "tee_time", "status", "course_blurb"]) if (k in r) patch[k] = r[k] === "" ? null : r[k];
+      if ("course_guide" in r) patch.course_guide = cleanGuide(r.course_guide);
       if ("play" in r) {
         if (!PLAY.includes(r.play)) return bad("Unknown play type");
         patch.play = r.play;
@@ -199,6 +201,8 @@ export async function POST(req: Request) {
         patch.lat = c.lat;
         patch.lon = c.lon;
         if (c.blurb && !("course_blurb" in r)) patch.course_blurb = c.blurb;
+        // A different course: its own guide (or none, to be filled in)
+        if (!("course_guide" in r) && c.ref !== existing?.course_slug) patch.course_guide = c.guide ?? null;
         patch.tee = tee.name;
         patch.holes = tee.par.map((par, i) => ({ number: i + 1, par, si: tee.si[i], yards: tee.yards[i] || undefined }));
       } else if (r.tee && existing && !existingRef) {
@@ -242,6 +246,17 @@ export async function POST(req: Request) {
       const { data, error } = await db.from("rounds").insert(insert).select("id").single();
       if (error) return bad(error.message, 500);
       return json({ ok: true, id: data.id });
+    }
+
+    case "draftGuide": {
+      const { data: round } = await db.from("rounds").select("*").eq("id", b.roundId).eq("tournament_id", t.id).maybeSingle();
+      if (!round) return bad("Round not found", 404);
+      if (!process.env.ANTHROPIC_API_KEY) return bad("ANTHROPIC_API_KEY isn't set", 500);
+      try {
+        return json(await draftGuide(round));
+      } catch (e) {
+        return bad(e instanceof Error ? e.message : "Couldn't draft the guide", 500);
+      }
     }
 
     case "deleteRound": {

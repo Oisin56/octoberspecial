@@ -278,3 +278,10 @@ table.card td { vertical-align: top; }
 .trim-buttons { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 6px; }
 .trim-buttons .btn { padding: 12px 8px; font-size: 17px; }
 .queue-banner { background: #fff6e0; border-bottom: 1px solid #ecd59a; padding: 8px 16px; font-family: var(--font-display); font-size: 15px; text-align: center; }
+
+.guide-holes { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 8px 12px; }
+.guide-holes > * { min-width: 0; }
+.course-guide summary { cursor: pointer; list-style: revert; }
+.hole-guide { list-style: none; padding: 0; margin: 12px 0 0; display: grid; gap: 8px; }
+.hole-guide li { border-top: 1px solid var(--mist); padding-top: 6px; line-height: 1.4; }
+.hole-guide .display { font-weight: 700; margin-right: 4px; }

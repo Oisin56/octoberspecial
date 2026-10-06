@@ -57,6 +57,25 @@ export interface PlayerRow {
   team_id: string | null;
 }
 
+/** Background on the course for the AI writer: overview, signature holes, notes per hole. */
+export interface CourseGuide {
+  overview: string;
+  signature: string;
+  holes: Record<string, string>; // "1".."18" -> note
+}
+
+export function cleanGuide(g: unknown): CourseGuide | null {
+  if (!g || typeof g !== "object") return null;
+  const x = g as Partial<CourseGuide>;
+  const holes: Record<string, string> = {};
+  for (const [k, v] of Object.entries(x.holes ?? {})) {
+    const n = Number(k);
+    if (Number.isInteger(n) && n >= 1 && n <= 18 && typeof v === "string" && v.trim()) holes[String(n)] = v.trim().slice(0, 300);
+  }
+  const out = { overview: String(x.overview ?? "").trim().slice(0, 1500), signature: String(x.signature ?? "").trim().slice(0, 800), holes };
+  return out.overview || out.signature || Object.keys(holes).length ? out : null;
+}
+
 export interface HoleRowData {
   number: number;
   par: number;
@@ -72,6 +91,7 @@ export interface RoundRow {
   course_name: string;
   course_location: string | null;
   course_blurb: string | null;
+  course_guide?: CourseGuide | null;
   lat: number | null;
   lon: number | null;
   play_date: string | null;
