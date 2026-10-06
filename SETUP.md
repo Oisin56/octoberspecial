@@ -17,7 +17,7 @@ About 30 minutes. Do the steps in order. Never paste keys into a chat. They only
 
 ## 3. Vercel (hosting)
 1. Go to vercel.com and sign in with GitHub.
-2. **Add New → Project** and import the `october-special` repo.
+2. **Add New → Project** and import the `octoberspecial` repo.
 3. Before pressing Deploy, open **Environment Variables** and add these:
 
 | Name | Value |
