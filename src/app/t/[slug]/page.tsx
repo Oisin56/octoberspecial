@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useT } from "@/components/Providers";
 import { EmailSignup } from "@/components/EmailAdmin";
+import { cleanBody, cleanTitle } from "@/lib/cleanText";
 import { Board, Feed, GameStatus, Loading, RoundItem, Paras, dateLabel, pts } from "@/components/ui";
 import { formatLabel, toRoundCfg } from "@/lib/types";
 import { courseBySlug } from "@/data/courses";
@@ -98,8 +99,8 @@ export default function Home() {
                 {lead.kind === "preview" ? (lead.round_id ? "Preview" : "Tournament preview") : lead.kind === "report" ? "Report" : "Tournament review"}
                 {leadRound ? ` · Round ${leadRound.number}` : ""}
               </div>
-              <h2 style={{ fontSize: 30 }}>{lead.title}</h2>
-              <Paras text={leadRound ? lead.body.split(/\n\s*\n/).slice(0, 2).join("\n\n") : lead.body} />
+              <h2 style={{ fontSize: 30 }}>{cleanTitle(lead.title ?? "")}</h2>
+              <Paras text={leadRound ? cleanBody(lead.body).split(/\n\s*\n/).slice(0, 2).join("\n\n") : lead.body} />
               {leadRound && (
                 <p style={{ marginTop: 12 }}>
                   <Link className="btn secondary" href={href(`/rounds/${leadRound.number}`)}>

@@ -6,6 +6,7 @@ import { paletteFor } from "./themes";
 import type { AiPieceRow, TournamentRow } from "./types";
 import { COURSE_PHOTOS } from "@/data/course-photos";
 import { mediaUrl } from "./supabase";
+import { cleanBody, cleanTitle } from "./cleanText";
 
 /**
  * Email: previews and reports to subscribers, sent from the organiser's own mailbox
@@ -44,7 +45,7 @@ const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replac
 /** Same rule as the site: a short line with no full stop is a subheading. */
 function blocks(body: string): { head?: string; text?: string }[] {
   const out: { head?: string; text?: string }[] = [];
-  for (const p of body.split(/\n\s*\n/).filter((x) => x.trim())) {
+  for (const p of cleanBody(body).split(/\n\s*\n/).filter((x) => x.trim())) {
     const [first, ...rest] = p.split("\n");
     if (first.trim() && first.length < 60 && !/[.!?:,"”']$/.test(first.trim())) {
       out.push({ head: first.trim() });
@@ -60,7 +61,7 @@ export function pieceEmail(
   opts: { label: string; link: string; linkLabel: string; unsubscribe: string; site: string; image?: { src: string; alt: string; credit?: string } | null },
 ) {
   const p = paletteFor(t.theme, t.custom_colors);
-  const title = piece.title || opts.label;
+  const title = cleanTitle(piece.title ?? "") || opts.label;
   const bodyHtml = blocks(piece.body)
     .map((b) =>
       b.head

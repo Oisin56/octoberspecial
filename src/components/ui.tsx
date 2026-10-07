@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useT } from "./Providers";
+import { cleanBody, cleanTitle } from "@/lib/cleanText";
 import { CountUp, CourseImage, Icon } from "./visual";
 import { mediaUrl } from "@/lib/supabase";
 import { ballsOfGame, gameHole, type Game, type GameSummary, type SegmentResult } from "@/lib/engine";
@@ -459,7 +460,7 @@ export function BulletinCard({ piece }: { piece: AiPieceRow }) {
       <div className="who display">
         <span className="where">Live bulletin{round ? ` · R${round.number}` : ""}</span> · {timeAgo(piece.published_at ?? piece.created_at)}
       </div>
-      {piece.title && <h3 style={{ marginTop: 4 }}>{piece.title}</h3>}
+      {piece.title && <h3 style={{ marginTop: 4 }}>{cleanTitle(piece.title)}</h3>}
       <Paras text={piece.body} />
     </article>
   );
@@ -468,7 +469,7 @@ export function BulletinCard({ piece }: { piece: AiPieceRow }) {
 export function Paras({ text }: { text: string }) {
   return (
     <>
-      {text
+      {cleanBody(text)
         .split(/\n\s*\n/)
         .filter(Boolean)
         .flatMap((p, i) => {
@@ -501,7 +502,7 @@ export function Paras({ text }: { text: string }) {
 export function Article({ piece, label }: { piece: AiPieceRow; label: string }) {
   return (
     <article className="article">
-      <h2>{piece.title}</h2>
+      <h2>{cleanTitle(piece.title ?? "")}</h2>
       <div className="byline">
         {label} · {timeAgo(piece.published_at ?? piece.created_at)}
       </div>

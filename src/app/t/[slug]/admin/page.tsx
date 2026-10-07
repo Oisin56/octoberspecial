@@ -19,6 +19,7 @@ import { ReelBuilder } from "@/components/ReelBuilder";
 import { DirectorPanel } from "@/components/DirectorPanel";
 import { EmailTab, useSubscribers } from "@/components/EmailAdmin";
 import type { AiPieceRow } from "@/lib/types";
+import { cleanBody, cleanTitle } from "@/lib/cleanText";
 
 const TABS = [
   ["rounds", "Rounds"],
@@ -161,8 +162,8 @@ function Writing({ data, onSaved }: { data: AdminData; onSaved: () => void }) {
 
 function PieceEditor({ piece, onSaved, subscribers, mail }: { piece: AiPieceRow; onSaved: () => void; subscribers: number; mail: boolean }) {
   const { api } = useT();
-  const [title, setTitle] = useState(piece.title ?? "");
-  const [body, setBody] = useState(piece.body);
+  const [title, setTitle] = useState(cleanTitle(piece.title ?? ""));
+  const [body, setBody] = useState(cleanBody(piece.body));
   const [msg, setMsg] = useState<string | null>(null);
   const emailable = piece.kind !== "bulletin" && mail;
   const [email, setEmail] = useState(true);
