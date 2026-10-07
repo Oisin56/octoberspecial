@@ -130,6 +130,11 @@ export async function POST(req: Request) {
       const patch: Record<string, unknown> = {};
       for (const k of ["play_date", "tee_time", "status", "course_blurb"]) if (k in r) patch[k] = r[k] === "" ? null : r[k];
       if ("course_guide" in r) patch.course_guide = cleanGuide(r.course_guide);
+      if ("photo_path" in r) {
+        const pp = r.photo_path;
+        if (pp !== null && !(typeof pp === "string" && /^photo\/[a-z0-9-]+\/[0-9a-f-]+\.[a-z0-9]{2,5}$/i.test(pp))) return bad("Bad photo");
+        patch.photo_path = pp;
+      }
       if ("play" in r) {
         if (!PLAY.includes(r.play)) return bad("Unknown play type");
         patch.play = r.play;

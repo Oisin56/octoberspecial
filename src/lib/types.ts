@@ -92,6 +92,7 @@ export interface RoundRow {
   course_location: string | null;
   course_blurb: string | null;
   course_guide?: CourseGuide | null;
+  photo_path?: string | null;
   lat: number | null;
   lon: number | null;
   play_date: string | null;

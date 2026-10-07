@@ -5,6 +5,7 @@ import { useState } from "react";
 import { useT } from "@/components/Providers";
 import { Board, Comments, Feed, GameStatus, Loading, Scorecard, gameLine } from "@/components/ui";
 import { formatLabel, sideLabel, toRoundCfg } from "@/lib/types";
+import { RoundBanner } from "@/components/visual";
 
 export default function Live() {
   const { state, summary, session, href } = useT();
@@ -24,28 +25,24 @@ export default function Live() {
 
   return (
     <>
-      <div className="row" style={{ justifyContent: "space-between", marginBottom: 12 }}>
-        <div>
-          <h1>
-            {isLive ? "Live" : round.status === "complete" ? "Last round" : "Next round"}: R{round.number} {round.course_name}
-          </h1>
-          <p className="muted display" style={{ margin: "4px 0 0" }}>
-            {formatLabel(round)} · {cfg.games.length > 1 ? `${cfg.games.length} matches` : rs.holesPlayed ? `thru ${rs.games[0].holesPlayed}` : "not started"}
-          </p>
-        </div>
-        {session && (
-          <div className="row">
-            {canScoreAny && (
-              <Link className="btn" href={href(`/score?round=${round.number}`)}>
-                Enter scores
-              </Link>
-            )}
-            <Link className="btn secondary" href={href(`/post?round=${round.number}`)}>
-              Add a post
-            </Link>
-          </div>
+      <RoundBanner
+        compact
+        round={round}
+        kicker={isLive ? <span className="live-badge">Live</span> : <span className="hero-chip">{round.status === "complete" ? "Last round" : "Next round"}</span>}
+        title={`R${round.number} ${round.course_name}`}
+        meta={`${formatLabel(round)} · ${cfg.games.length > 1 ? `${cfg.games.length} matches` : rs.holesPlayed ? `thru ${rs.games[0].holesPlayed}` : "not started"}`}
+      >
+        {session && canScoreAny && (
+          <Link className="btn" href={href(`/score?round=${round.number}`)}>
+            Enter scores
+          </Link>
         )}
-      </div>
+        {session && (
+          <Link className="btn ghost" href={href(`/post?round=${round.number}`)}>
+            Add a post
+          </Link>
+        )}
+      </RoundBanner>
 
       {cfg.games.length > 1 && (
         <div className="round-list" style={{ marginBottom: 14 }}>

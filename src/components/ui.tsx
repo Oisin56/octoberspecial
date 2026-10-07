@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useT } from "./Providers";
+import { CountUp, CourseImage, Icon } from "./visual";
 import { mediaUrl } from "@/lib/supabase";
 import { ballsOfGame, gameHole, type Game, type GameSummary, type SegmentResult } from "@/lib/engine";
 import { shotsOnHole } from "@/lib/scoring";
@@ -50,11 +51,9 @@ function Tiles({ value, red, small }: { value: number; red?: boolean; small?: bo
   const s = pts(value);
   return (
     <span className="tiles" aria-label={`${s} points`}>
-      {s.split("").map((ch, i) => (
-        <span key={i} className={`tile${red ? " red" : ""}${small || ch === "½" || ch === "." ? " small" : ""}`}>
-          {ch}
-        </span>
-      ))}
+      <span className={`tile${red ? " red" : ""}${small ? " small" : ""}`}>
+        <CountUp value={value} format={pts} />
+      </span>
     </span>
   );
 }
@@ -77,6 +76,7 @@ export function Board() {
         .sort((a, b) => b.value - a.value);
   const best = Math.max(0, ...rows.map((r) => r.value));
   const leaders = rows.filter((r) => r.value === best);
+  const second = Math.max(0, ...rows.filter((r) => r.value < best).map((r) => r.value));
   const shown = rows.slice(0, 8);
   const small = shown.length > 3;
 
@@ -91,24 +91,51 @@ export function Board() {
       : null;
   const hasSidePoints = cfg.sideGames.some((g) => g.enabled && g.points > 0);
 
+  // Head-to-head: a tug-of-war bar over the whole pot
+  // Fixed sides (first player/team on the left) so the bar doesn't flip when the lead changes
+  const duel = rows.length === 2 ? (teamMode ? rows : cfg.players.map((p) => rows.find((r) => r.id === p.id)!)) : null;
+  const total = summary.pointsAvailable || 1;
+  const toWin = total / 2;
+
   return (
     <section className="board" aria-label="Overall standings">
-      <div className="board-title">{summary.complete ? "Final standings" : teamMode ? "Team points" : "Overall points"}</div>
+      <div className="board-top">
+        <div className="board-title">{summary.complete ? "Final standings" : teamMode ? "Team points" : "Overall points"}</div>
+        {live && <span className="live-badge">Live</span>}
+      </div>
       <div className="board-rows">
         {shown.map((r) => {
           const lead = leaders.length === 1 && leaders[0].id === r.id && best > 0;
           return (
-            <div className="board-row" key={r.id}>
-              <span className={`board-name${lead ? " leader" : ""}`} style={{ fontSize: small ? 22 : undefined }}>
-                {r.color && <span aria-hidden style={{ display: "inline-block", width: 12, height: 24, background: r.color, borderRadius: 2, marginRight: 10, verticalAlign: -3 }} />}
+            <div className={`board-row${lead ? " lead" : ""}`} key={r.id}>
+              <span className={`board-name${lead ? " leader" : ""}`} style={{ fontSize: small ? 24 : undefined }}>
+                {r.color && <span aria-hidden className="team-swatch" style={{ background: r.color }} />}
                 {r.name}
+                {lead && <span className="lead-tag">{second < best && rows.length > 1 ? `leads by ${pts(best - second)}` : "leads"}</span>}
               </span>
               <Tiles value={r.value} red={lead} small={small} />
             </div>
           );
         })}
-        {rows.length > shown.length && <div className="small" style={{ color: "#cfdcd3" }}>+{rows.length - shown.length} more on the leaderboard</div>}
+        {rows.length > shown.length && <div className="small" style={{ color: "var(--board-soft)" }}>+{rows.length - shown.length} more on the leaderboard</div>}
+        {leaders.length > 1 && best > 0 && <div className="lead-tag tie">All square at the top</div>}
       </div>
+
+      {duel && (
+        <div className="tug" aria-label={`${pts(toWin + 0.5)} points wins it`}>
+          <div className="tug-bar">
+            <span className="tug-a" style={{ width: `${(duel[0].value / total) * 100}%`, background: duel[0].color || undefined }} />
+            <span className="tug-b" style={{ width: `${(duel[1].value / total) * 100}%`, background: duel[1].color || undefined }} />
+            <span className="tug-mid" />
+          </div>
+          <div className="tug-labels">
+            <span>{duel[0].name}</span>
+            <span className="muted-on-dark">{pts(toWin + 0.5)} wins it</span>
+            <span>{duel[1].name}</span>
+          </div>
+        </div>
+      )}
+
       <div className="board-foot">
         <span>
           <b className="num">{pts(summary.pointsRemaining)}</b> points still to play for
@@ -118,7 +145,7 @@ export function Board() {
             Live: <b>R{live.number} {live.course_name}</b> · {liveLabel}
           </span>
         )}
-        {!summary.complete && hasSidePoints && <span className="small">Includes side games as they stand</span>}
+        {!summary.complete && hasSidePoints && <span className="small">Totals include side games as they stand</span>}
       </div>
       {summary.awards.length > 0 && (
         <div className="board-split" style={{ gridTemplateColumns: `repeat(${Math.min(3, summary.awards.length)}, 1fr)` }}>
@@ -136,16 +163,21 @@ function AwardCell({ kind, counts }: { kind: keyof typeof SIDE_GAME_LABEL; count
   const nameOf = (id: string) => cfg?.teams.find((t) => t.id === id)?.name ?? cfg?.players.find((p) => p.id === id)?.name ?? id;
   const ids = Object.keys(counts);
   let v: string;
+  const best = Math.max(0, ...ids.map((id) => counts[id]));
+  const top = ids.filter((id) => counts[id] === best);
   if (ids.length <= 2) v = ids.map((id) => counts[id]).join(" – ");
-  else {
-    const best = Math.max(...ids.map((id) => counts[id]));
-    const top = ids.filter((id) => counts[id] === best);
-    v = best === 0 ? "None yet" : `${top.length > 1 ? `${top.length} tied` : nameOf(top[0])} ${best}`;
-  }
+  else v = best === 0 ? "None yet" : `${top.length > 1 ? `${top.length} tied` : nameOf(top[0])} ${best}`;
+  const leader = best > 0 && top.length === 1 ? nameOf(top[0]) : null;
   return (
-    <div>
-      <div className="k">{SIDE_GAME_LABEL[kind]}</div>
-      <div className="v num">{v}</div>
+    <div className="award">
+      <span className="award-icon">
+        <Icon kind={kind} />
+      </span>
+      <div>
+        <div className="k">{SIDE_GAME_LABEL[kind]}</div>
+        <div className="v num">{v}</div>
+        {ids.length <= 2 && <div className="w">{leader ? `${leader} ahead` : best > 0 ? "level" : "none yet"}</div>}
+      </div>
     </div>
   );
 }
@@ -564,25 +596,25 @@ export function RoundItem({ round, index }: { round: RoundRow; index: number }) 
     rcfg.scoring === "skins"
       ? null
       : rcfg.games.reduce((t, g) => t + (g.sides.length > 2 && rcfg.points.positions?.length ? rcfg.points.front + rcfg.points.back + rcfg.points.positions.reduce((a, b) => a + b, 0) : rcfg.points.front + rcfg.points.back + rcfg.points.full), 0);
+  const status = round.status === "live" ? "live" : round.status === "complete" ? "final" : played ? "in progress" : "upcoming";
   return (
-    <Link href={href(`/rounds/${round.number}`)} className="round-item">
-      <span className="round-no" aria-label={`Round ${round.number}`}>
-        {round.number}
-      </span>
-      <span>
-        <span className="display" style={{ fontSize: 21, fontWeight: 700, display: "block" }}>
-          {round.course_name}
+    <Link href={href(`/rounds/${round.number}`)} className={`round-card ${round.status}`}>
+      <span className="round-img">
+        <CourseImage round={round} sizes="(min-width: 820px) 300px, 100vw" />
+        <span className="round-badge" aria-label={`Round ${round.number}`}>
+          R{round.number}
         </span>
+        <span className={`round-status ${status === "live" ? "live" : status === "final" ? "final" : ""}`}>{status === "live" ? "Live" : status === "final" ? "Final" : status === "in progress" ? "In progress" : dateLabel(round.play_date)}</span>
+        {total != null && <span className="round-stake">{pts(total)} pts</span>}
+      </span>
+      <span className="round-body">
+        <span className="round-name">{round.course_name}</span>
         <span className="meta">
           {formatLabel(round)}
-          {total != null ? ` · ${pts(total)} pts` : ""} · {dateLabel(round.play_date)}
           {rcfg.games.length > 1 ? ` · ${rcfg.games.length} matches` : ""}
+          {status !== "upcoming" ? ` · ${dateLabel(round.play_date)}` : ""}
         </span>
-      </span>
-      <span className="res">
-        {round.status === "live" && <span className="pill live">Live</span>}
-        {round.status === "upcoming" && !played && <span className="pill">Upcoming</span>}
-        {round.status !== "live" && played && <span className="num">{result}</span>}
+        {result && <span className="round-result num">{result}</span>}
       </span>
     </Link>
   );

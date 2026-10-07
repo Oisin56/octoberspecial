@@ -6,6 +6,7 @@ import { pts } from "./ui";
 import type { Game, HandicapRule, PlayType, PointsRule, ScoringType, SideGameCfg, Team } from "@/lib/engine";
 import { ONE_BALL, roundPointsAvailable } from "@/lib/engine";
 import { GUIDES } from "@/data/course-guides";
+import { CourseImage, roundPhoto } from "./visual";
 import type { CourseGuide } from "@/lib/types";
 import {
   PLAY_LABEL,
@@ -791,6 +792,8 @@ function RoundCard({ round, data, onSaved }: { round: RoundRow; data: AdminData;
           </h4>
           <GamesBuilder play={f.play} games={games} setGames={setGames} players={players} teams={teams} />
 
+          <RoundPhoto round={round} onSaved={onSaved} />
+
           <button type="button" className="chip" aria-pressed={showCard} onClick={() => setShowCard(!showCard)}>
             {showCard ? "Hide card" : "Check par and stroke index"}
           </button>
@@ -823,6 +826,51 @@ function RoundCard({ round, data, onSaved }: { round: RoundRow; data: AdminData;
         </>
       )}
     </section>
+  );
+}
+
+/** The course photo shown on cards and banners: upload your own or use the credited free one. */
+function RoundPhoto({ round, onSaved }: { round: RoundRow; onSaved: () => void }) {
+  const { api } = useT();
+  const s = useSave();
+  const [busy, setBusy] = useState(false);
+  async function pick(file: File | undefined) {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) return s.setMsg("Choose a photo (JPG or PNG)");
+    setBusy(true);
+    try {
+      const path = await uploadFile(api, file);
+      const r = await s.run({ action: "saveRound", round: { id: round.id, photo_path: path } }, "Photo saved");
+      if (r.ok) onSaved();
+    } catch (e) {
+      s.setMsg(e instanceof Error ? e.message : "Upload failed");
+    }
+    setBusy(false);
+  }
+  return (
+    <div className="row" style={{ alignItems: "center" }}>
+      <span className="round-img" style={{ width: 160, borderRadius: 10, flex: "0 0 auto" }}>
+        <CourseImage round={round} sizes="160px" />
+      </span>
+      <div className="stack" style={{ flex: "1 1 200px" }}>
+        <span className="display" style={{ fontWeight: 600 }}>Course photo</span>
+        <span className="small muted">
+          {round.photo_path ? "Your photo." : roundPhoto(round) ? "A free-licence photo, credited on the site. Upload your own to replace it." : "No photo yet: a designed placeholder is shown."}
+        </span>
+        <div className="row">
+          <label className="btn secondary" style={{ cursor: "pointer" }}>
+            {busy ? "Uploading…" : "Upload a photo"}
+            <input type="file" accept="image/*" hidden onChange={(e) => pick(e.target.files?.[0])} />
+          </label>
+          {round.photo_path && (
+            <button type="button" className="chip" onClick={async () => (await s.run({ action: "saveRound", round: { id: round.id, photo_path: null } }, "Photo removed")).ok && onSaved()}>
+              Use the default
+            </button>
+          )}
+          <Msg msg={s.msg} />
+        </div>
+      </div>
+    </div>
   );
 }
 

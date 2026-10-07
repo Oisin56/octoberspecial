@@ -7,6 +7,7 @@ import { Article, Comments, Feed, GameStatus, Loading, Scorecard, dateLabel, pts
 import { PLAY_LABEL, SCORING_LABEL, ballName, toRoundCfg } from "@/lib/types";
 import { courseBySlug } from "@/data/courses";
 import { GUIDES } from "@/data/course-guides";
+import { RoundBanner } from "@/components/visual";
 import { mediaUrl } from "@/lib/supabase";
 import { gameShots } from "@/lib/engine";
 
@@ -42,16 +43,26 @@ export default function RoundPage({ params }: { params: Promise<{ n: string }> }
 
   return (
     <>
-      <p className="display muted" style={{ margin: 0 }}>
-        Round {round.number} of {state.rounds.length} · {dateLabel(round.play_date)}
-        {round.tee_time ? ` · ${round.tee_time}` : ""}
-      </p>
-      <h1>{round.course_name}</h1>
-      <p className="display" style={{ fontSize: 18, margin: "4px 0 12px" }}>
-        {cfg.play === "singles" ? SCORING_LABEL[cfg.scoring] : `${PLAY_LABEL[cfg.play]}, ${SCORING_LABEL[cfg.scoring].toLowerCase()}`} · {pointsLine} · Par {par}
-        {yards ? ` · ${yards.toLocaleString()} yds (${round.tee})` : ""}
-        {hcp ? ` · ${hcp}` : ""}
-      </p>
+      <RoundBanner
+        round={round}
+        kicker={
+          <>
+            {round.status === "live" ? <span className="live-badge">Live</span> : <span className="hero-chip">{round.status === "complete" ? "Final" : "Round " + round.number}</span>}
+            <span>
+              Round {round.number} of {state.rounds.length} · {dateLabel(round.play_date)}
+              {round.tee_time ? ` · ${round.tee_time.slice(0, 5)}` : ""}
+            </span>
+          </>
+        }
+        title={round.course_name}
+        meta={
+          <>
+            {cfg.play === "singles" ? SCORING_LABEL[cfg.scoring] : `${PLAY_LABEL[cfg.play]}, ${SCORING_LABEL[cfg.scoring].toLowerCase()}`} · {pointsLine} · Par {par}
+            {yards ? ` · ${yards.toLocaleString()} yds (${round.tee})` : ""}
+          </>
+        }
+      />
+      {hcp && <p className="display muted" style={{ margin: "0 0 12px" }}>{hcp}</p>}
 
       <div className="stack">
         {cfg.games.map((g, i) => {

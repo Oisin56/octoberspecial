@@ -10,7 +10,7 @@ export default function Rounds() {
     <>
       <h1 style={{ marginBottom: 14 }}>The rounds</h1>
       {state.rounds.length === 0 && <p className="muted">No rounds set up yet.</p>}
-      <div className="round-list">
+      <div className="round-grid">
         {state.rounds.map((r, i) => (
           <RoundItem key={r.id} round={r} index={i} />
         ))}

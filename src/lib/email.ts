@@ -4,6 +4,8 @@ import { createHash } from "node:crypto";
 import { adminClient } from "./admin";
 import { paletteFor } from "./themes";
 import type { AiPieceRow, TournamentRow } from "./types";
+import { COURSE_PHOTOS } from "@/data/course-photos";
+import { mediaUrl } from "./supabase";
 
 /**
  * Email: previews and reports to subscribers, sent from the organiser's own mailbox
@@ -55,7 +57,7 @@ function blocks(body: string): { head?: string; text?: string }[] {
 export function pieceEmail(
   t: TournamentRow,
   piece: Pick<AiPieceRow, "kind" | "title" | "body">,
-  opts: { label: string; link: string; linkLabel: string; unsubscribe: string; site: string },
+  opts: { label: string; link: string; linkLabel: string; unsubscribe: string; site: string; image?: { src: string; alt: string; credit?: string } | null },
 ) {
   const p = paletteFor(t.theme, t.custom_colors);
   const title = piece.title || opts.label;
@@ -70,6 +72,7 @@ export function pieceEmail(
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${p.mist}"><tr><td align="center" style="padding:20px 12px">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;background:#ffffff;border-radius:8px;overflow:hidden">
 <tr><td style="background:${p.board};color:${p.tile};padding:18px 24px;font-family:Arial Narrow,Arial,sans-serif;font-size:24px;font-weight:bold">${esc(t.name)}</td></tr>
+${opts.image ? `<tr><td style="padding:0"><img src="${esc(opts.image.src)}" alt="${esc(opts.image.alt)}" width="600" style="display:block;width:100%;max-width:600px;height:auto;border:0">${opts.image.credit ? `<div style="font-family:Arial,sans-serif;font-size:11px;color:#888;padding:4px 24px 0">${esc(opts.image.credit)}</div>` : ""}</td></tr>` : ""}
 <tr><td style="padding:22px 24px 8px">
 <div style="font-family:Arial Narrow,Arial,sans-serif;font-size:14px;text-transform:uppercase;letter-spacing:1px;color:${p.red}">${esc(opts.label)}</div>
 <h1 style="font-family:Arial Narrow,Arial,sans-serif;font-size:28px;line-height:1.15;margin:6px 0 16px;color:${p.ink}">${esc(title)}</h1>
@@ -120,7 +123,14 @@ export async function emailPiece(t: TournamentRow, pieceId: string, site: string
   const db = adminClient();
   const { data: piece } = await db.from("ai_pieces").select("*").eq("id", pieceId).eq("tournament_id", t.id).single();
   if (!piece) throw new Error("Piece not found");
-  const round = piece.round_id ? (await db.from("rounds").select("number").eq("id", piece.round_id).single()).data : null;
+  const round = piece.round_id ? (await db.from("rounds").select("number,course_slug,course_name,photo_path").eq("id", piece.round_id).single()).data : null;
+  // Course photo at the top: the organiser's upload, else the credited free-licence photo via the site's image service
+  let image: { src: string; alt: string; credit?: string } | null = null;
+  if (round?.photo_path) image = { src: mediaUrl(round.photo_path)!, alt: round.course_name };
+  else if (round) {
+    const ph = COURSE_PHOTOS[String(round.course_slug).replace(/^local:/, "")];
+    if (ph) image = { src: `${site}/_next/image?url=${encodeURIComponent(ph.src)}&w=1200&q=75`, alt: ph.alt, credit: `Photo © ${ph.author}, ${ph.licence}` };
+  }
   const label = piece.kind === "preview" && !round ? "Tournament preview" : `${LABEL[piece.kind as AiPieceRow["kind"]]}${round ? ` · Round ${round.number}` : ""}`;
   const base = `${site}/t/${t.slug}`;
   const link = round ? `${base}/rounds/${round.number}` : base;
@@ -137,7 +147,7 @@ export async function emailPiece(t: TournamentRow, pieceId: string, site: string
   for (const s of list) {
     const unsubscribe = `${site}/api/unsubscribe?token=${s.token}`;
     try {
-      await sendOne(t, s.email, pieceEmail(t, piece, { label, link, linkLabel, unsubscribe, site }), unsubscribe);
+      await sendOne(t, s.email, pieceEmail(t, piece, { label, link, linkLabel, unsubscribe, site, image }), unsubscribe);
       sent++;
     } catch {
       failed.push(s.email);
