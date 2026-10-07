@@ -7,6 +7,11 @@ import type { AiPieceRow, TournamentRow } from "./types";
 import { COURSE_PHOTOS } from "@/data/course-photos";
 import { mediaUrl } from "./supabase";
 import { cleanBody, cleanTitle } from "./cleanText";
+import { newsletterEmail, type NewsletterData } from "./newsletter";
+import { loadServerState } from "./server-data";
+import { courseInfo, forecast } from "./ai";
+import { roundPointsAvailable, tournamentSummary } from "./engine";
+import { SIDE_GAME_LABEL, formatLabel, sideLabel, toEntries, toRoundCfg, toTournamentCfg } from "./types";
 
 /**
  * Email: previews and reports to subscribers, sent from the organiser's own mailbox
@@ -120,22 +125,152 @@ export async function sendOne(t: TournamentRow, to: string, msg: { subject: stri
 const LABEL: Record<AiPieceRow["kind"], string> = { preview: "Preview", report: "Match report", tournament: "Tournament review", bulletin: "Live bulletin" };
 
 /** Email a published piece to every active subscriber. Returns how many were sent. */
+/** Gather everything the newsletter shows, from the live tournament state. */
+export async function buildNewsletter(t: TournamentRow, piece: AiPieceRow, site: string, unsubscribe: string, issue: number) {
+  const st = await loadServerState(t.id);
+  const cfg = toTournamentCfg(st);
+  const summary = tournamentSummary(cfg, toEntries(st.entries));
+  const round = piece.round_id ? st.rounds.find((r) => r.id === piece.round_id) ?? null : null;
+  const fmt = (n: number) => (Number.isInteger(n) ? String(n) : Math.abs(n - Math.floor(n) - 0.5) < 1e-9 ? `${Math.floor(n)}½` : n.toFixed(1));
+  const base = `${site}/t/${t.slug}`;
+
+  // Hero image: the round's photo, else the tournament header, else round 1's
+  const photoFor = (r: { course_slug: string; course_name: string; photo_path?: string | null } | null) => {
+    if (!r) return null;
+    if (r.photo_path) return { src: mediaUrl(r.photo_path)!, alt: r.course_name };
+    const ph = COURSE_PHOTOS[String(r.course_slug).replace(/^local:/, "")];
+    return ph ? { src: `${site}/_next/image?url=${encodeURIComponent(ph.src)}&w=1200&q=75`, alt: ph.alt, credit: `Photo © ${ph.author}, ${ph.licence}` } : null;
+  };
+  const hero = photoFor(round) ?? (t.hero_path ? { src: mediaUrl(t.hero_path)!, alt: t.name } : null) ?? photoFor(st.rounds[0] ?? null);
+
+  // Standings
+  const teamMode = cfg.teams.length >= 2;
+  const useProjected = !summary.complete;
+  const rows = (teamMode
+    ? cfg.teams.map((tm) => ({ id: tm.id, name: tm.name, v: useProjected ? summary.teamProjected[tm.id] : summary.teamTotal[tm.id] }))
+    : cfg.players.map((p) => ({ id: p.id, name: p.name, v: useProjected ? summary.playerProjected[p.id] : summary.playerTotal[p.id] }))
+  ).sort((a, b) => b.v - a.v);
+  const best = rows[0]?.v ?? 0;
+  const leaders = rows.filter((r) => r.v === best);
+  const second = rows.find((r) => r.v < best)?.v ?? 0;
+  const anyPoints = rows.some((r) => r.v > 0);
+  const leadLine = !anyPoints ? null : leaders.length > 1 ? "level at the top" : `leads by ${fmt(best - second)}`;
+  const duel = rows.length === 2 ? (teamMode ? cfg.teams.map((tm) => rows.find((r) => r.id === tm.id)!) : cfg.players.map((p) => rows.find((r) => r.id === p.id)!)) : null;
+  const total = summary.pointsAvailable || 1;
+
+  const nameOf = (id: string) => cfg.teams.find((x) => x.id === id)?.name ?? cfg.players.find((x) => x.id === id)?.name ?? id;
+  const awards = summary.awards
+    .filter((a) => ["ctp", "ld", "gir"].includes(a.kind))
+    .map((a) => {
+      const ids = Object.keys(a.counts);
+      const top = Math.max(0, ...ids.map((i) => a.counts[i]));
+      const lead = ids.filter((i) => a.counts[i] === top);
+      return {
+        label: SIDE_GAME_LABEL[a.kind as keyof typeof SIDE_GAME_LABEL],
+        value: ids.length <= 2 ? ids.map((i) => a.counts[i]).join(" – ") : top ? `${nameOf(lead[0])} ${top}` : "None yet",
+        note: top === 0 ? "none yet" : lead.length > 1 ? "level" : `${nameOf(lead[0])} ahead`,
+      };
+    });
+
+  // Round card (previews and reports)
+  let roundCard: NewsletterData["roundCard"] = null;
+  let results: NewsletterData["results"] = null;
+  if (round) {
+    const rc = toRoundCfg(round, st.players);
+    const info = courseInfo(round);
+    const card: [string, string][] = [["Course", `${round.course_name}${info.location ? `, ${info.location}` : ""}`]];
+    card.push(["Format", `${formatLabel(round)} · ${fmt(roundPointsAvailable(rc))} points`]);
+    if (round.play_date)
+      card.push([piece.kind === "report" ? "Played" : "Tee time", `${new Date(round.play_date + "T12:00:00").toLocaleDateString("en-IE", { weekday: "long", day: "numeric", month: "long" })}${round.tee_time ? `, ${round.tee_time.slice(0, 5)}` : ""}`]);
+    if (piece.kind === "preview" && round.status !== "complete") {
+      const days = round.play_date ? (new Date(round.play_date + "T12:00:00").getTime() - Date.now()) / 864e5 : 99;
+      if (days > -1 && days < 6) {
+        const f = await forecast(info.lat, info.lon, round.course_name, round.play_date);
+        if (!/unavailable/i.test(f)) card.push(["Forecast", f.replace(/^[^:]+:\s*/, "").replace(/\.$/, "")]);
+      }
+    }
+    const sig = info.guide?.signature?.match(/^[^.]+\./)?.[0];
+    if (sig && piece.kind === "preview") card.push(["Hole to watch", sig]);
+    roundCard = { heading: `Round ${round.number} at a glance`, rows: card };
+
+    if (piece.kind === "report") {
+      const ri = st.rounds.indexOf(round);
+      const rs = summary.rounds[ri];
+      const out: [string, string, string][] = [];
+      rc.games.forEach((g, gi) => {
+        const gs = rs?.games[gi];
+        if (!gs) return;
+        const side = (id: string) => sideLabel(id, g, st.players);
+        const prefix = rc.games.length > 1 ? `${g.name ?? `Match ${gi + 1}`}: ` : "";
+        const segs: [string, typeof gs.front][] = rc.scoring === "skins" ? [["Skins", gs.full]] : [["Front 9", gs.front], ["Back 9", gs.back], ["18 holes", gs.full]];
+        for (const [label, seg] of segs) {
+          if (!seg.holesPlayed) continue;
+          const res = seg.matchLabel ?? seg.ranking.map((r) => `${side(r.sideId)} ${fmt(r.value)}`).join(" · ");
+          const won = Object.entries(seg.points).filter(([, v]) => v > 0).map(([id, v]) => `${side(id)} +${fmt(v)}`).join(", ");
+          out.push([prefix + label, res, seg.complete ? won || "—" : "in play"]);
+        }
+      });
+      const tal = rs?.tallies;
+      if (tal) {
+        const line = (k: "ctp" | "ld" | "gir" | "birdies") =>
+          cfg.players.map((p) => `${p.name} ${tal[k][p.id] ?? 0}`).join(" · ");
+        out.push(["CTP", line("ctp"), ""], ["Long drive", line("ld"), ""], ["GIR", line("gir"), ""], ["Birdies", line("birdies"), ""]);
+      }
+      results = { heading: `Round ${round.number} results`, rows: out };
+    }
+  }
+
+  // Highlight clip from the round (most votes, else latest)
+  let highlight: NewsletterData["highlight"] = null;
+  if (round) {
+    const clips = st.posts.filter((p) => p.round_id === round.id && p.kind === "video" && p.media_path && !p.hidden && !(p.body ?? "").startsWith("Highlights reel"));
+    if (clips.length) {
+      const votes = (id: string) => st.votes.filter((v) => v.post_id === id).length;
+      const c = [...clips].sort((a, b) => votes(b.id) - votes(a.id) || b.created_at.localeCompare(a.created_at))[0];
+      const who = (c.player_ids ?? []).map((id) => st.players.find((p) => p.id === id)?.name).filter(Boolean).join(" & ") || c.author_name;
+      highlight = { caption: `${c.hole ? `Hole ${c.hole} · ` : ""}${who}${c.body ? `: ${c.body.slice(0, 60)}` : ""}`, link: `${base}/highlights?round=${round.number}` };
+    }
+  }
+
+  const label = piece.kind === "preview" && !round ? "Tournament preview" : `${LABEL[piece.kind]}${round ? ` · Round ${round.number}` : ""}`;
+  const data: NewsletterData = {
+    tournamentName: t.name,
+    palette: paletteFor(t.theme, t.custom_colors),
+    logo: mediaUrl(t.logo_path),
+    issue,
+    dateLabel: new Date().toLocaleDateString("en-IE", { day: "numeric", month: "long", year: "numeric" }),
+    label,
+    kind: piece.kind,
+    title: piece.title ?? label,
+    body: piece.body,
+    hero,
+    standings: rows.slice(0, 6).map((r) => ({ name: r.name, value: fmt(r.v), lead: anyPoints && leaders.length === 1 && r.id === leaders[0].id })),
+    standingsTitle: summary.complete ? "Final standings" : anyPoints ? "Overall points" : `${fmt(summary.pointsAvailable)} points to play for`,
+    leadLine,
+    tug: duel && anyPoints ? { left: duel[0].name, right: duel[1].name, leftPct: (duel[0].v / total) * 100, rightPct: (duel[1].v / total) * 100, target: `${fmt(total / 2 + 0.5)} wins it` } : null,
+    awards: anyPoints ? awards : [],
+    roundCard,
+    results,
+    highlight,
+    links: {
+      primary: { label: round && piece.kind === "report" ? "Full scorecard" : "Follow it live", href: round ? `${base}/rounds/${round.number}` : base },
+      secondary: { label: "Leaderboard", href: `${base}/leaderboard` },
+    },
+    siteHref: base,
+    siteLabel: base.replace(/^https?:\/\//, ""),
+    promoHref: site,
+    unsubscribe,
+  };
+  return newsletterEmail(data);
+}
+
+/** Email a published piece to every active subscriber. Returns how many were sent. */
 export async function emailPiece(t: TournamentRow, pieceId: string, site: string, onlyTo?: string) {
   const db = adminClient();
   const { data: piece } = await db.from("ai_pieces").select("*").eq("id", pieceId).eq("tournament_id", t.id).single();
   if (!piece) throw new Error("Piece not found");
-  const round = piece.round_id ? (await db.from("rounds").select("number,course_slug,course_name,photo_path").eq("id", piece.round_id).single()).data : null;
-  // Course photo at the top: the organiser's upload, else the credited free-licence photo via the site's image service
-  let image: { src: string; alt: string; credit?: string } | null = null;
-  if (round?.photo_path) image = { src: mediaUrl(round.photo_path)!, alt: round.course_name };
-  else if (round) {
-    const ph = COURSE_PHOTOS[String(round.course_slug).replace(/^local:/, "")];
-    if (ph) image = { src: `${site}/_next/image?url=${encodeURIComponent(ph.src)}&w=1200&q=75`, alt: ph.alt, credit: `Photo © ${ph.author}, ${ph.licence}` };
-  }
-  const label = piece.kind === "preview" && !round ? "Tournament preview" : `${LABEL[piece.kind as AiPieceRow["kind"]]}${round ? ` · Round ${round.number}` : ""}`;
-  const base = `${site}/t/${t.slug}`;
-  const link = round ? `${base}/rounds/${round.number}` : base;
-  const linkLabel = piece.kind === "report" || piece.kind === "tournament" ? "See the scorecards and standings" : "Follow it live";
+  const { count } = await db.from("ai_pieces").select("id", { count: "exact", head: true }).eq("tournament_id", t.id).not("emailed_at", "is", null);
+  const issue = (count ?? 0) + (piece.emailed_at ? 0 : 1);
 
   let list: { email: string; token: string }[];
   if (onlyTo) list = [{ email: onlyTo, token: "test" }];
@@ -143,12 +278,16 @@ export async function emailPiece(t: TournamentRow, pieceId: string, site: string
     const { data } = await db.from("subscribers").select("email,token").eq("tournament_id", t.id).is("unsubscribed_at", null);
     list = data ?? [];
   }
+  // Build once; only the unsubscribe link differs per person
+  const marker = "__UNSUB__";
+  const tpl = await buildNewsletter(t, piece as AiPieceRow, site, marker, issue);
   let sent = 0;
   const failed: string[] = [];
   for (const s of list) {
     const unsubscribe = `${site}/api/unsubscribe?token=${s.token}`;
+    const msg = { subject: tpl.subject, html: tpl.html.split(marker).join(unsubscribe), text: tpl.text.split(marker).join(unsubscribe) };
     try {
-      await sendOne(t, s.email, pieceEmail(t, piece, { label, link, linkLabel, unsubscribe, site, image }), unsubscribe);
+      await sendOne(t, s.email, msg, unsubscribe);
       sent++;
     } catch {
       failed.push(s.email);
