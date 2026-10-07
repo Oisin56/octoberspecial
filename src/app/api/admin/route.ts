@@ -383,6 +383,25 @@ export async function POST(req: Request) {
       return json({ ok: true, added, invalid: bad_ });
     }
 
+    case "resetTestData": {
+      // Clears play and content; keeps players, PINs, rounds set-up, course guides, photos and the email list
+      if (b.confirm !== "RESET") return bad("Type RESET to confirm");
+      const { data: rs } = await db.from("rounds").select("id").eq("tournament_id", t.id);
+      const ids = (rs ?? []).map((r) => r.id);
+      if (ids.length) {
+        for (const table of ["hole_entries", "attestations"]) {
+          const { error } = await db.from(table).delete().in("round_id", ids);
+          if (error) return bad(error.message, 500);
+        }
+      }
+      for (const table of ["votes", "comments", "posts", "ai_pieces", "reels"]) {
+        const { error } = await db.from(table).delete().eq("tournament_id", t.id);
+        if (error) return bad(error.message, 500);
+      }
+      await db.from("rounds").update({ status: "upcoming" }).eq("tournament_id", t.id);
+      return json({ ok: true });
+    }
+
     case "removeSubscriber": {
       await db.from("subscribers").delete().eq("id", b.id).eq("tournament_id", t.id);
       return json({ ok: true });

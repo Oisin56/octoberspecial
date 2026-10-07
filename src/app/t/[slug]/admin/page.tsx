@@ -9,6 +9,7 @@ import {
   ContentEditor,
   InviteEditor,
   PlayersEditor,
+  ResetTestData,
   RoundsEditor,
   SideGamesEditor,
   useAdmin,
@@ -77,7 +78,12 @@ export default function Admin() {
       {tab === "sides" && <SideGamesEditor data={data} onSaved={reload} />}
       {tab === "look" && <BasicsEditor data={data} onSaved={reload} />}
       {tab === "content" && <ContentEditor data={data} onSaved={reload} />}
-      {tab === "invite" && <InviteEditor data={data} onSaved={reload} />}
+      {tab === "invite" && (
+        <>
+          <InviteEditor data={data} onSaved={reload} />
+          <ResetTestData onSaved={reload} />
+        </>
+      )}
     </div>
   );
 }

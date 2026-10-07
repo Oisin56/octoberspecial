@@ -83,7 +83,7 @@ async function uploadFile(api: ReturnType<typeof useT>["api"], file: File): Prom
 
 function Msg({ msg }: { msg: string | null }) {
   if (!msg) return null;
-  return <span className={`display ${/saved|added|published|deleted|ready/i.test(msg) ? "" : "error"}`}>{msg}</span>;
+  return <span className={`display ${/saved|added|published|deleted|ready|done|removed/i.test(msg) ? "" : "error"}`}>{msg}</span>;
 }
 
 // ============================================================ 1. basics
@@ -1330,6 +1330,42 @@ export function InviteEditor({ data, onSaved }: { data: AdminData; onSaved: () =
       <p className="small muted" style={{ margin: 0 }}>
         {t.published ? "Published: anyone with the link can follow." : "Not published yet: it won't appear in the tournament list, but the link still works for testing."}
       </p>
+    </section>
+  );
+}
+
+/** Clear test scores and content before the real thing. */
+export function ResetTestData({ onSaved }: { onSaved: () => void }) {
+  const s = useSave();
+  const [word, setWord] = useState("");
+  async function reset() {
+    const r = await s.run({ action: "resetTestData", confirm: word.trim().toUpperCase() }, "Reset done: scores and content cleared");
+    if (r.ok) {
+      setWord("");
+      try {
+        localStorage.removeItem("os_score_queue_v2"); // unsent test scores on this phone
+      } catch {}
+      onSaved();
+    }
+  }
+  return (
+    <section className="panel stack" style={{ borderColor: "color-mix(in srgb, var(--red) 40%, var(--rule))" }}>
+      <h2>Reset test data</h2>
+      <p className="small" style={{ margin: 0 }}>
+        Clears all scores, sign-offs, posts, photos and videos, comments, votes, AI previews, bulletins and reports, and highlights films. Every round goes back to
+        upcoming. <strong>Kept:</strong> players, PINs and profiles, each round&apos;s set-up (dates, handicaps, matches, scorecard), course guides and photos, and
+        the email list. Emails already sent can&apos;t be unsent. This can&apos;t be undone.
+      </p>
+      <div className="row">
+        <label className="field" style={{ flex: "0 1 220px" }}>
+          <span className="lbl">Type RESET to confirm</span>
+          <input value={word} onChange={(e) => setWord(e.target.value)} autoComplete="off" autoCapitalize="characters" />
+        </label>
+        <button className="btn danger" style={{ alignSelf: "flex-end" }} disabled={s.busy || word.trim().toUpperCase() !== "RESET"} onClick={reset}>
+          Reset test data
+        </button>
+        <Msg msg={s.msg} />
+      </div>
     </section>
   );
 }
