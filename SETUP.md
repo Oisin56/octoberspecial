@@ -65,6 +65,18 @@ About 30 minutes. Do the steps in order. Never paste keys into a chat. They only
 ## Making a new tournament (another group, another year)
 Go to the site's address followed by `/new`, fill in the name and an organiser PIN, and enter your site owner PIN. The step-by-step setup then walks through look, players and teams, courses and formats, side games, writing style and invites. Each tournament gets its own address (`/t/its-name`) and its own PINs.
 
+## Email (previews and reports to followers)
+Emails are sent from your own iCloud address. Nothing to buy.
+1. Go to **appleid.apple.com → Sign-In and Security → App-Specific Passwords**, create one called "October Special" and copy it. (Your Apple ID needs two-factor authentication, which it almost certainly has.)
+2. In **Vercel → Settings → Environment Variables** add:
+   - `SMTP_USER`: your iCloud email address
+   - `SMTP_PASS`: the app-specific password (not your Apple ID password)
+   - `SITE_URL`: `https://octoberspecial.vercel.app`, so links in emails always go to the public site
+3. Run the latest `supabase/schema.sql` again (it adds the email list), then **Redeploy**.
+4. **Admin → Email list:** add people (one per line), or let them sign up on the home page.
+5. When you publish a preview, report or the tournament review, **Email it** is ticked: it goes to everyone on the list once. **Send me a test** sends it only to you first. Live bulletins are never emailed.
+- iCloud allows about 1,000 emails a day, plenty for a group of friends. Every email has an unsubscribe link.
+
 ## The AI director (Admin → Highlights film)
 1. Upload a music track once (royalty-free, e.g. Pixabay Music or Uppbeat).
 2. Choose the round or whole tournament, the length and the shape (landscape for TV, portrait for phones), then **Write the plan**.

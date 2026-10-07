@@ -20,6 +20,8 @@ export async function GET() {
     SHOTSTACK_API_KEY: !!process.env.SHOTSTACK_API_KEY,
     ELEVENLABS_API_KEY: !!process.env.ELEVENLABS_API_KEY,
     GEMINI_API_KEY: !!process.env.GEMINI_API_KEY,
+    SMTP_USER: !!process.env.SMTP_USER,
+    SMTP_PASS: !!process.env.SMTP_PASS,
     HOME_TOURNAMENT: process.env.HOME_TOURNAMENT || null,
   };
   const db: Record<string, unknown> = {};
@@ -33,6 +35,8 @@ export async function GET() {
     db.server_players = p.error ? `ERROR: ${p.error.message}` : p.count;
     const g = await a.from("rounds").select("id").not("course_guide", "is", null).limit(1);
     db.course_guides = g.error ? `ERROR: ${g.error.message} (run the latest schema.sql)` : g.data.length > 0;
+    const sub = await a.from("subscribers").select("id", { count: "exact", head: true });
+    db.subscribers = sub.error ? `ERROR: ${sub.error.message} (run the latest schema.sql)` : sub.count;
     const b = await a.storage.getBucket("media");
     db.media_bucket = b.error ? `ERROR: ${b.error.message}` : "ok";
   } catch (e) {

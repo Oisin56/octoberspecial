@@ -1,6 +1,7 @@
 import { adminClient } from "@/lib/admin";
 import { hashPin, isOrganiser } from "@/lib/auth";
-import { bad, context, json, loadServerState, slugify } from "@/lib/server-data";
+import { bad, context, json, loadServerState, siteOrigin, slugify } from "@/lib/server-data";
+import { EMAIL_RE, emailPiece, mailConfigured } from "@/lib/email";
 import { draftGuide, generatePiece, type PieceKind } from "@/lib/ai";
 import { cleanGuide } from "@/lib/types";
 import { getCourse } from "@/lib/courses";
@@ -318,6 +319,67 @@ export async function POST(req: Request) {
       }
       const { error } = await db.from("ai_pieces").update(patch).eq("id", b.id).eq("tournament_id", t.id);
       if (error) return bad(error.message, 500);
+      // Publishing a preview/report/review with "Email it" ticked: send once
+      if (b.status === "published" && b.email && mailConfigured()) {
+        const { data: pc } = await db.from("ai_pieces").select("kind,emailed_at").eq("id", b.id).single();
+        if (pc && pc.kind !== "bulletin" && !pc.emailed_at) {
+          try {
+            const r = await emailPiece(t, String(b.id), siteOrigin(req));
+            return json({ ok: true, emailed: r.sent, failed: r.failed.length });
+          } catch (e) {
+            return json({ ok: true, emailError: e instanceof Error ? e.message : "Email failed" });
+          }
+        }
+      }
+      return json({ ok: true });
+    }
+
+    case "emailPiece": {
+      if (!mailConfigured()) return bad("Email isn't set up yet: add SMTP_USER and SMTP_PASS in Vercel (see SETUP.md)", 500);
+      const { data: pc } = await db.from("ai_pieces").select("status").eq("id", b.id).eq("tournament_id", t.id).maybeSingle();
+      if (!pc) return bad("Not found", 404);
+      try {
+        if (b.test) {
+          const r = await emailPiece(t, String(b.id), siteOrigin(req), process.env.SMTP_USER!);
+          if (r.failed.length) return bad("The test email didn't send. Check SMTP_USER and SMTP_PASS (an app-specific password).", 500);
+          return json({ ok: true, sent: 1, test: true });
+        }
+        if (pc.status !== "published") return bad("Publish it first");
+        const r = await emailPiece(t, String(b.id), siteOrigin(req));
+        return json({ ok: true, sent: r.sent, failed: r.failed });
+      } catch (e) {
+        return bad(e instanceof Error ? e.message : "Email failed", 500);
+      }
+    }
+
+    case "subscribers": {
+      const { data } = await db.from("subscribers").select("id,name,email,added_by,created_at,unsubscribed_at").eq("tournament_id", t.id).order("created_at");
+      return json({ subscribers: data ?? [], configured: mailConfigured() });
+    }
+
+    case "addSubscribers": {
+      // One per line: "email" or "Name <email>" or "Name, email"
+      const lines = String(b.text ?? "").split(/\n|;/).map((l) => l.trim()).filter(Boolean).slice(0, 200);
+      const rows: { tournament_id: string; name: string | null; email: string; added_by: string }[] = [];
+      const bad_: string[] = [];
+      for (const l of lines) {
+        const m = l.match(/^(.*?)[\s,]*<?([^\s<>,]+@[^\s<>,]+)>?$/);
+        const email = m?.[2]?.toLowerCase();
+        if (!email || !EMAIL_RE.test(email)) bad_.push(l);
+        else rows.push({ tournament_id: t.id, name: m![1].replace(/[",]/g, "").trim() || null, email, added_by: "organiser" });
+      }
+      let added = 0;
+      for (const r of rows) {
+        const { data: ex } = await db.from("subscribers").select("id").eq("tournament_id", t.id).ilike("email", r.email).maybeSingle();
+        if (ex) await db.from("subscribers").update({ unsubscribed_at: null, ...(r.name ? { name: r.name } : {}) }).eq("id", ex.id);
+        else await db.from("subscribers").insert(r);
+        added++;
+      }
+      return json({ ok: true, added, invalid: bad_ });
+    }
+
+    case "removeSubscriber": {
+      await db.from("subscribers").delete().eq("id", b.id).eq("tournament_id", t.id);
       return json({ ok: true });
     }
 

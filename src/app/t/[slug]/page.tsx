@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useT } from "@/components/Providers";
+import { EmailSignup } from "@/components/EmailAdmin";
 import { Board, Feed, GameStatus, Loading, RoundItem, Paras, dateLabel, pts } from "@/components/ui";
 import { formatLabel, toRoundCfg } from "@/lib/types";
 import { courseBySlug } from "@/data/courses";
@@ -102,6 +103,8 @@ export default function Home() {
               </article>
             )
           )}
+
+          <EmailSignup />
 
           <h2 style={{ marginTop: 24 }}>The rounds</h2>
           <div className="round-list">

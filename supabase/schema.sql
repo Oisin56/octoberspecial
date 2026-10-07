@@ -253,6 +253,24 @@ create table if not exists reels (
 create index if not exists reels_t_idx on reels (tournament_id, created_at desc);
 alter table reels enable row level security;  -- organiser-only, via the server
 
+-- ------------------------------------------------------------ email subscribers (previews and reports by email)
+
+create table if not exists subscribers (
+  id uuid primary key default gen_random_uuid(),
+  tournament_id uuid not null references tournaments(id) on delete cascade,
+  name text,
+  email text not null,
+  token uuid not null default gen_random_uuid() unique,  -- for the unsubscribe link
+  added_by text not null default 'self',                -- 'self' | 'organiser'
+  ip_hash text,
+  created_at timestamptz not null default now(),
+  unsubscribed_at timestamptz
+);
+create unique index if not exists subscribers_email_uniq on subscribers (tournament_id, lower(email));
+alter table subscribers enable row level security;  -- server only: nobody can read the list from the browser
+alter table ai_pieces add column if not exists emailed_at timestamptz;
+alter table ai_pieces add column if not exists emailed_count int;
+
 -- ------------------------------------------------------------ access (explicit, for projects that don't grant by default)
 grant usage on schema public to anon, authenticated, service_role;
 grant all on all tables in schema public to service_role;
@@ -260,6 +278,7 @@ grant all on all sequences in schema public to service_role;
 grant select on rounds, hole_entries, attestations, posts, comments, ai_pieces, votes to anon, authenticated;
 grant select on public_tournaments, public_players to anon, authenticated;
 revoke all on reels from anon, authenticated;
+revoke all on subscribers from anon, authenticated;
 
 -- Tell the API about the new tables straight away
 notify pgrst, 'reload schema';

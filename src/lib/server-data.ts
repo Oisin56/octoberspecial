@@ -79,3 +79,12 @@ export function slugify(s: string) {
     .replace(/^-|-$/g, "")
     .slice(0, 48);
 }
+
+/** The site's public address, for links in emails. */
+export function siteOrigin(req: Request) {
+  if (process.env.SITE_URL) return process.env.SITE_URL.replace(/\/$/, "");
+  const u = new URL(req.url);
+  const host = req.headers.get("x-forwarded-host") ?? u.host;
+  const proto = req.headers.get("x-forwarded-proto") ?? u.protocol.replace(":", "");
+  return `${proto}://${host}`;
+}

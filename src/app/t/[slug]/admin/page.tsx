@@ -16,12 +16,14 @@ import {
 } from "@/components/editors";
 import { ReelBuilder } from "@/components/ReelBuilder";
 import { DirectorPanel } from "@/components/DirectorPanel";
+import { EmailTab, useSubscribers } from "@/components/EmailAdmin";
 import type { AiPieceRow } from "@/lib/types";
 
 const TABS = [
   ["rounds", "Rounds"],
   ["players", "Players and teams"],
   ["writing", "AI writing"],
+  ["email", "Email list"],
   ["moderate", "Moderate"],
   ["reel", "Highlights film"],
   ["sides", "Side games"],
@@ -64,6 +66,7 @@ export default function Admin() {
       {tab === "rounds" && <RoundsEditor data={data} onSaved={reload} />}
       {tab === "players" && <PlayersEditor data={data} onSaved={reload} />}
       {tab === "writing" && <Writing data={data} onSaved={reload} />}
+      {tab === "email" && <EmailTab />}
       {tab === "moderate" && <Moderate data={data} onSaved={reload} />}
       {tab === "reel" && (
         <>
@@ -99,6 +102,7 @@ function Writing({ data, onSaved }: { data: AdminData; onSaved: () => void }) {
     if (r.ok) onSaved();
   }
 
+  const subs = useSubscribers();
   const pieces = data.state.pieces.filter((p) => p.status !== "hidden" || p.body !== "(writing…)").filter((p) => p.round_id === roundId || !p.round_id);
 
   return (
@@ -143,21 +147,36 @@ function Writing({ data, onSaved }: { data: AdminData; onSaved: () => void }) {
         {msg && <p className="display">{msg}</p>}
       </section>
       {pieces.map((p) => (
-        <PieceEditor key={p.id} piece={p} onSaved={onSaved} />
+        <PieceEditor key={p.id} piece={p} onSaved={onSaved} subscribers={subs.active} mail={subs.configured} />
       ))}
     </div>
   );
 }
 
-function PieceEditor({ piece, onSaved }: { piece: AiPieceRow; onSaved: () => void }) {
+function PieceEditor({ piece, onSaved, subscribers, mail }: { piece: AiPieceRow; onSaved: () => void; subscribers: number; mail: boolean }) {
   const { api } = useT();
   const [title, setTitle] = useState(piece.title ?? "");
   const [body, setBody] = useState(piece.body);
   const [msg, setMsg] = useState<string | null>(null);
+  const emailable = piece.kind !== "bulletin" && mail;
+  const [email, setEmail] = useState(true);
+  const [busy, setBusy] = useState(false);
   async function upd(status?: AiPieceRow["status"]) {
-    const r = await api("/api/admin", { action: "aiUpdate", id: piece.id, title, body, status });
-    setMsg(r.ok ? (status === "published" ? "Published" : status === "hidden" ? "Hidden" : "Saved") : String(r.j.error ?? "Failed"));
+    setBusy(true);
+    const r = await api("/api/admin", { action: "aiUpdate", id: piece.id, title, body, status, email: emailable && email && subscribers > 0 });
+    setBusy(false);
+    const sent = r.j.emailed != null ? ` and emailed to ${r.j.emailed}${r.j.failed ? ` (${r.j.failed} failed)` : ""}` : r.j.emailError ? `, but the email failed: ${r.j.emailError}` : "";
+    setMsg(r.ok ? (status === "published" ? `Published${sent}` : status === "hidden" ? "Hidden" : "Saved") : String(r.j.error ?? "Failed"));
     if (r.ok) onSaved();
+  }
+  async function mailNow(test: boolean) {
+    if (!test && !confirm(`Email this to ${subscribers} subscriber${subscribers === 1 ? "" : "s"}?`)) return;
+    setBusy(true);
+    await api("/api/admin", { action: "aiUpdate", id: piece.id, title, body }); // send the text on screen
+    const r = await api("/api/admin", { action: "emailPiece", id: piece.id, test });
+    setBusy(false);
+    setMsg(r.ok ? (test ? "Test sent to you" : `Emailed to ${r.j.sent}`) : String(r.j.error ?? "Failed"));
+    if (r.ok && !test) onSaved();
   }
   return (
     <section className="panel stack">
@@ -169,10 +188,27 @@ function PieceEditor({ piece, onSaved }: { piece: AiPieceRow; onSaved: () => voi
       <textarea value={body} onChange={(e) => setBody(e.target.value)} style={{ minHeight: 220 }} aria-label="Text" />
       <div className="row">
         {piece.status !== "published" && (
-          <button className="btn" onClick={() => upd("published")}>
-            Publish
+          <button className="btn" disabled={busy} onClick={() => upd("published")}>
+            {busy ? "Publishing…" : emailable && email && subscribers > 0 ? "Publish and email" : "Publish"}
           </button>
         )}
+        {emailable && piece.status !== "published" && (
+          <label className="row small">
+            <input type="checkbox" checked={email} onChange={(e) => setEmail(e.target.checked)} style={{ width: 18, height: 18 }} />
+            Email it to {subscribers} subscriber{subscribers === 1 ? "" : "s"}
+          </label>
+        )}
+        {emailable && (
+          <button className="btn secondary" disabled={busy} onClick={() => mailNow(true)}>
+            Send me a test
+          </button>
+        )}
+        {emailable && piece.status === "published" && !piece.emailed_at && subscribers > 0 && (
+          <button className="btn secondary" disabled={busy} onClick={() => mailNow(false)}>
+            Email it now
+          </button>
+        )}
+        {piece.emailed_at && <span className="small muted">Emailed to {piece.emailed_count ?? 0} {timeAgo(piece.emailed_at)}</span>}
         <button className="btn secondary" onClick={() => upd()}>
           Save edits
         </button>

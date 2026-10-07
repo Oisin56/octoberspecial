@@ -169,6 +169,8 @@ export interface AiPieceRow {
   status: "draft" | "published" | "hidden";
   created_at: string;
   published_at: string | null;
+  emailed_at?: string | null;
+  emailed_count?: number | null;
 }
 
 export interface VoteRow {
