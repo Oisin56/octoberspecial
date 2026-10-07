@@ -8,7 +8,7 @@ export default async function Landing() {
   const home = process.env.HOME_TOURNAMENT;
   if (home) redirect(`/t/${home}`);
 
-  const { data } = await adminClient()
+  const { data, error } = await adminClient()
     .from("public_tournaments")
     .select("slug,name,subtitle,start_date,end_date")
     .eq("published", true)
@@ -46,7 +46,8 @@ export default async function Landing() {
               <span className="res small">{t.start_date ?? ""}</span>
             </Link>
           ))}
-          {!data?.length && <p className="muted">No tournaments published yet.</p>}
+          {error && <p className="error">The database didn&apos;t answer: {error.message}. Open /api/health for a setup check.</p>}
+          {!error && !data?.length && <p className="muted">No tournaments published yet.</p>}
         </div>
       </main>
     </div>

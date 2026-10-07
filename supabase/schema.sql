@@ -252,3 +252,14 @@ create table if not exists reels (
 );
 create index if not exists reels_t_idx on reels (tournament_id, created_at desc);
 alter table reels enable row level security;  -- organiser-only, via the server
+
+-- ------------------------------------------------------------ access (explicit, for projects that don't grant by default)
+grant usage on schema public to anon, authenticated, service_role;
+grant all on all tables in schema public to service_role;
+grant all on all sequences in schema public to service_role;
+grant select on rounds, hole_entries, attestations, posts, comments, ai_pieces, votes to anon, authenticated;
+grant select on public_tournaments, public_players to anon, authenticated;
+revoke all on reels from anon, authenticated;
+
+-- Tell the API about the new tables straight away
+notify pgrst, 'reload schema';
