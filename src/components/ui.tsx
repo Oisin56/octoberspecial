@@ -439,11 +439,29 @@ export function Paras({ text }: { text: string }) {
       {text
         .split(/\n\s*\n/)
         .filter(Boolean)
-        .map((p, i) => (
-          <p key={i} style={{ margin: "6px 0 0" }}>
-            {p}
-          </p>
-        ))}
+        .flatMap((p, i) => {
+          // A short line with no full stop is a subheading (the writer may put it directly above its paragraph)
+          const isHead = (l: string) => l.length < 60 && !/[.!?:,"”']$/.test(l.trim());
+          const [first, ...rest] = p.split("\n");
+          if (isHead(first) && first.trim())
+            return [
+              <h3 key={`${i}h`} className="display" style={{ margin: "14px 0 0", fontSize: 20 }}>
+                {first.trim()}
+              </h3>,
+              ...(rest.join(" ").trim()
+                ? [
+                    <p key={i} style={{ margin: "6px 0 0" }}>
+                      {rest.join(" ").trim()}
+                    </p>,
+                  ]
+                : []),
+            ];
+          return [
+            <p key={i} style={{ margin: "6px 0 0" }}>
+              {p}
+            </p>,
+          ];
+        })}
     </>
   );
 }

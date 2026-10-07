@@ -300,7 +300,8 @@ HARD RULES:
 - Output ONLY a JSON object: {"title": string, "body": string}. "body" is plain text with paragraphs separated by blank lines. No markdown headings.`;
 }
 
-function lengthFor(kind: PieceKind) {
+function lengthFor(kind: PieceKind, whole = false) {
+  if (kind === "preview" && whole) return "550–800 words";
   return kind === "bulletin"
     ? "60–110 words, punchy, like a live blog update"
     : kind === "preview"
@@ -348,12 +349,30 @@ export async function generatePiece(
       }
       parts.push(`NOTES FROM THE COURSE\n${notesText(s, round.id)}`);
     }
+  } else if (kind === "preview") {
+    // Whole-tournament preview: every round, each course's character, the first forecasts
+    const rounds = [...s.rounds].sort((a, b) => a.number - b.number);
+    for (const r of rounds) {
+      const g = courseInfo(r).guide;
+      parts.push(
+        `ROUND ${r.number}${r.play_date ? ` (${r.play_date})` : ""}\n${roundDetails(r, s)}` +
+          (g ? `\nCourse: ${g.overview}${g.signature ? `\nSignature holes: ${g.signature}` : ""}` : ""),
+      );
+    }
+    const soon = rounds.filter((r) => r.play_date && (new Date(r.play_date).getTime() - Date.now()) / 864e5 < 6).slice(0, 3);
+    for (const r of soon) {
+      const info = courseInfo(r);
+      parts.push(`WEATHER FORECAST, ROUND ${r.number}\n${await forecast(info.lat, info.lon, r.course_name, r.play_date)}`);
+    }
+    if (s.posts.length) parts.push(`NOTES SO FAR\n${notesText(s, null)}`);
   } else {
     parts.push(`ALL NOTES\n${notesText(s, null)}`);
   }
 
   const task =
-    kind === "preview"
+    kind === "preview" && !round
+      ? `Write a newspaper-style PREVIEW of the WHOLE TOURNAMENT before it starts (the course guides are in each ROUND section). Set up the week: the rivalry and the players (from their profiles), the format and what the points are worth (how each round scores, the side games, the total on offer), a short tour of the courses in order and what makes each one different, the rounds where it could be won or lost (the bigger-points rounds especially), and the forecast for the opening days if given. End with what's at stake. Use a few short subheadings in plain text on their own line.`
+      : kind === "preview"
       ? `Write a newspaper-style PREVIEW of Round ${round?.number}. Set the scene at the course (its character, and the holes from the course guide likely to decide things), explain the format and what's at stake, the weather, the story so far, and a key hole or match to watch. Build anticipation.`
       : kind === "bulletin"
         ? `Write a LIVE BULLETIN for followers at home. What just happened: ${opts.reason ?? opts.trigger}. Focus on that and the current state of play. Present tense.`
@@ -361,12 +380,12 @@ export async function generatePiece(
           ? `Write the REPORT for Round ${round?.number}. Tell the story in order: turning points (saying what makes a key hole difficult where the course guide helps), results of each match or group, side games, birdies, and what it means for the overall standings.`
           : `Write the end-of-tournament REVIEW: the story of the event, the decisive moments, the final standings and awards.`;
 
-  const user = `${parts.join("\n\n")}\n\nTASK\n${task}\nLength: ${lengthFor(kind)}.${opts.extra ? `\nOrganiser's steer: ${opts.extra}` : ""}`;
+  const user = `${parts.join("\n\n")}\n\nTASK\n${task}\nLength: ${lengthFor(kind, !round)}.${opts.extra ? `\nOrganiser's steer: ${opts.extra}` : ""}`;
 
   const client = new Anthropic({ baseURL: process.env.ANTHROPIC_BASE_URL || undefined });
   const msg = await client.messages.create({
     model: MODEL,
-    max_tokens: 1500,
+    max_tokens: 2500,
     system: style(s.tournament.tone, s.tournament.name),
     messages: [{ role: "user", content: user }],
   });

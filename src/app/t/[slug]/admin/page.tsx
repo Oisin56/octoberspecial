@@ -90,16 +90,16 @@ function Writing({ data, onSaved }: { data: AdminData; onSaved: () => void }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
 
-  async function gen(kind: AiPieceRow["kind"]) {
-    setBusy(kind);
+  async function gen(kind: AiPieceRow["kind"], whole = false) {
+    setBusy(whole ? `${kind}-whole` : kind);
     setMsg(null);
-    const r = await api("/api/admin", { action: "aiGenerate", kind, roundId: kind === "tournament" ? null : roundId, extra });
+    const r = await api("/api/admin", { action: "aiGenerate", kind, roundId: kind === "tournament" || whole ? null : roundId, extra });
     setBusy(null);
     setMsg(r.ok ? "Draft ready below. Read it, edit if needed, then publish." : String(r.j.error ?? "Failed"));
     if (r.ok) onSaved();
   }
 
-  const pieces = data.state.pieces.filter((p) => p.status !== "hidden" || p.body !== "(writing…)").filter((p) => p.round_id === roundId || (p.kind === "tournament" && !p.round_id));
+  const pieces = data.state.pieces.filter((p) => p.status !== "hidden" || p.body !== "(writing…)").filter((p) => p.round_id === roundId || !p.round_id);
 
   return (
     <div className="stack">
@@ -130,6 +130,9 @@ function Writing({ data, onSaved }: { data: AdminData; onSaved: () => void }) {
               {busy === k ? "Writing…" : label}
             </button>
           ))}
+          <button className="btn secondary" disabled={!!busy} onClick={() => gen("preview", true)}>
+            {busy === "preview-whole" ? "Writing (up to a minute)…" : "Write tournament preview"}
+          </button>
           <button className="btn secondary" disabled={!!busy} onClick={() => gen("tournament")}>
             {busy === "tournament" ? "Writing…" : "Write tournament review"}
           </button>

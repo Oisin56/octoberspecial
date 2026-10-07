@@ -35,7 +35,9 @@ export default function Home() {
   const preview = next && published.find((p) => p.kind === "preview" && p.round_id === next.id);
   const report = lastDone && published.find((p) => p.kind === "report" && p.round_id === lastDone.id);
   const review = published.find((p) => p.kind === "tournament");
-  const lead = review ?? (live ? null : report ?? preview);
+  // Whole-tournament preview leads until the first round is under way
+  const tPreview = !lastDone && !live ? published.find((p) => p.kind === "preview" && !p.round_id) : undefined;
+  const lead = review ?? (live ? null : report ?? preview ?? tPreview);
   const leadRound = lead && state.rounds.find((r) => r.id === lead.round_id);
   const hero = mediaUrl(state.tournament.hero_path);
 
@@ -72,11 +74,11 @@ export default function Home() {
           {lead ? (
             <article className="article">
               <div className="byline">
-                {lead.kind === "preview" ? "Preview" : lead.kind === "report" ? "Report" : "Tournament review"}
+                {lead.kind === "preview" ? (lead.round_id ? "Preview" : "Tournament preview") : lead.kind === "report" ? "Report" : "Tournament review"}
                 {leadRound ? ` · Round ${leadRound.number}` : ""}
               </div>
               <h2 style={{ fontSize: 30 }}>{lead.title}</h2>
-              <Paras text={lead.body.split(/\n\s*\n/).slice(0, 2).join("\n\n")} />
+              <Paras text={leadRound ? lead.body.split(/\n\s*\n/).slice(0, 2).join("\n\n") : lead.body} />
               {leadRound && (
                 <p style={{ marginTop: 12 }}>
                   <Link className="btn secondary" href={href(`/rounds/${leadRound.number}`)}>
