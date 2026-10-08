@@ -293,6 +293,7 @@ export async function emailPiece(t: TournamentRow, pieceId: string, site: string
       failed.push(s.email);
     }
   }
-  if (!onlyTo) await db.from("ai_pieces").update({ emailed_at: new Date().toISOString(), emailed_count: sent }).eq("id", pieceId);
+  // Only mark it emailed if someone actually got it, so "Email it" stays on offer after a failed send
+  if (!onlyTo && sent > 0) await db.from("ai_pieces").update({ emailed_at: new Date().toISOString(), emailed_count: sent }).eq("id", pieceId);
   return { sent, failed };
 }

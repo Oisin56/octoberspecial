@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useT } from "@/components/Providers";
 import { Loading, timeAgo } from "@/components/ui";
@@ -18,26 +18,51 @@ import {
 import { ReelBuilder } from "@/components/ReelBuilder";
 import { DirectorPanel } from "@/components/DirectorPanel";
 import { EmailTab, useSubscribers } from "@/components/EmailAdmin";
-import type { AiPieceRow } from "@/lib/types";
-import { cleanBody, cleanTitle } from "@/lib/cleanText";
+import { Writer, WRITE_TYPES, type WriteType } from "@/components/Writer";
+import { useCountdown } from "@/components/visual";
+import { THEMES, TONE_LABEL } from "@/lib/types";
 
-const TABS = [
-  ["rounds", "Rounds"],
-  ["players", "Players and teams"],
-  ["writing", "AI writing"],
-  ["email", "Email list"],
-  ["moderate", "Moderate"],
-  ["reel", "Highlights film"],
-  ["sides", "Side games"],
-  ["look", "Look"],
-  ["content", "Writing style"],
-  ["invite", "PINs and sharing"],
-] as const;
+const SECTIONS = {
+  rounds: "Rounds and courses",
+  players: "Players and PINs",
+  write: "Write and publish",
+  email: "Email list",
+  film: "Highlights film",
+  posts: "Posts and photos",
+  sides: "Side games",
+  look: "Look and style",
+  share: "Share and invite",
+  settings: "Settings",
+} as const;
+type Section = keyof typeof SECTIONS;
+
+/** "#write/preview/<roundId>" → section plus optional writer start. Hash routing keeps the phone's back button working. */
+function readHash(): { section: Section | null; type?: WriteType; roundId?: string } {
+  if (typeof window === "undefined") return { section: null };
+  const [s, type, roundId] = window.location.hash.slice(1).split("/");
+  if (!(s in SECTIONS)) return { section: null };
+  return { section: s as Section, type: WRITE_TYPES.some((w) => w.id === type) ? (type as WriteType) : undefined, roundId };
+}
 
 export default function Admin() {
   const { session, href } = useT();
   const { data, err, reload } = useAdmin();
-  const [tab, setTab] = useState<(typeof TABS)[number][0]>("rounds");
+  const [route, setRoute] = useState<ReturnType<typeof readHash>>({ section: null });
+
+  useEffect(() => {
+    const on = () => {
+      setRoute(readHash());
+      window.scrollTo({ top: 0 });
+    };
+    setRoute(readHash());
+    window.addEventListener("hashchange", on);
+    return () => window.removeEventListener("hashchange", on);
+  }, []);
+  const home = useCallback(() => {
+    history.pushState(null, "", window.location.pathname + window.location.search);
+    setRoute({ section: null });
+    window.scrollTo({ top: 0 });
+  }, []);
 
   if (!session)
     return (
@@ -49,39 +74,45 @@ export default function Admin() {
   if (err) return <p className="error">{err}</p>;
   if (!data) return <Loading />;
 
+  const s = route.section;
+  if (!s) return <OrganiserHome data={data} />;
+
   return (
-    <div className="stack">
-      <div className="row" style={{ justifyContent: "space-between" }}>
-        <h1>Organiser</h1>
-        <Link className="btn secondary" href={href("/setup")}>
-          Step-by-step setup
-        </Link>
-      </div>
-      {!data.env.ai && <p className="notice">ANTHROPIC_API_KEY isn&apos;t set in Vercel, so the AI writing is switched off.</p>}
-      <div className="row" role="tablist">
-        {TABS.map(([id, label]) => (
-          <button key={id} role="tab" className="chip" aria-selected={tab === id} aria-pressed={tab === id} onClick={() => setTab(id)}>
-            {label}
-          </button>
-        ))}
-      </div>
-      {tab === "rounds" && <RoundsEditor data={data} onSaved={reload} />}
-      {tab === "players" && <PlayersEditor data={data} onSaved={reload} />}
-      {tab === "writing" && <Writing data={data} onSaved={reload} />}
-      {tab === "email" && <EmailTab />}
-      {tab === "moderate" && <Moderate data={data} onSaved={reload} />}
-      {tab === "reel" && (
+    <div className="stack org-section">
+      <button className="back-home" onClick={home}>
+        <span aria-hidden>←</span> Organiser home
+      </button>
+      <h1>{SECTIONS[s]}</h1>
+      {s === "rounds" && <RoundsEditor data={data} onSaved={reload} />}
+      {s === "players" && <PlayersEditor data={data} onSaved={reload} />}
+      {s === "write" && <Writer key={`${route.type}-${route.roundId}`} data={data} onSaved={reload} start={{ type: route.type, roundId: route.roundId }} />}
+      {s === "email" && <EmailTab />}
+      {s === "film" && (
         <>
           <DirectorPanel />
           <ReelBuilder />
         </>
       )}
-      {tab === "sides" && <SideGamesEditor data={data} onSaved={reload} />}
-      {tab === "look" && <BasicsEditor data={data} onSaved={reload} />}
-      {tab === "content" && <ContentEditor data={data} onSaved={reload} />}
-      {tab === "invite" && (
+      {s === "posts" && <Moderate data={data} onSaved={reload} />}
+      {s === "sides" && <SideGamesEditor data={data} onSaved={reload} />}
+      {s === "look" && (
         <>
-          <InviteEditor data={data} onSaved={reload} />
+          <BasicsEditor data={data} onSaved={reload} />
+          <ContentEditor data={data} onSaved={reload} />
+        </>
+      )}
+      {s === "share" && <InviteEditor data={data} onSaved={reload} />}
+      {s === "settings" && (
+        <>
+          <section className="panel stack">
+            <h2>Setup checklist</h2>
+            <p style={{ margin: 0 }}>Going through it all again from the start? The step-by-step setup walks you through every part in order.</p>
+            <div>
+              <Link className="btn secondary" href={href("/setup")}>
+                Open step-by-step setup
+              </Link>
+            </div>
+          </section>
           <ResetTestData onSaved={reload} />
         </>
       )}
@@ -89,148 +120,128 @@ export default function Admin() {
   );
 }
 
-// ------------------------------------------------------------ writing
+// ------------------------------------------------------------ home
 
-function Writing({ data, onSaved }: { data: AdminData; onSaved: () => void }) {
-  const { api } = useT();
-  const [roundId, setRoundId] = useState(
-    data.state.rounds.find((r) => r.status === "live")?.id ?? data.state.rounds.find((r) => r.status === "upcoming")?.id ?? data.state.rounds[0]?.id,
-  );
-  const [extra, setExtra] = useState("");
-  const [busy, setBusy] = useState<string | null>(null);
-  const [msg, setMsg] = useState<string | null>(null);
-
-  async function gen(kind: AiPieceRow["kind"], whole = false) {
-    setBusy(whole ? `${kind}-whole` : kind);
-    setMsg(null);
-    const r = await api("/api/admin", { action: "aiGenerate", kind, roundId: kind === "tournament" || whole ? null : roundId, extra });
-    setBusy(null);
-    setMsg(r.ok ? "Draft ready below. Read it, edit if needed, then publish." : String(r.j.error ?? "Failed"));
-    if (r.ok) onSaved();
-  }
-
+function OrganiserHome({ data }: { data: AdminData }) {
+  const { href } = useT();
   const subs = useSubscribers();
-  const pieces = data.state.pieces.filter((p) => p.status !== "hidden" || p.body !== "(writing…)").filter((p) => p.round_id === roundId || !p.round_id);
+  const st = data.state;
+  const t = st.tournament;
+  const rounds = [...st.rounds].sort((a, b) => a.number - b.number);
+  const live = rounds.find((r) => r.status === "live");
+  const next = rounds.find((r) => r.status === "upcoming");
+  const countdown = useCountdown(next?.play_date ?? null, next?.tee_time ?? null);
+  const pieces = st.pieces.filter((p) => !(p.status === "hidden" && p.body === "(writing…)"));
+  const drafts = pieces.filter((p) => p.status === "draft");
+  const published = pieces.filter((p) => p.status === "published");
+  const noPin = st.players.filter((p) => !data.pinSet[p.id]);
+  const complete = rounds.filter((r) => r.status === "complete");
+
+  // What needs doing, most urgent first. Only the top two are shown.
+  const todo: { text: string; action: string; to: string; external?: boolean }[] = [];
+  if (rounds.length === 0) todo.push({ text: "Add the courses you're playing.", action: "Add a round", to: "#rounds" });
+  if (st.players.length < 2) todo.push({ text: "Add the players.", action: "Add players", to: "#players" });
+  if (live) todo.push({ text: `Round ${live.number} at ${live.course_name} is under way.`, action: "Enter scores", to: href(`/score?round=${live.number}`), external: true });
+  const lastDone = complete[complete.length - 1];
+  if (lastDone && !pieces.some((p) => p.kind === "report" && p.round_id === lastDone.id && p.status === "published")) {
+    const d = drafts.find((p) => p.kind === "report" && p.round_id === lastDone.id);
+    todo.push(
+      d
+        ? { text: `The round ${lastDone.number} report is written and waiting for you.`, action: "Read and publish", to: "#write" }
+        : { text: `Round ${lastDone.number} is finished. Nobody has written it up yet.`, action: "Write the report", to: `#write/report/${lastDone.id}` },
+    );
+  }
+  if (next && !live && !pieces.some((p) => p.kind === "preview" && p.round_id === next.id))
+    todo.push({ text: `No preview yet for round ${next.number} at ${next.course_name}.`, action: "Write the preview", to: `#write/preview/${next.id}` });
+  if (drafts.length && !todo.some((x) => x.to === "#write"))
+    todo.push({ text: `${drafts.length} ${drafts.length === 1 ? "draft is" : "drafts are"} waiting to be read.`, action: "Read them", to: "#write" });
+  if (noPin.length) todo.push({ text: `${listNames(noPin.map((p) => p.name))} ${noPin.length === 1 ? "has" : "have"} no PIN yet, so can't log in.`, action: "Set PINs", to: "#players" });
+  if (!t.published && rounds.length && st.players.length >= 2) todo.push({ text: "The site isn't public yet.", action: "Share it", to: "#share" });
+
+  const theme = THEMES.find((x) => x.id === t.theme)?.name ?? "Custom";
+  const tone = TONE_LABEL[t.tone]?.split(":")[0] ?? "";
+  const posts = st.posts.length;
+  const clips = st.posts.filter((p) => p.kind === "video").length;
+  const sides = (t.side_games ?? []).filter((g) => g.enabled !== false).length;
+
+  const tiles: [Section, string][] = [
+    ["rounds", rounds.length ? `${rounds.length} round${rounds.length === 1 ? "" : "s"}${next ? `, next at ${short(next.course_name)}` : ""}` : "None yet"],
+    ["players", st.players.length ? `${st.players.length} players${noPin.length ? `, ${noPin.length} without a PIN` : ", all with PINs"}` : "None yet"],
+    ["write", drafts.length ? `${drafts.length} draft${drafts.length === 1 ? "" : "s"} waiting` : published.length ? `${published.length} published` : "Previews and reports"],
+    ["email", !subs.list ? "" : !subs.configured ? "Not switched on yet" : `${subs.active} ${subs.active === 1 ? "person" : "people"} signed up`],
+    ["film", clips ? `${clips} clip${clips === 1 ? "" : "s"} so far` : "Build a recap film"],
+    ["posts", posts ? `${posts} post${posts === 1 ? "" : "s"}, ${st.comments.length} comment${st.comments.length === 1 ? "" : "s"}` : "Nothing posted yet"],
+    ["sides", sides ? `${sides} running` : "Closest the pin and more"],
+    ["look", `${theme}, ${tone.toLowerCase()} tone`],
+    ["share", t.published ? "Public" : "Not public yet"],
+  ];
 
   return (
-    <div className="stack">
-      <section className="panel stack">
-        <label className="field">
-          <span className="lbl">Round</span>
-          <select value={roundId} onChange={(e) => setRoundId(e.target.value)}>
-            {data.state.rounds.map((r) => (
-              <option key={r.id} value={r.id}>
-                R{r.number} {r.course_name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="field">
-          <span className="lbl">Steer for the writer (optional)</span>
-          <input value={extra} onChange={(e) => setExtra(e.target.value)} placeholder="e.g. mention Neil's new driver" />
-        </label>
-        <div className="row">
-          {(
-            [
-              ["preview", "Write preview"],
-              ["bulletin", "Write bulletin"],
-              ["report", "Write report"],
-            ] as const
-          ).map(([k, label]) => (
-            <button key={k} className="btn" disabled={!!busy || !roundId} onClick={() => gen(k)}>
-              {busy === k ? "Writing…" : label}
-            </button>
-          ))}
-          <button className="btn secondary" disabled={!!busy} onClick={() => gen("preview", true)}>
-            {busy === "preview-whole" ? "Writing (up to a minute)…" : "Write tournament preview"}
-          </button>
-          <button className="btn secondary" disabled={!!busy} onClick={() => gen("tournament")}>
-            {busy === "tournament" ? "Writing…" : "Write tournament review"}
-          </button>
-        </div>
-        <p className="small muted" style={{ margin: 0 }}>
-          Live bulletins publish themselves at key moments (birdies, the turn, swings in a match). A report draft is written when a round finishes. Writing takes 10–30 seconds.
+    <div className="org-home">
+      <section className="org-hero">
+        <p className="org-hello">Organiser</p>
+        <h1>{t.name}</h1>
+        <p className="org-when">
+          {live
+            ? `Round ${live.number} is being played now at ${live.course_name}.`
+            : next
+              ? `Round ${next.number}, ${next.course_name}${countdown ? `, ${countdown}` : ""}.`
+              : rounds.length
+                ? "All rounds played."
+                : "Let's get your trip set up."}
         </p>
-        {msg && <p className="display">{msg}</p>}
+        <Link className="org-view" href={href("/")}>
+          See the site as followers do
+        </Link>
       </section>
-      {pieces.map((p) => (
-        <PieceEditor key={p.id} piece={p} onSaved={onSaved} subscribers={subs.active} mail={subs.configured} />
-      ))}
+
+      {!data.env.ai && <p className="notice">The AI writer is off until ANTHROPIC_API_KEY is added in Vercel.</p>}
+
+      <section className={`next-up${todo.length ? "" : " calm"}`} aria-label="Next up">
+        <h2>Next up</h2>
+        {todo.length === 0 ? (
+          <p>Nothing needs doing right now.</p>
+        ) : (
+          <ul>
+            {todo.slice(0, 2).map((x) => (
+              <li key={x.text}>
+                <span>{x.text}</span>
+                {x.external ? (
+                  <Link className="btn" href={x.to}>
+                    {x.action}
+                  </Link>
+                ) : (
+                  <a className="btn" href={x.to}>
+                    {x.action}
+                  </a>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <nav className="org-tiles" aria-label="Organiser sections">
+        {tiles.map(([id, status]) => (
+          <a key={id} href={`#${id}`} className={`org-tile org-tile-${id}${(id === "write" && drafts.length) || (id === "players" && noPin.length) ? " attn" : ""}`}>
+            <strong>{SECTIONS[id]}</strong>
+            <span>{status}</span>
+          </a>
+        ))}
+      </nav>
+
+      <p className="org-foot">
+        <Link href={href("/setup")}>Step-by-step setup</Link>
+        <a href="#settings">Settings and test data</a>
+      </p>
     </div>
   );
 }
 
-function PieceEditor({ piece, onSaved, subscribers, mail }: { piece: AiPieceRow; onSaved: () => void; subscribers: number; mail: boolean }) {
-  const { api } = useT();
-  const [title, setTitle] = useState(cleanTitle(piece.title ?? ""));
-  const [body, setBody] = useState(cleanBody(piece.body));
-  const [msg, setMsg] = useState<string | null>(null);
-  const emailable = piece.kind !== "bulletin" && mail;
-  const [email, setEmail] = useState(true);
-  const [busy, setBusy] = useState(false);
-  async function upd(status?: AiPieceRow["status"]) {
-    setBusy(true);
-    const r = await api("/api/admin", { action: "aiUpdate", id: piece.id, title, body, status, email: emailable && email && subscribers > 0 });
-    setBusy(false);
-    const sent = r.j.emailed != null ? ` and emailed to ${r.j.emailed}${r.j.failed ? ` (${r.j.failed} failed)` : ""}` : r.j.emailError ? `, but the email failed: ${r.j.emailError}` : "";
-    setMsg(r.ok ? (status === "published" ? `Published${sent}` : status === "hidden" ? "Hidden" : "Saved") : String(r.j.error ?? "Failed"));
-    if (r.ok) onSaved();
-  }
-  async function mailNow(test: boolean) {
-    if (!test && !confirm(`Email this to ${subscribers} subscriber${subscribers === 1 ? "" : "s"}?`)) return;
-    setBusy(true);
-    await api("/api/admin", { action: "aiUpdate", id: piece.id, title, body }); // send the text on screen
-    const r = await api("/api/admin", { action: "emailPiece", id: piece.id, test });
-    setBusy(false);
-    setMsg(r.ok ? (test ? "Test sent to you" : `Emailed to ${r.j.sent}`) : String(r.j.error ?? "Failed"));
-    if (r.ok && !test) onSaved();
-  }
-  return (
-    <section className="panel stack">
-      <div className="display">
-        <span className={`pill ${piece.status === "published" ? "done" : ""}`}>{piece.status}</span> {piece.kind} · {timeAgo(piece.created_at)}
-        {piece.trigger ? ` · ${piece.trigger}` : ""}
-      </div>
-      <input value={title} onChange={(e) => setTitle(e.target.value)} aria-label="Title" />
-      <textarea value={body} onChange={(e) => setBody(e.target.value)} style={{ minHeight: 220 }} aria-label="Text" />
-      <div className="row">
-        {piece.status !== "published" && (
-          <button className="btn" disabled={busy} onClick={() => upd("published")}>
-            {busy ? "Publishing…" : emailable && email && subscribers > 0 ? "Publish and email" : "Publish"}
-          </button>
-        )}
-        {emailable && piece.status !== "published" && (
-          <label className="row small">
-            <input type="checkbox" checked={email} onChange={(e) => setEmail(e.target.checked)} style={{ width: 18, height: 18 }} />
-            Email it to {subscribers} subscriber{subscribers === 1 ? "" : "s"}
-          </label>
-        )}
-        {emailable && (
-          <button className="btn secondary" disabled={busy} onClick={() => mailNow(true)}>
-            Send me a test
-          </button>
-        )}
-        {emailable && piece.status === "published" && !piece.emailed_at && subscribers > 0 && (
-          <button className="btn secondary" disabled={busy} onClick={() => mailNow(false)}>
-            Email it now
-          </button>
-        )}
-        {piece.emailed_at && <span className="small muted">Emailed to {piece.emailed_count ?? 0} {timeAgo(piece.emailed_at)}</span>}
-        <button className="btn secondary" onClick={() => upd()}>
-          Save edits
-        </button>
-        {piece.status !== "hidden" && (
-          <button className="btn secondary" onClick={() => upd("hidden")}>
-            Hide
-          </button>
-        )}
-        {msg && <span className="display">{msg}</span>}
-      </div>
-    </section>
-  );
-}
+const short = (name: string) => name.replace(/\s+(golf (club|course|links)|gc|resort|hotel.*|estate)$/i, "");
+const listNames = (n: string[]) => (n.length <= 2 ? n.join(" and ") : `${n.slice(0, -1).join(", ")} and ${n[n.length - 1]}`);
 
-// ------------------------------------------------------------ moderate
+// ------------------------------------------------------------ posts and photos
 
 function Moderate({ data, onSaved }: { data: AdminData; onSaved: () => void }) {
   const { api } = useT();
@@ -246,10 +257,10 @@ function Moderate({ data, onSaved }: { data: AdminData; onSaved: () => void }) {
         {data.state.posts.map((p) => (
           <div key={p.id} className="post">
             <div className="who display">
-              {p.author_name} · {p.hole ? `H${p.hole} · ` : ""}
-              {timeAgo(p.created_at)} · {p.kind}
-              {p.visibility === "report" && <span className="report-only"> · report only</span>}
-              {p.hidden && <span className="error"> · hidden</span>}
+              {p.author_name}, {p.hole ? `hole ${p.hole}, ` : ""}
+              {timeAgo(p.created_at)}
+              {p.visibility === "report" && <span className="report-only">, report only</span>}
+              {p.hidden && <span className="error">, hidden</span>}
             </div>
             {p.body && <p style={{ margin: "4px 0" }}>{p.body}</p>}
             <button className="chip" onClick={() => hide("posts", p.id, !p.hidden)}>
@@ -264,8 +275,8 @@ function Moderate({ data, onSaved }: { data: AdminData; onSaved: () => void }) {
         {data.state.comments.map((c) => (
           <div key={c.id} className="post">
             <div className="who display">
-              {c.author_name} · {timeAgo(c.created_at)}
-              {c.hidden && <span className="error"> · hidden</span>}
+              {c.author_name}, {timeAgo(c.created_at)}
+              {c.hidden && <span className="error">, hidden</span>}
             </div>
             <p style={{ margin: "4px 0" }}>{c.body}</p>
             <button className="chip" onClick={() => hide("comments", c.id, !c.hidden)}>

@@ -172,6 +172,9 @@ export interface AiPieceRow {
   published_at: string | null;
   emailed_at?: string | null;
   emailed_count?: number | null;
+  tone?: Tone | null;
+  prev_title?: string | null;
+  prev_body?: string | null;
 }
 
 export interface VoteRow {

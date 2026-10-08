@@ -316,7 +316,19 @@ export async function generatePiece(
   tournamentId: string,
   kind: PieceKind,
   roundId: string | null,
-  opts: { trigger?: string; reason?: string; publish?: boolean; extra?: string; claimId?: string; gameId?: string; hole?: number } = {},
+  opts: {
+    trigger?: string;
+    reason?: string;
+    publish?: boolean;
+    extra?: string;
+    claimId?: string;
+    gameId?: string;
+    hole?: number;
+    tone?: Tone;
+    length?: "short" | "standard" | "long";
+    /** Rewrite an existing piece in place (the previous version is kept for undo) */
+    rewrite?: { id: string; title: string; body: string; instruction?: string; change?: "shorter" | "longer" };
+  } = {},
 ) {
   const s = await loadServerState(tournamentId);
   const round = roundId ? s.rounds.find((r) => r.id === roundId) ?? null : null;
@@ -381,14 +393,28 @@ export async function generatePiece(
           ? `Write the REPORT for Round ${round?.number}. Tell the story in order: turning points (saying what makes a key hole difficult where the course guide helps), results of each match or group, side games, birdies, and what it means for the overall standings.`
           : `Write the end-of-tournament REVIEW: the story of the event, the decisive moments, the final standings and awards.`;
 
-  const user = `${parts.join("\n\n")}\n\nTASK\n${task}\nLength: ${lengthFor(kind, !round)}.${opts.extra ? `\nOrganiser's steer: ${opts.extra}` : ""}`;
+  const baseLength = lengthFor(kind, !round);
+  const lengthLine =
+    opts.length === "short" ? `about half the usual length (usual: ${baseLength}), tight and punchy` : opts.length === "long" ? `about half as long again as usual (usual: ${baseLength})` : baseLength;
+  let user = `${parts.join("\n\n")}\n\nTASK\n${task}\nLength: ${lengthLine}.${opts.extra ? `\nOrganiser's steer: ${opts.extra}` : ""}`;
+  if (opts.rewrite) {
+    const rw = opts.rewrite;
+    const how = [
+      rw.instruction ? `The organiser's instructions (follow them; facts they give are reported events you may use): ${rw.instruction}` : "",
+      rw.change === "shorter" ? "Make it about a third shorter, keeping the best lines." : rw.change === "longer" ? "Make it about a third longer, adding detail from the data, not invention." : "",
+      opts.tone ? "Rewrite it in the voice described in your instructions." : "",
+    ]
+      .filter(Boolean)
+      .join("\n");
+    user = `${parts.join("\n\n")}\n\nORIGINAL ARTICLE\nHeadline: ${rw.title}\n\n${rw.body}\n\nTASK\nRewrite the original article.\n${how || "Improve it."}\nKeep it accurate to the data above. Keep the same kind of piece. Change the headline only if it no longer fits.`;
+  }
 
   const client = new Anthropic({ baseURL: process.env.ANTHROPIC_BASE_URL || undefined });
   // Structured output: the article arrives as fields, never as JSON text to parse
   const msg = await client.messages.create({
     model: MODEL,
     max_tokens: kind === "bulletin" ? 1200 : 4000,
-    system: style(s.tournament.tone, s.tournament.name),
+    system: style(opts.tone ?? s.tournament.tone, s.tournament.name),
     tools: [
       {
         name: "publish_article",
@@ -437,6 +463,18 @@ export async function generatePiece(
   body = cleanBody(body);
   if (!body) throw new Error("The writer came back empty. Try again.");
 
+  if (opts.rewrite) {
+    const { data, error } = await adminClient()
+      .from("ai_pieces")
+      .update({ title, body, prev_title: opts.rewrite.title, prev_body: opts.rewrite.body, tone: opts.tone ?? null })
+      .eq("id", opts.rewrite.id)
+      .eq("tournament_id", s.tournament.id)
+      .select()
+      .single();
+    if (error) throw new Error(error.message);
+    return data as AiPieceRow;
+  }
+
   const publish = opts.publish ?? false;
   const row = {
     tournament_id: s.tournament.id,
@@ -445,6 +483,7 @@ export async function generatePiece(
     title,
     body,
     trigger: opts.trigger ?? null,
+    tone: opts.tone ?? null,
     status: publish ? "published" : "draft",
     published_at: publish ? new Date().toISOString() : null,
   };

@@ -3,7 +3,8 @@ import { hashPin, isOrganiser } from "@/lib/auth";
 import { bad, context, json, loadServerState, siteOrigin, slugify } from "@/lib/server-data";
 import { EMAIL_RE, emailPiece, mailConfigured } from "@/lib/email";
 import { draftGuide, generatePiece, type PieceKind } from "@/lib/ai";
-import { cleanGuide } from "@/lib/types";
+import { cleanGuide, type Tone } from "@/lib/types";
+const TONE_IDS: Tone[] = ["broadsheet", "tabloid", "commentator", "dry"];
 import { getCourse } from "@/lib/courses";
 import type { Game, HandicapRule, PointsRule } from "@/lib/engine";
 
@@ -71,7 +72,7 @@ export async function POST(req: Request) {
         pinSet: Object.fromEntries((pins ?? []).map((p) => [p.id, !!p.pin_hash])),
         organiserPinSet: !!t.organiser_pin_hash,
         contributorPinSet: !!t.contributor_pin_hash || !!process.env.CONTRIBUTOR_PIN,
-        env: { ai: !!process.env.ANTHROPIC_API_KEY, courses: !!process.env.GOLFCOURSEAPI_KEY },
+        env: { ai: !!process.env.ANTHROPIC_API_KEY, courses: !!process.env.GOLFCOURSEAPI_KEY, mail: mailConfigured() },
       });
     }
 
@@ -305,6 +306,8 @@ export async function POST(req: Request) {
       try {
         const piece = await generatePiece(t.id, kind, b.roundId ?? null, {
           extra: b.extra ? String(b.extra).slice(0, 500) : undefined,
+          tone: TONE_IDS.includes(b.tone) ? b.tone : undefined,
+          length: ["short", "standard", "long"].includes(b.length) ? b.length : undefined,
           trigger: kind === "bulletin" ? `manual-${Date.now()}` : "manual",
           reason: kind === "bulletin" ? "the organiser asked for an update on the state of play" : undefined,
         });
@@ -336,6 +339,40 @@ export async function POST(req: Request) {
           }
         }
       }
+      return json({ ok: true });
+    }
+
+    case "aiRewrite": {
+      if (!process.env.ANTHROPIC_API_KEY) return bad("ANTHROPIC_API_KEY isn't set in Vercel", 500);
+      const { data: pc } = await db.from("ai_pieces").select("*").eq("id", b.id).eq("tournament_id", t.id).maybeSingle();
+      if (!pc) return bad("Not found", 404);
+      try {
+        const piece = await generatePiece(t.id, pc.kind, pc.round_id, {
+          tone: TONE_IDS.includes(b.tone) ? b.tone : undefined,
+          rewrite: {
+            id: pc.id,
+            title: String(b.title ?? pc.title ?? ""),
+            body: String(b.body ?? pc.body ?? ""),
+            instruction: b.instruction ? String(b.instruction).slice(0, 600) : undefined,
+            change: b.change === "shorter" || b.change === "longer" ? b.change : undefined,
+          },
+          reason: pc.kind === "bulletin" ? "a rewrite of the bulletin below" : undefined,
+        });
+        return json({ piece });
+      } catch (e) {
+        return bad(e instanceof Error ? e.message : "AI failed", 500);
+      }
+    }
+
+    case "aiUndo": {
+      const { data: pc } = await db.from("ai_pieces").select("title,body,prev_title,prev_body").eq("id", b.id).eq("tournament_id", t.id).maybeSingle();
+      if (!pc?.prev_body) return bad("Nothing to undo");
+      await db.from("ai_pieces").update({ title: pc.prev_title, body: pc.prev_body, prev_title: pc.title, prev_body: pc.body }).eq("id", b.id);
+      return json({ ok: true });
+    }
+
+    case "aiDelete": {
+      await db.from("ai_pieces").delete().eq("id", b.id).eq("tournament_id", t.id);
       return json({ ok: true });
     }
 

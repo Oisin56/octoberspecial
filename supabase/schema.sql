@@ -271,6 +271,9 @@ create unique index if not exists subscribers_email_uniq on subscribers (tournam
 alter table subscribers enable row level security;  -- server only: nobody can read the list from the browser
 alter table ai_pieces add column if not exists emailed_at timestamptz;
 alter table ai_pieces add column if not exists emailed_count int;
+alter table ai_pieces add column if not exists tone text;          -- style used, if not the tournament default
+alter table ai_pieces add column if not exists prev_title text;    -- previous version, for "Undo"
+alter table ai_pieces add column if not exists prev_body text;
 
 -- ------------------------------------------------------------ access (explicit, for projects that don't grant by default)
 grant usage on schema public to anon, authenticated, service_role;

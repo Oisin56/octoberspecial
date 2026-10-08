@@ -27,7 +27,7 @@ export interface AdminData {
   pinSet: Record<string, boolean>;
   organiserPinSet: boolean;
   contributorPinSet: boolean;
-  env: { ai: boolean; courses: boolean };
+  env: { ai: boolean; courses: boolean; mail?: boolean };
 }
 
 export function useAdmin() {
