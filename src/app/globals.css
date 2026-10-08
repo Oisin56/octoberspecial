@@ -544,3 +544,67 @@ main.wrap { padding-top: 28px; padding-bottom: 72px; }
 .more-menu button.danger { color: var(--red); }
 @media (max-width: 759px) { .org-tile-write { grid-column: span 2; min-height: 0; } }
 .org-foot { display: flex; flex-wrap: wrap; gap: 8px 24px; }
+
+/* ---- MyGolfSpecial front page */
+.mgs { background: var(--mist); min-height: 100vh; }
+.mgs-wrap { max-width: 1080px; margin: 0 auto; padding: 0 20px; }
+.mgs-head { background: var(--board-deep); color: #fff; }
+.mgs-bar { display: flex; align-items: center; justify-content: space-between; height: 64px; }
+.mgs-mark { display: inline-flex; align-items: center; gap: 10px; color: #fff; text-decoration: none; font: 600 24px/1 var(--font-display); letter-spacing: 0.005em; }
+.mgs-mark b { font-weight: 700; color: color-mix(in srgb, var(--gold) 85%, white); }
+.mgs-head-link { color: #fff; font: 600 17px var(--font-display); text-decoration: underline; text-underline-offset: 4px; text-decoration-color: color-mix(in srgb, var(--gold) 70%, transparent); }
+
+.mgs-hero { color: #fff; overflow: hidden;
+  background: radial-gradient(90% 120% at 85% 10%, color-mix(in srgb, var(--board-line) 75%, var(--gold) 25%) 0%, transparent 60%), linear-gradient(170deg, var(--board) 0%, var(--board-deep) 100%); }
+.mgs-hero-grid { display: grid; gap: 36px; padding-top: 44px; align-items: end; }
+.mgs-hero-copy { padding-bottom: 8px; }
+.mgs-hero h1 { font-size: clamp(44px, 9vw, 76px); line-height: 0.98; letter-spacing: -0.01em; max-width: 11ch; color: #fff; }
+.mgs-hero p { font-size: 20px; line-height: 1.5; max-width: 40ch; margin: 18px 0 26px; color: rgba(255,255,255,0.9); }
+.mgs-cta { display: flex; flex-wrap: wrap; gap: 12px; }
+.mgs-cta .btn { font-size: 19px; padding: 14px 22px; }
+.mgs-btn-light { background: #fff; color: var(--board); box-shadow: 0 10px 24px -12px rgba(0,0,0,0.6); }
+.mgs .mgs-free { font: 600 17px var(--font-display); color: color-mix(in srgb, var(--gold) 80%, white); margin: 18px 0 0; }
+.mgs-hero .mgs-phone { justify-self: center; margin-bottom: -60px; }
+@media (min-width: 860px) {
+  .mgs-hero-grid { grid-template-columns: 1.2fr 1fr; padding-top: 72px; }
+  .mgs-hero-copy { padding-bottom: 96px; }
+}
+
+.mgs-phone { width: min(300px, 70vw); border-radius: 34px; padding: 10px; background: #0d1410; box-shadow: 0 30px 60px -28px rgba(0,0,0,0.65), inset 0 0 0 1px rgba(255,255,255,0.08); }
+.mgs-phone img { display: block; width: 100%; height: auto; max-height: 560px; object-fit: cover; object-position: top; border-radius: 25px; }
+
+.mgs-features { display: grid; gap: 64px; padding-top: 112px; padding-bottom: 72px; }
+.mgs-feature { display: grid; gap: 28px; align-items: center; justify-items: center; }
+.mgs-feature-copy { max-width: 44ch; justify-self: start; }
+.mgs-feature h2 { font-size: clamp(30px, 5vw, 40px); line-height: 1.05; color: var(--board); }
+.mgs-feature p { font-size: 19px; line-height: 1.55; margin: 12px 0 0; color: var(--ink); }
+.mgs-still { width: min(420px, 92vw); border-radius: 14px; overflow: hidden; box-shadow: var(--shadow-md); }
+.mgs-still img { display: block; width: 100%; height: auto; }
+@media (min-width: 860px) {
+  .mgs-feature { grid-template-columns: 1fr 1fr; gap: 64px; }
+  .mgs-feature:nth-child(even) .mgs-feature-copy { order: 2; }
+  .mgs-feature .mgs-phone img { max-height: 520px; }
+}
+
+.mgs-steps { background: var(--paper); border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); padding: 56px 0; }
+.mgs-steps h2, .mgs-pricing h2, .mgs-close h2 { font-size: clamp(30px, 5vw, 40px); color: var(--board); }
+.mgs-steps ol { list-style: decimal; margin: 20px 0 0; padding-left: 1.4em; display: grid; gap: 16px; max-width: 62ch; font-size: 19px; line-height: 1.5; }
+.mgs-steps li::marker { font: 700 22px var(--font-display); color: var(--bracken); }
+.mgs-steps strong { font-family: var(--font-display); font-size: 21px; color: var(--board); }
+
+.mgs-pricing { padding-top: 56px; padding-bottom: 56px; }
+.mgs .mgs-lead { font-size: 19px; margin: 10px 0 22px; }
+.mgs-plans { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+.mgs-plan { background: var(--paper); border-radius: var(--radius); padding: 18px; border: 1px solid color-mix(in srgb, var(--rule) 70%, transparent); box-shadow: var(--shadow-sm); }
+.mgs-plan h3 { font-size: 22px; color: var(--board); }
+.mgs-price { font: 700 34px/1.1 var(--font-display); color: var(--ink); margin: 6px 0 8px; }
+.mgs-plan p { margin: 0; font-size: 16px; line-height: 1.45; color: var(--ink-soft); }
+.mgs .mgs-note { font-size: 15px; color: var(--ink-soft); margin: 16px 0 0; }
+
+.mgs-close { background: linear-gradient(170deg, var(--board), var(--board-deep)); color: #fff; padding: 56px 0; }
+.mgs-close h2 { color: #fff; margin-bottom: 20px; }
+.mgs-foot { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; padding-top: 24px; padding-bottom: 32px; font: 16px var(--font-display); color: var(--ink-soft); }
+
+/* "Made with" line on every trip site */
+.made-with { text-align: center; padding: 36px 16px 28px; font: 15px var(--font-display); color: var(--ink-soft); }
+.made-with a { color: var(--ink-soft); text-decoration: underline; text-underline-offset: 3px; }

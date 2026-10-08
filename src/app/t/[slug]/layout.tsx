@@ -1,3 +1,5 @@
+import Link from "next/link";
+import { BRAND } from "@/lib/brand";
 import { Providers } from "@/components/Providers";
 import { SiteHeader } from "@/components/SiteHeader";
 import { ThemeRoot } from "@/components/ThemeRoot";
@@ -11,6 +13,9 @@ export default async function TournamentLayout({ children, params }: LayoutProps
         <SiteHeader />
         <ClipQueue />
         <main className="wrap">{children}</main>
+        <footer className="made-with">
+          <Link href="/">Made with {BRAND.name}</Link>
+        </footer>
       </ThemeRoot>
     </Providers>
   );

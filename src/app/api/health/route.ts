@@ -22,7 +22,6 @@ export async function GET() {
     GEMINI_API_KEY: !!process.env.GEMINI_API_KEY,
     SMTP_USER: !!process.env.SMTP_USER,
     SMTP_PASS: !!process.env.SMTP_PASS,
-    HOME_TOURNAMENT: process.env.HOME_TOURNAMENT || null,
   };
   const db: Record<string, unknown> = {};
   try {

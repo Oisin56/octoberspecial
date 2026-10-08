@@ -33,7 +33,7 @@ export default function NewTournament() {
       <header className="site-head">
         <div className="wrap" style={{ padding: "22px 16px" }}>
           <Link href="/" className="site-title">
-            Tournament Live
+            MyGolfSpecial
           </Link>
         </div>
       </header>

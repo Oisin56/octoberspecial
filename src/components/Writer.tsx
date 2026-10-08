@@ -171,7 +171,7 @@ function NewPiece({ data, start, onDone }: { data: AdminData; start?: { type?: W
           </div>
           <label className="field">
             <span className="lbl">Anything to mention? (optional)</span>
-            <input value={extra} onChange={(e) => setExtra(e.target.value)} placeholder="Neil's new driver, the wind, the 19th hole" />
+            <input value={extra} onChange={(e) => setExtra(e.target.value)} placeholder="A new driver, the forecast, last year's result" />
           </label>
           <div className="row">
             <button className="btn" disabled={busy || (needsRound && !roundId) || !data.env.ai} onClick={write}>
@@ -345,7 +345,7 @@ function PieceCard({
               value={instruction}
               onChange={(e) => setInstruction(e.target.value)}
               style={{ minHeight: 80 }}
-              placeholder="Less about the weather, more about Neil's putting. Mention the 7th."
+              placeholder="Less about the weather, more about the putting. Mention the 7th."
             />
           </label>
           <label className="field">

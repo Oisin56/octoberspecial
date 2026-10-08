@@ -8,8 +8,9 @@ import "@fontsource/newsreader/600.css";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Golf tournament",
-  description: "Live scores, previews and reports for your golf tournament.",
+  title: { default: "MyGolfSpecial", template: "%s | MyGolfSpecial" },
+  description: "Live scores, previews, match reports and a highlights film for your golf trip.",
+  applicationName: "MyGolfSpecial",
 };
 
 export const viewport: Viewport = {

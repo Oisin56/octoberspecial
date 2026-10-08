@@ -36,7 +36,6 @@ About 30 minutes. Do the steps in order. Never paste keys into a chat. They only
 | `ELEVENLABS_API_KEY` | from elevenlabs.io (AI voice-over) |
 | `ELEVENLABS_VOICE_ID` | optional: a voice from your ElevenLabs Voice Library. Leave blank for the default narrator |
 | `GEMINI_API_KEY` | from aistudio.google.com (Veo cinematic shots; needs billing turned on for Veo) |
-| `HOME_TOURNAMENT` | `october-special-2026`, so the main address opens straight onto your trip. Remove it later to show the tournament list. |
 
 4. Press **Deploy**. After a minute or two you get a link like `october-special.vercel.app`.
 
@@ -65,13 +64,25 @@ About 30 minutes. Do the steps in order. Never paste keys into a chat. They only
 ## Making a new tournament (another group, another year)
 Go to the site's address followed by `/new`, fill in the name and an organiser PIN, and enter your site owner PIN. The step-by-step setup then walks through look, players and teams, courses and formats, side games, writing style and invites. Each tournament gets its own address (`/t/its-name`) and its own PINs.
 
+## Your domain (mygolfspecial.com)
+
+The main address is now the MyGolfSpecial front page. Your trip lives at `/t/october-special-2026`, so bookmark that.
+
+1. Buy `mygolfspecial.com` from any registrar (Namecheap, Blacknight, GoDaddy), or straight from Vercel under Domains.
+2. Vercel → your project → Settings → Domains → Add → `mygolfspecial.com`. Add `www.mygolfspecial.com` too and let it redirect.
+3. If you bought it elsewhere, copy the DNS records Vercel shows into the registrar's DNS page. It goes live within an hour or so.
+4. Change `SITE_URL` to `https://mygolfspecial.com` and redeploy, so email links use the new address.
+5. Delete `HOME_TOURNAMENT` in Vercel if you added it, otherwise the front page skips straight to your trip.
+
+The "See an example trip" button opens the October Special. To show a different tournament, set `NEXT_PUBLIC_DEMO_TOURNAMENT` to its slug.
+
 ## Email (previews and reports to followers)
 Emails are sent from your own iCloud address. Nothing to buy.
 1. Go to **appleid.apple.com → Sign-In and Security → App-Specific Passwords**, create one called "October Special" and copy it. (Your Apple ID needs two-factor authentication, which it almost certainly has.)
 2. In **Vercel → Settings → Environment Variables** add:
    - `SMTP_USER`: your iCloud email address
    - `SMTP_PASS`: the app-specific password (not your Apple ID password)
-   - `SITE_URL`: `https://octoberspecial.vercel.app`, so links in emails always go to the public site
+   - `SITE_URL`: `https://octoberspecial.vercel.app` (later `https://mygolfspecial.com`), so links in emails always go to the public site
 3. Run the latest `supabase/schema.sql` again (it adds the email list), then **Redeploy**.
 4. **Admin → Email list:** add people (one per line), or let them sign up on the home page.
 5. When you publish a preview, report or the tournament review, **Email it** is ticked: it goes to everyone on the list once. **Send me a test** sends it only to you first. Live bulletins are never emailed.

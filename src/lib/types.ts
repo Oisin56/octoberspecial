@@ -13,7 +13,6 @@ import type {
 } from "./engine";
 import { ONE_BALL, ballsOfGame } from "./engine";
 
-export const DEFAULT_TOURNAMENT = process.env.NEXT_PUBLIC_DEFAULT_TOURNAMENT || "october-special-2026";
 
 export type ThemeId = "clubhouse" | "links" | "championship" | "teamcup" | "custom";
 export type Tone = "broadsheet" | "tabloid" | "commentator" | "dry";

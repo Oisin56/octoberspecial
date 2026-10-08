@@ -1,5 +1,5 @@
 /**
- * October Special scoring engine.
+ * Scoring engine.
  *
  * Pure functions only: no database, no UI. Everything shown on the site
  * (leaderboards, match status, points, tallies) is derived from raw hole

@@ -213,7 +213,7 @@ ${results}
 ${highlight}
 <tr><td class="nl-pad" align="center" style="padding:18px 24px 8px"><table role="presentation" cellpadding="0" cellspacing="0"><tr>${btn(d.links.primary.label, d.links.primary.href, true)}${btn(d.links.secondary.label, d.links.secondary.href, false)}</tr></table></td></tr>
 <tr><td class="nl-pad" style="padding:18px 28px 24px;border-top:1px solid #e3e8e5;font-family:Arial,sans-serif;font-size:12px;line-height:1.6;color:#6b756f">
- ${d.promoHref ? `<div style="padding-bottom:8px"><a href="${esc(d.promoHref)}" style="color:${p.board};font-weight:bold;text-decoration:none">Run your own golf trip like this &rarr;</a></div>` : ""}
+ ${d.promoHref ? `<div style="padding-bottom:8px"><a href="${esc(d.promoHref)}" style="color:${p.board};font-weight:bold;text-decoration:none">Run your own golf trip with MyGolfSpecial</a></div>` : ""}
  You're getting this because you follow ${esc(d.tournamentName)} at <a href="${esc(d.siteHref)}" style="color:#6b756f">${esc(d.siteLabel)}</a>. <a href="${esc(d.unsubscribe)}" style="color:#6b756f">Unsubscribe</a>.
 </td></tr>
 </table></td></tr></table></body></html>`;
