@@ -407,7 +407,8 @@ export async function generatePiece(
         },
       },
     ],
-    tool_choice: { type: "tool", name: "publish_article" },
+    // This model only allows tool_choice "auto": the system prompt asks for the tool, and plain text is cleaned below
+    tool_choice: { type: "auto" },
     messages: [{ role: "user", content: user }],
   });
   let title = kind[0].toUpperCase() + kind.slice(1);
@@ -425,6 +426,12 @@ export async function generatePiece(
     body = text;
     const t = text.match(/"title"\s*:\s*"((?:[^"\\]|\\.)*)"/);
     if (t) title = t[1].replace(/\\"/g, '"');
+    // "Title: …" or "Headline: …" on the first line
+    const lead = body.match(/^\s*\**\s*(?:title|headline)\s*:\s*(.+)\n+/i);
+    if (lead) {
+      title = lead[1];
+      body = body.slice(lead[0].length);
+    }
   }
   title = cleanTitle(title) || kind[0].toUpperCase() + kind.slice(1);
   body = cleanBody(body);
