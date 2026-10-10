@@ -48,6 +48,8 @@ export interface VeoSegment extends Base {
   op?: string;
   src?: string;
   error?: string;
+  /** Google made the shot (and charged for it) but we couldn't fetch it: it can be fetched again for free */
+  refetch?: boolean;
 }
 
 export type Segment = CardSegment | ClipSegment | VeoSegment;

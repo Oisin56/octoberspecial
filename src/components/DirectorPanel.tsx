@@ -204,6 +204,15 @@ export function DirectorPanel() {
     updateSeg(id, r.j.segment as Segment, false);
   }
 
+  async function refetchVeo(id: string) {
+    if (!current) return;
+    setBusy(`refetch-${id}`);
+    const r = await call({ action: "veoRefetch", reelId: current.id, segmentId: id });
+    setBusy(null);
+    if (!r.ok) return setMsg(String(r.j.error ?? "Couldn't fetch the shot"));
+    updateSeg(id, r.j.segment as Segment, false);
+  }
+
   async function uploadMusic(file: File) {
     setBusy("music");
     const up = await api("/api/upload-url", { filename: file.name, contentType: file.type || "audio/mpeg" });
@@ -531,9 +540,14 @@ export function DirectorPanel() {
                         <option value={6}>6 seconds</option>
                         <option value={8}>8 seconds</option>
                       </select>
+                      {s.status === "failed" && s.refetch && !locked && (
+                        <button className="btn" disabled={!!busy} onClick={() => refetchVeo(s.id)}>
+                          {busy === `refetch-${s.id}` ? "Fetching…" : "Fetch it again (no charge)"}
+                        </button>
+                      )}
                       {s.status !== "pending" && !locked && (
-                        <button className="btn secondary" disabled={!cfg.veo} onClick={() => startVeo(s.id)}>
-                          {s.status === "done" ? "Make it again" : "Generate this shot"}
+                        <button className="btn secondary" disabled={!cfg.veo} onClick={() => (s.status === "done" || s.refetch) && !confirm("This makes a new shot, which Google charges for again. Go ahead?") ? undefined : startVeo(s.id)}>
+                          {s.status === "done" || s.refetch ? "Make a new one" : "Generate this shot"}
                         </button>
                       )}
                       <span className="small display">

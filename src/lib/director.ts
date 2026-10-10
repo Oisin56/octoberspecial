@@ -387,7 +387,7 @@ export async function veoStart(prompt: string, aspect: "16:9" | "9:16", seconds:
   return j.name as string;
 }
 
-export async function veoPoll(slug: string, op: string): Promise<{ done: boolean; src?: string; error?: string }> {
+export async function veoPoll(slug: string, op: string): Promise<{ done: boolean; src?: string; error?: string; refetch?: boolean }> {
   const r = await fetch(`${GEMINI()}/${op}`, { headers: { "x-goog-api-key": process.env.GEMINI_API_KEY! } });
   const j = await r.json().catch(() => ({}));
   if (!r.ok) return { done: true, error: `Veo status ${r.status}` };
@@ -398,10 +398,15 @@ export async function veoPoll(slug: string, op: string): Promise<{ done: boolean
     const filtered = j.response?.generateVideoResponse?.raiMediaFilteredReasons?.[0];
     return { done: true, error: filtered ? `Blocked by Veo's safety filter: ${filtered}` : "Veo returned no video" };
   }
-  const v = await fetch(uri, { headers: { "x-goog-api-key": process.env.GEMINI_API_KEY! }, redirect: "follow" });
-  if (!v.ok) return { done: true, error: `Couldn't download the Veo clip (${v.status})` };
-  const src = await uploadBuffer(`video/${slug}/veo-${crypto.randomUUID()}.mp4`, await v.arrayBuffer(), "video/mp4");
-  return { done: true, src };
+  // The shot exists (and is paid for) from here on: if fetching or saving fails, it can be fetched again for free
+  try {
+    const v = await fetch(uri, { headers: { "x-goog-api-key": process.env.GEMINI_API_KEY! }, redirect: "follow" });
+    if (!v.ok) return { done: true, refetch: true, error: `Google made the shot but it couldn't be downloaded (${v.status}): ${(await v.text()).slice(0, 160)}` };
+    const src = await uploadBuffer(`video/${slug}/veo-${crypto.randomUUID()}.mp4`, await v.arrayBuffer(), "video/mp4");
+    return { done: true, src };
+  } catch (e) {
+    return { done: true, refetch: true, error: `Google made the shot but it couldn't be saved: ${e instanceof Error ? e.message : e}` };
+  }
 }
 
 // ============================================================ Shotstack
@@ -603,6 +608,7 @@ export function sanitisePlan(p: Plan): Plan {
         op: v.op,
         src: v.src,
         error: v.error,
+        refetch: !!v.refetch,
         voice,
       };
     }

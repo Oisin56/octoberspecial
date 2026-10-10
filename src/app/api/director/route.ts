@@ -45,6 +45,34 @@ export async function POST(req: Request) {
   const savePlan = async (id: string, plan: Plan, extra: Record<string, unknown> = {}) => {
     await db.from("reels").update({ plan, updated_at: new Date().toISOString(), ...extra }).eq("id", id);
   };
+  /** Change one part of the latest saved plan (slow steps like composing or Veo must not overwrite each other). */
+  const patchPlan = async (id: string, change: (p: Plan) => void) => {
+    const fresh = await getReel(id);
+    if (!fresh?.plan) return null;
+    change(fresh.plan);
+    await savePlan(id, fresh.plan);
+    return fresh.plan;
+  };
+  /** Check one generating Veo shot with Google and record the result on the latest plan. */
+  const pollShot = async (reelId: string, segId: string, op: string) => {
+    let r: Awaited<ReturnType<typeof veoPoll>>;
+    try {
+      r = await veoPoll(t.slug, op);
+    } catch (e) {
+      r = { done: true, error: e instanceof Error ? e.message : "Veo failed" };
+    }
+    if (!r.done) return null;
+    const plan = await patchPlan(reelId, (p) => {
+      const s = p.segments.find((x) => x.id === segId);
+      if (s && s.kind === "veo" && s.status === "pending") {
+        s.status = r.src ? "done" : "failed";
+        s.src = r.src;
+        s.error = r.error;
+        s.refetch = !!r.refetch;
+      }
+    });
+    return plan?.segments.find((x) => x.id === segId) ?? null;
+  };
 
   /** Check a rendering film with the renderer; when it's done, save it and post it to Highlights. */
   const advance = async (reel: ReelRow): Promise<{ reel: ReelRow; progress?: string; copied?: boolean }> => {
@@ -80,7 +108,14 @@ export async function POST(req: Request) {
     case "list": {
       const { data } = await db.from("reels").select("*").eq("tournament_id", t.id).order("created_at", { ascending: false }).limit(20);
       // Finish any film that completed while nobody had this page open
-      const reels = await Promise.all(((data ?? []) as ReelRow[]).map((r) => (r.status === "rendering" ? advance(r).then((x) => x.reel).catch(() => r) : r)));
+      let reels = await Promise.all(((data ?? []) as ReelRow[]).map((r) => (r.status === "rendering" ? advance(r).then((x) => x.reel).catch(() => r) : r)));
+      // ...and any AI shots that finished while nobody was watching
+      const pending = reels.flatMap((r) => (r.plan?.segments ?? []).filter((s) => s.kind === "veo" && s.status === "pending" && s.op).map((s) => ({ r, s })));
+      if (pending.length) {
+        await Promise.all(pending.map(({ r, s }) => pollShot(r.id, s.id, (s as { op: string }).op).catch(() => null)));
+        const { data: again } = await db.from("reels").select("*").eq("tournament_id", t.id).order("created_at", { ascending: false }).limit(20);
+        reels = (again ?? reels) as ReelRow[];
+      }
       return json({ reels, configured: cfg, music: mediaUrl(t.reel_music_path ?? null) });
     }
 
@@ -143,6 +178,7 @@ export async function POST(req: Request) {
             s.src = old.src;
             s.status = old.status;
             s.error = old.error;
+            s.refetch = old.refetch;
           } else {
             s.op = undefined;
             s.src = undefined;
@@ -172,9 +208,9 @@ export async function POST(req: Request) {
       plan.music = { ...(plan.music ?? { mood: "epic" }), source: "made" };
       try {
         const m = await composeMusic(t.slug, plan.music.mood, planSeconds(plan));
-        plan.music = { ...plan.music, src: m.src, seconds: m.seconds, error: undefined };
-        await savePlan(reel.id, plan);
-        return json({ music: plan.music });
+        const music = { ...plan.music, src: m.src, seconds: m.seconds, error: undefined };
+        await patchPlan(reel.id, (p) => (p.music = music));
+        return json({ music });
       } catch (e) {
         return bad(e instanceof Error ? e.message : "Music didn't compose", 500);
       }
@@ -186,17 +222,17 @@ export async function POST(req: Request) {
       if (!reel?.plan) return bad("Reel not found", 404);
       const seg = reel.plan.segments.find((s) => s.id === b.segmentId);
       if (!seg || seg.kind !== "veo") return bad("Shot not found");
+      let upd: Partial<typeof seg>;
       try {
-        seg.op = await veoStart(seg.prompt, reel.plan.aspect, seg.seconds);
-        seg.status = "pending";
-        seg.error = undefined;
-        seg.src = undefined;
+        upd = { op: await veoStart(seg.prompt, reel.plan.aspect, seg.seconds), status: "pending", error: undefined, src: undefined, refetch: false };
       } catch (e) {
-        seg.status = "failed";
-        seg.error = e instanceof Error ? e.message : "Veo failed";
+        upd = { status: "failed", error: e instanceof Error ? e.message : "Veo failed", refetch: false };
       }
-      await savePlan(reel.id, reel.plan);
-      return json({ segment: seg });
+      const plan = await patchPlan(reel.id, (p) => {
+        const s = p.segments.find((x) => x.id === seg.id);
+        if (s && s.kind === "veo") Object.assign(s, upd);
+      });
+      return json({ segment: plan?.segments.find((x) => x.id === seg.id) ?? { ...seg, ...upd } });
     }
 
     case "veoPoll": {
@@ -205,19 +241,24 @@ export async function POST(req: Request) {
       const seg = reel.plan.segments.find((s) => s.id === b.segmentId);
       if (!seg || seg.kind !== "veo" || !seg.op) return bad("Shot not started");
       if (seg.status !== "pending") return json({ segment: seg });
-      let r: Awaited<ReturnType<typeof veoPoll>>;
-      try {
-        r = await veoPoll(t.slug, seg.op);
-      } catch (e) {
-        r = { done: true, error: e instanceof Error ? e.message : "Veo failed" };
-      }
-      if (r.done) {
-        seg.status = r.src ? "done" : "failed";
-        seg.src = r.src;
-        seg.error = r.error;
-        await savePlan(reel.id, reel.plan);
-      }
-      return json({ segment: seg });
+      const done = await pollShot(reel.id, seg.id, seg.op);
+      return json({ segment: done ?? seg });
+    }
+
+    case "veoRefetch": {
+      // Google already made (and charged for) this shot: fetch it again, no new charge
+      const plan = await patchPlan(String(b.reelId), (p) => {
+        const s = p.segments.find((x) => x.id === b.segmentId);
+        if (s && s.kind === "veo" && s.op && s.refetch) {
+          s.status = "pending";
+          s.error = undefined;
+          s.refetch = false;
+        }
+      });
+      const seg = plan?.segments.find((x) => x.id === b.segmentId);
+      if (!seg || seg.kind !== "veo" || !seg.op) return bad("Shot not found");
+      const done = await pollShot(String(b.reelId), seg.id, seg.op);
+      return json({ segment: done ?? seg });
     }
 
     case "bugCards": {
@@ -267,7 +308,7 @@ export async function POST(req: Request) {
           try {
             const m = await composeMusic(t.slug, pm.mood, planSeconds(plan));
             plan.music = { ...pm, src: m.src, seconds: m.seconds, error: undefined };
-            await savePlan(reel.id, plan);
+            await patchPlan(reel.id, (p) => (p.music = plan.music));
             musicUrl = m.src;
             composed = true;
           } catch (e) {
