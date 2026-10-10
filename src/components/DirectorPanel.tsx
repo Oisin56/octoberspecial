@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useT } from "./Providers";
 import { mediaUrl } from "@/lib/supabase";
 import { bugText, type ScoreBug } from "@/lib/scorebug";
+import { majorityShape, probeClips } from "@/lib/clipProbe";
 import { MOODS, musicFits, planSeconds, segmentSeconds, voiceSeconds, type Brief, type Mood, type Plan, type PlanMusic, type ReelRow, type Segment } from "@/lib/director-types";
 
 interface Configured {
@@ -39,6 +40,9 @@ export function DirectorPanel() {
   const [plan, setPlan] = useState<Plan | null>(null);
   const [dirty, setDirty] = useState(false);
   const [brief, setBrief] = useState<Brief>({ roundNumber: null, length: 180, aspect: "16:9", voice: true, veo: false });
+  /** "auto" = match the shape most clips were filmed in */
+  const [shape, setShape] = useState<"auto" | Brief["aspect"]>("auto");
+  const [voices, setVoices] = useState<{ id: string; name: string; note: string; preview: string | null }[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [progress, setProgress] = useState<string | null>(null);
@@ -80,6 +84,11 @@ export function DirectorPanel() {
   useEffect(() => {
     load();
   }, [load]);
+  useEffect(() => {
+    if (!cfg?.voice) return;
+    call({ action: "voices" }).then((r) => r.ok && setVoices((r.j.voices as typeof voices) ?? []));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cfg?.voice, call]);
 
   const open = (r: ReelRow) => {
     setCurrent(r);
@@ -145,8 +154,17 @@ export function DirectorPanel() {
 
   async function writePlan() {
     setBusy("plan");
-    setMsg("The director is watching the tape… (about 20–40 seconds)");
-    const r = await call({ action: "plan", brief });
+    // Watch the clips first: their shape and length, and a few stills for the director
+    const scope = brief.roundNumber == null ? null : state?.rounds.find((r) => r.number === brief.roundNumber)?.id;
+    const candidates = (state?.posts ?? [])
+      .filter((p) => p.kind === "video" && p.media_path && !p.hidden && !(p.body ?? "").startsWith("Highlights reel") && (!scope || p.round_id === scope))
+      .slice(0, 40)
+      .map((p) => ({ id: p.id, src: mediaUrl(p.media_path)! }));
+    setMsg(`Watching your clips… 0 of ${candidates.length}`);
+    const probes = await probeClips(candidates, (d, n) => setMsg(`Watching your clips… ${d} of ${n}`));
+    const aspect = shape === "auto" ? majorityShape(probes) ?? "16:9" : shape;
+    setMsg("The director is writing the plan and the commentary… (about 30–60 seconds)");
+    const r = await call({ action: "plan", brief: { ...brief, aspect }, probes });
     setBusy(null);
     if (!r.ok) return setMsg(String(r.j.error ?? "Couldn't write the plan"));
     open(r.j.reel as ReelRow);
@@ -363,7 +381,8 @@ export function DirectorPanel() {
           </div>
           <div className="field" style={{ flex: "1 1 150px" }}>
             <label htmlFor="dir-shape">Shape</label>
-            <select id="dir-shape" value={brief.aspect} onChange={(e) => setBrief({ ...brief, aspect: e.target.value as Brief["aspect"] })}>
+            <select id="dir-shape" value={shape} onChange={(e) => setShape(e.target.value as typeof shape)}>
+              <option value="auto">Match my clips</option>
               <option value="16:9">Landscape (TV, laptop)</option>
               <option value="9:16">Portrait (phones, stories)</option>
             </select>
@@ -417,6 +436,27 @@ export function DirectorPanel() {
               Voice-over on
             </label>
           </div>
+          {plan.voiceOn && cfg.voice && voices.length > 0 && (
+            <div className="row">
+              <div className="field" style={{ flex: "1 1 240px" }}>
+                <label htmlFor="dir-voice">Commentator</label>
+                <select id="dir-voice" value={plan.voiceId ?? ""} disabled={locked} onChange={(e) => (setPlan({ ...plan, voiceId: e.target.value || undefined }), setDirty(true))}>
+                  <option value="">Default commentator</option>
+                  {voices.map((v) => (
+                    <option key={v.id} value={v.id}>
+                      {v.name}
+                      {v.note ? ` (${v.note})` : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {plan.voiceId && voices.find((v) => v.id === plan.voiceId)?.preview && (
+                <button className="btn secondary" onClick={() => new Audio(voices.find((v) => v.id === plan.voiceId)!.preview!).play()}>
+                  Hear this voice
+                </button>
+              )}
+            </div>
+          )}
 
           <MusicChoice
             music={plan.music ?? { source: "upload", mood: "epic" }}

@@ -38,6 +38,8 @@ export interface ClipSegment extends Base {
   bug?: boolean;
   /** The clip finishes the hole: the panel updates near the end, with a BIRDIE / HOLE WON flash */
   finishes?: boolean;
+  /** Filmed upright (read by the browser). A clip of the other shape gets a blurred fill behind it */
+  portrait?: boolean;
 }
 
 export interface VeoSegment extends Base {
@@ -80,8 +82,24 @@ export interface Plan {
   voiceOn: boolean;
   musicVolume: number; // 0..1
   music?: PlanMusic;
+  /** ElevenLabs voice for the commentary (default narrator when unset) */
+  voiceId?: string;
   segments: Segment[];
 }
+
+/** What the browser learns about each clip before the director plans: its shape, length and a few stills. */
+export interface ClipProbe {
+  id: string;
+  w: number;
+  h: number;
+  duration: number | null;
+  /** Small JPEG stills (base64, no data: prefix): near the start, middle and end */
+  frames: string[];
+}
+
+/** Delivery tags the commentary may use (Eleven v3); stripped for voices that don't understand them. */
+export const VOICE_TAGS = ["[whispers]", "[excited]", "[laughs]", "[sighs]", "[calm]", "[impressed]"] as const;
+export const stripTags = (s: string) => s.replace(/\[(?:[a-z ]{2,24})\]\s*/gi, "").trim();
 
 /** Composed music is reused while the film length stays within this many seconds of what it was made for. */
 export const MUSIC_SLACK = 2;
@@ -114,8 +132,9 @@ export interface ReelRow {
 export const WPS = 2.6;
 
 export function voiceSeconds(text?: string) {
-  if (!text?.trim()) return 0;
-  return text.trim().split(/\s+/).length / WPS + 0.4;
+  const words = stripTags(text ?? "");
+  if (!words) return 0;
+  return words.split(/\s+/).length / WPS + 0.4;
 }
 
 export function segmentSeconds(s: Segment): number {

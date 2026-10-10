@@ -9,6 +9,7 @@ import {
   clipBugs,
   composeMusic,
   configured,
+  listVoices,
   publishReel,
   sanitisePlan,
   shotstackRender,
@@ -18,7 +19,18 @@ import {
   veoStart,
   writePlan,
 } from "@/lib/director";
-import { musicFits, planSeconds, type Brief, type Plan, type ReelRow } from "@/lib/director-types";
+import { musicFits, planSeconds, type Brief, type ClipProbe, type Plan, type ReelRow } from "@/lib/director-types";
+
+/** Clip shapes, lengths and stills sent by the browser: checked and capped. */
+function cleanProbes(raw: unknown): ClipProbe[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.slice(0, 40).flatMap((p) => {
+    if (!p || typeof p !== "object" || typeof p.id !== "string") return [];
+    const w = Number(p.w), h = Number(p.h);
+    const frames = Array.isArray(p.frames) ? p.frames.filter((f: unknown) => typeof f === "string" && f.length < 200_000 && /^[A-Za-z0-9+/=]+$/.test(f)).slice(0, 3) : [];
+    return [{ id: p.id, w: Number.isFinite(w) ? w : 0, h: Number.isFinite(h) ? h : 0, duration: Number.isFinite(Number(p.duration)) ? Number(p.duration) : null, frames }];
+  });
+}
 
 export const maxDuration = 300;
 
@@ -119,6 +131,11 @@ export async function POST(req: Request) {
       return json({ reels, configured: cfg, music: mediaUrl(t.reel_music_path ?? null) });
     }
 
+    case "voices": {
+      if (!cfg.voice) return json({ voices: [] });
+      return json({ voices: await listVoices() });
+    }
+
     case "setMusic": {
       const path = b.path ? String(b.path) : null;
       if (path && !/^(audio|video)\/[\w-]+\/[\w-]+\.[a-z0-9]+$/.test(path)) return bad("Bad music path");
@@ -142,7 +159,7 @@ export async function POST(req: Request) {
         roundId = r.id;
       }
       try {
-        const plan = await writePlan(t.id, brief);
+        const plan = await writePlan(t.id, brief, cleanProbes(b.probes));
         const { data, error } = await db.from("reels").insert({ tournament_id: t.id, round_id: roundId, brief, plan, status: "draft" }).select().single();
         if (error) return bad(error.message, 500);
         return json({ reel: data });
@@ -288,7 +305,7 @@ export async function POST(req: Request) {
       if (plan.voiceOn && cfg.voice) {
         try {
           const lines = plan.segments.filter((s) => s.voice?.trim());
-          const urls = await Promise.all(lines.map((s) => speak(t.slug, s.voice!.trim())));
+          const urls = await Promise.all(lines.map((s) => speak(t.slug, s.voice!.trim(), plan.voiceId)));
           lines.forEach((s, i) => (narration[s.id] = urls[i]));
         } catch (e) {
           // A voice problem shouldn't cost the whole film: render without narration and say why
