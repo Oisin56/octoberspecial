@@ -52,13 +52,38 @@ export interface VeoSegment extends Base {
 
 export type Segment = CardSegment | ClipSegment | VeoSegment;
 
+export type Mood = "epic" | "upbeat" | "light" | "celtic";
+
+/** Moods for composed music. The prompt is what the composer is asked for. */
+export const MOODS: { id: Mood; name: string; prompt: string }[] = [
+  { id: "epic", name: "Epic", prompt: "Cinematic orchestral sports-highlights theme with strings, brass and timpani, steady rising tension that builds to a triumphant finish" },
+  { id: "upbeat", name: "Upbeat", prompt: "Upbeat, feel-good sports montage with driving acoustic and electric guitars, claps and light drums, bright and positive" },
+  { id: "light", name: "Light-hearted", prompt: "Playful, light-hearted comedy underscore with pizzicato strings, woodwinds and a cheeky whistled-style melody" },
+  { id: "celtic", name: "Celtic", prompt: "Proud, sweeping Irish cinematic piece with tin whistle, fiddle, uilleann pipes and bodhrán, building to a rousing finish" },
+];
+
+export interface PlanMusic {
+  /** made = composed for this film; upload = the tournament's uploaded track; none = no music */
+  source: "made" | "upload" | "none";
+  mood: Mood;
+  /** The composed track and the film length it was made for */
+  src?: string;
+  seconds?: number;
+  error?: string;
+}
+
 export interface Plan {
   title: string;
   aspect: Aspect;
   voiceOn: boolean;
   musicVolume: number; // 0..1
+  music?: PlanMusic;
   segments: Segment[];
 }
+
+/** Composed music is reused while the film length stays within this many seconds of what it was made for. */
+export const MUSIC_SLACK = 2;
+export const musicFits = (m: PlanMusic | undefined, seconds: number) => !!m?.src && m.seconds != null && Math.abs(m.seconds - Math.ceil(seconds)) <= MUSIC_SLACK;
 
 export interface Brief {
   roundNumber: number | null; // null = whole tournament

@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useT } from "./Providers";
 import { mediaUrl } from "@/lib/supabase";
 import { bugText, type ScoreBug } from "@/lib/scorebug";
-import { planSeconds, segmentSeconds, voiceSeconds, type Brief, type Plan, type ReelRow, type Segment } from "@/lib/director-types";
+import { MOODS, musicFits, planSeconds, segmentSeconds, voiceSeconds, type Brief, type Mood, type Plan, type PlanMusic, type ReelRow, type Segment } from "@/lib/director-types";
 
 interface Configured {
   claude: boolean;
@@ -42,6 +42,8 @@ export function DirectorPanel() {
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [progress, setProgress] = useState<string | null>(null);
+  /** Film length on this screen when the music was last composed (the server decides at render) */
+  const [composedAt, setComposedAt] = useState<number | null>(null);
 
   const call = useCallback((body: Record<string, unknown>) => api("/api/director", body), [api]);
   const [bugs, setBugs] = useState<Record<string, BugPreview>>({});
@@ -75,6 +77,7 @@ export function DirectorPanel() {
     setPlan(r.plan);
     setDirty(false);
     setMsg(null);
+    setComposedAt(null);
   };
 
   // Poll a rendering reel
@@ -196,6 +199,27 @@ export function DirectorPanel() {
     load();
   }
 
+  function setMusicChoice(next: Partial<PlanMusic>) {
+    if (!plan) return;
+    const cur: PlanMusic = plan.music ?? { source: "upload", mood: "epic" };
+    const changedMood = next.mood && next.mood !== cur.mood;
+    setPlan({ ...plan, music: { ...cur, ...next, ...(changedMood ? { src: undefined, seconds: undefined } : {}) } });
+    setDirty(true);
+  }
+
+  async function compose() {
+    if (!current || !plan) return;
+    if (dirty && !(await save())) return;
+    setBusy("compose");
+    setMsg("Composing the music to fit the film. About a minute.");
+    const r = await call({ action: "composeMusic", reelId: current.id });
+    setBusy(null);
+    if (!r.ok) return setMsg(String(r.j.error ?? "Music didn't compose"));
+    setPlan((p) => (p ? { ...p, music: r.j.music as PlanMusic } : p));
+    setComposedAt(plan ? planSeconds(plan) : null);
+    setMsg("Music ready. Have a listen.");
+  }
+
   function addClip(postId: string) {
     const p = state?.posts.find((x) => x.id === postId);
     if (!p || !plan) return;
@@ -251,16 +275,6 @@ export function DirectorPanel() {
         <Status ok={cfg.shotstack} label={`Renderer${cfg.shotstack && cfg.shotstackEnv === "stage" ? " (test mode, watermarked)" : ""}`} />
         <Status ok={cfg.voice} label="Voice-over" />
         <Status ok={cfg.veo} label="Veo shots" />
-      </div>
-
-      {/* music */}
-      <div className="row">
-        <span className="display">Music:</span>
-        {music ? <audio src={music} controls style={{ height: 36, maxWidth: 260 }} /> : <span className="muted small">None yet. Use a royalty-free track (e.g. Pixabay Music, Uppbeat).</span>}
-        <label className="chip" style={{ cursor: "pointer" }}>
-          {busy === "music" ? "Uploading…" : music ? "Replace track" : "Upload a track"}
-          <input type="file" accept="audio/*" hidden onChange={(e) => e.target.files?.[0] && uploadMusic(e.target.files[0])} />
-        </label>
       </div>
 
       {/* brief */}
@@ -341,6 +355,18 @@ export function DirectorPanel() {
               Voice-over on
             </label>
           </div>
+
+          <MusicChoice
+            music={plan.music ?? { source: "upload", mood: "epic" }}
+            fits={composedAt != null ? Math.abs(composedAt - total) <= 2 : musicFits(plan.music, total)}
+            uploaded={music}
+            canCompose={cfg.voice}
+            locked={locked}
+            busy={busy}
+            onChange={setMusicChoice}
+            onCompose={compose}
+            onUpload={uploadMusic}
+          />
 
           <ol className="director-list">
             {plan.segments.map((s, i) => (
@@ -583,3 +609,79 @@ function Status({ ok, label }: { ok: boolean; label: string }) {
   );
 }
 
+
+/** Music for this film: composed to fit (default), the tournament's own track, or none. */
+function MusicChoice({
+  music,
+  fits,
+  uploaded,
+  canCompose,
+  locked,
+  busy,
+  onChange,
+  onCompose,
+  onUpload,
+}: {
+  music: PlanMusic;
+  fits: boolean;
+  uploaded: string | null;
+  canCompose: boolean;
+  locked: boolean;
+  busy: string | null;
+  onChange: (m: Partial<PlanMusic>) => void;
+  onCompose: () => void;
+  onUpload: (f: File) => void;
+}) {
+  return (
+    <div className="post stack music-choice">
+      <div className="row">
+        <div className="field" style={{ flex: "1 1 200px" }}>
+          <label htmlFor="dir-music">Music</label>
+          <select id="dir-music" value={music.source} disabled={locked} onChange={(e) => onChange({ source: e.target.value as PlanMusic["source"] })}>
+            {canCompose && <option value="made">Made for this film</option>}
+            <option value="upload">Your own track</option>
+            <option value="none">No music</option>
+          </select>
+        </div>
+        {music.source === "made" && (
+          <div className="field" style={{ flex: "1 1 160px" }}>
+            <label htmlFor="dir-mood">Mood</label>
+            <select id="dir-mood" value={music.mood} disabled={locked} onChange={(e) => onChange({ mood: e.target.value as Mood })}>
+              {MOODS.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+      </div>
+
+      {music.source === "made" && (
+        <div className="row">
+          {music.src && <audio key={music.src} src={music.src} controls style={{ height: 36, maxWidth: 300 }} />}
+          <button className="btn secondary" disabled={locked || !!busy} onClick={onCompose}>
+            {busy === "compose" ? "Composing…" : music.src ? "Try another" : "Compose music"}
+          </button>
+          <span className="small muted">
+            {!music.src
+              ? "Composed to the film's exact length. Or just render, and it's made then."
+              : fits
+                ? "Fits the film as it stands."
+                : "The film's length has changed, so new music will be composed when you render."}
+          </span>
+        </div>
+      )}
+
+      {music.source === "upload" && (
+        <div className="row">
+          {uploaded ? <audio src={uploaded} controls style={{ height: 36, maxWidth: 300 }} /> : <span className="small muted">No track yet. Use a royalty-free one, at least as long as the film.</span>}
+          <label className="btn secondary" style={{ cursor: "pointer" }}>
+            {busy === "music" ? "Uploading…" : uploaded ? "Replace track" : "Upload a track"}
+            <input type="file" accept="audio/*" hidden onChange={(e) => e.target.files?.[0] && onUpload(e.target.files[0])} />
+          </label>
+        </div>
+      )}
+    </div>
+  );
+}

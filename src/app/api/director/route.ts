@@ -7,6 +7,7 @@ import { cardUrl } from "@/lib/cards";
 import {
   buildTimeline,
   clipBugs,
+  composeMusic,
   configured,
   publishReel,
   sanitisePlan,
@@ -17,7 +18,7 @@ import {
   veoStart,
   writePlan,
 } from "@/lib/director";
-import type { Brief, Plan, ReelRow } from "@/lib/director-types";
+import { musicFits, planSeconds, type Brief, type Plan, type ReelRow } from "@/lib/director-types";
 
 export const maxDuration = 300;
 
@@ -119,8 +120,32 @@ export async function POST(req: Request) {
         }
         return true;
       });
+      // A composed track is the server's record; keep it unless the mood changed (then it's composed afresh)
+      const oldMusic = reel.plan?.music;
+      if (plan.music) {
+        const keep = oldMusic?.src && oldMusic.mood === plan.music.mood;
+        plan.music.src = keep ? oldMusic!.src : undefined;
+        plan.music.seconds = keep ? oldMusic!.seconds : undefined;
+      }
       await savePlan(reel.id, plan, { status: "draft", error: null });
       return json({ ok: true, plan });
+    }
+
+    case "composeMusic": {
+      if (!cfg.voice) return bad("ELEVENLABS_API_KEY isn't set, so music can't be composed", 500);
+      const reel = await getReel(String(b.reelId));
+      if (!reel?.plan) return bad("Reel not found", 404);
+      if (reel.status === "rendering") return bad("This reel is rendering. Wait for it to finish.", 409);
+      const plan = reel.plan;
+      plan.music = { ...(plan.music ?? { mood: "epic" }), source: "made" };
+      try {
+        const m = await composeMusic(t.slug, plan.music.mood, planSeconds(plan));
+        plan.music = { ...plan.music, src: m.src, seconds: m.seconds, error: undefined };
+        await savePlan(reel.id, plan);
+        return json({ music: plan.music });
+      } catch (e) {
+        return bad(e instanceof Error ? e.message : "Music didn't compose", 500);
+      }
     }
 
     case "veoStart": {
@@ -195,11 +220,34 @@ export async function POST(req: Request) {
           warning = `The voice-over didn't record (${e instanceof Error ? e.message : "voice service error"}), so this film has music and captions only.`;
         }
       }
+      // Music: composed for this film (reused if it still fits), the uploaded track, or none
+      let musicUrl: string | null = null;
+      let composed = false;
+      const pm = plan.music ?? { source: "upload" as const, mood: "epic" as const };
+      if (pm.source === "upload") musicUrl = mediaUrl(t.reel_music_path ?? null);
+      if (pm.source === "made") {
+        if (musicFits(pm, planSeconds(plan))) {
+          musicUrl = pm.src!;
+          composed = true;
+        } else if (cfg.voice) {
+          try {
+            const m = await composeMusic(t.slug, pm.mood, planSeconds(plan));
+            plan.music = { ...pm, src: m.src, seconds: m.seconds, error: undefined };
+            await savePlan(reel.id, plan);
+            musicUrl = m.src;
+            composed = true;
+          } catch (e) {
+            const why = e instanceof Error ? e.message : "music service error";
+            warning = `${warning ? `${warning} ` : ""}The music didn't compose (${why}), so this film has no music.`;
+          }
+        }
+      }
       const edit = buildTimeline(plan, {
         origin: origin(req),
         theme: t.theme,
         colors: t.custom_colors,
-        music: mediaUrl(t.reel_music_path ?? null),
+        music: musicUrl,
+        musicComposed: composed,
         narration,
         bugs: clipBugs(await loadServerState(t.id), plan),
       });
