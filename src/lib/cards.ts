@@ -4,7 +4,9 @@ import type { ThemeId } from "./types";
 import type { ScoreBug } from "./scorebug";
 
 export interface CardSpec {
-  k: "title" | "chapter" | "result" | "standings" | "caption" | "bug";
+  k: "title" | "chapter" | "result" | "standings" | "caption" | "bug" | "strap" | "replay" | "sting";
+  /** Swipe layer: a = main band, b = lighter leading band, c = gold edge */
+  layer?: "a" | "b" | "c";
   h: string; // heading
   s?: string; // sub line
   l?: [string, string][]; // rows: label, value
@@ -22,7 +24,7 @@ export interface CardSpec {
 }
 
 /** Bump whenever the card design changes. */
-export const CARD_DESIGN = 3;
+export const CARD_DESIGN = 4;
 
 export function signCard(d: string) {
   return createHmac("sha256", process.env.SESSION_SECRET ?? "dev").update(`card:${d}`).digest("base64url").slice(0, 24);

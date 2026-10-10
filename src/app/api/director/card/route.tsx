@@ -58,11 +58,15 @@ export async function GET(req: Request) {
   const W = spec.w;
   const H = spec.ht;
   const portrait = H > W;
-  const u = Math.min(W, H) / 1080; // scale unit
+  // scale unit (a swipe layer is wider than the frame: size it by the frame it crosses)
+  const u = Math.min(spec.k === "sting" ? W / 1.6 : W, H) / 1080;
 
   let body: React.ReactElement;
   if (spec.k === "bug" && spec.b) body = <Bug spec={spec} p={p} W={W} H={H} u={u} portrait={portrait} />;
   else if (spec.k === "caption") body = <Caption spec={spec} p={p} W={W} H={H} u={u} portrait={portrait} />;
+  else if (spec.k === "strap") body = <Strap spec={spec} p={p} W={W} H={H} u={u} portrait={portrait} />;
+  else if (spec.k === "replay") body = <ReplayTag spec={spec} p={p} W={W} H={H} u={u} portrait={portrait} />;
+  else if (spec.k === "sting") body = <StingLayer spec={spec} p={p} W={W} H={H} u={u} portrait={portrait} />;
   else body = <FullCard spec={spec} p={p} W={W} H={H} u={u} portrait={portrait} />;
 
   return new ImageResponse(body, {
@@ -216,6 +220,152 @@ function Caption({ spec, p, W, H, u, portrait }: CardProps) {
           {spec.s && <div style={{ display: "flex", ...S, fontSize: 34 * u, marginTop: 6 * u, color: "rgba(255,255,255,0.84)" }}>{spec.s}</div>}
         </div>
       </div>
+    </div>
+  );
+}
+
+/** Player and hole, sliding in when the film moves to a new hole: hole number block, name, then the detail. */
+function Strap({ spec, p, W, H, u, portrait }: CardProps) {
+  return (
+    <div
+      style={{
+        width: W,
+        height: H,
+        display: "flex",
+        flexDirection: "column",
+        justifyContent: "flex-end",
+        alignItems: portrait ? "center" : "flex-start",
+        padding: portrait ? `0 ${60 * u}px ${420 * u}px` : `0 ${80 * u}px ${80 * u}px`,
+      }}
+    >
+      <div style={{ display: "flex", flexDirection: "column", maxWidth: portrait ? W * 0.92 : W * 0.66, boxShadow: `0 ${16 * u}px ${44 * u}px rgba(0,0,0,0.45)`, borderRadius: 18 * u, overflow: "hidden" }}>
+        <div style={{ display: "flex", height: 7 * u, backgroundImage: `linear-gradient(90deg, ${p.red}, ${p.gold})` }} />
+        <div style={{ display: "flex", alignItems: "stretch" }}>
+          {spec.e && (
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                minWidth: 150 * u,
+                padding: `${10 * u}px ${24 * u}px`,
+                backgroundImage: `linear-gradient(160deg, ${mix(p.red, "#ffffff", 0.12)}, ${mix(p.red, "#000000", 0.35)})`,
+              }}
+            >
+              <div style={{ display: "flex", ...S, fontWeight: 600, fontSize: 22 * u, letterSpacing: 3 * u, color: "rgba(255,255,255,0.85)" }}>HOLE</div>
+              <div style={{ display: "flex", ...D, fontSize: 96 * u, lineHeight: 0.95, color: "#ffffff" }}>{spec.e}</div>
+            </div>
+          )}
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              justifyContent: "center",
+              padding: `${18 * u}px ${36 * u}px ${20 * u}px`,
+              backgroundImage: `linear-gradient(90deg, ${rgba(p.glass, 0.92)}, ${rgba(p.glass, 0.72)})`,
+            }}
+          >
+            <div style={{ display: "flex", ...D, fontSize: 76 * u, lineHeight: 1, color: "#ffffff", letterSpacing: 0.5 * u }}>{spec.h}</div>
+            {spec.s && <div style={{ display: "flex", ...S, fontWeight: 600, fontSize: 32 * u, marginTop: 8 * u, color: p.gold }}>{spec.s}</div>}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** The REPLAY tag over a slow-motion replay. */
+function ReplayTag({ p, W, H, u, portrait }: CardProps) {
+  return (
+    <div
+      style={{
+        width: W,
+        height: H,
+        display: "flex",
+        flexDirection: "column",
+        alignItems: portrait ? "center" : "flex-end",
+        justifyContent: portrait ? "flex-end" : "flex-start",
+        padding: portrait ? `0 0 ${640 * u}px` : `${64 * u}px ${72 * u}px 0 0`,
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", borderRadius: 999, overflow: "hidden", boxShadow: `0 ${10 * u}px ${30 * u}px rgba(0,0,0,0.45)` }}>
+        <div style={{ display: "flex", width: 10 * u, alignSelf: "stretch", background: p.gold }} />
+        <div
+          style={{
+            display: "flex",
+            ...D,
+            fontSize: 46 * u,
+            letterSpacing: 6 * u,
+            color: "#ffffff",
+            padding: `${10 * u}px ${36 * u}px ${12 * u}px ${30 * u}px`,
+            backgroundImage: `linear-gradient(90deg, ${mix(p.red, "#ffffff", 0.08)}, ${mix(p.red, "#000000", 0.4)})`,
+          }}
+        >
+          REPLAY
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * One layer of the branded swipe between scenes. The image is 1.6× the frame's width; the film slides it
+ * across. Layer "a" is the main band with the event's name, "b" a lighter band that leads and trails it,
+ * "c" a thin gold edge. Slanted ends come from a skewed band inside a transparent image.
+ */
+function StingLayer({ spec, p, W, H, u }: CardProps) {
+  const layer = spec.layer ?? "a";
+  const frameW = W / 1.6;
+  const slant = Math.min(H * 0.12, frameW * 0.1);
+  const skew = (Math.atan2(slant * 2, H) * 180) / Math.PI;
+  // band spans the frame with room for its slanted ends; the gold layer is two edges hugging the main band
+  const main = { left: W * 0.5 - frameW * 0.58, width: frameW * 1.16 };
+  const edge = frameW * 0.035;
+  const gap = frameW * 0.012;
+  const bands =
+    layer === "c"
+      ? [
+          { left: main.left - gap - edge, width: edge },
+          { left: main.left + main.width + gap, width: edge },
+        ]
+      : layer === "b"
+        ? [{ left: W * 0.5 - frameW * 0.64, width: frameW * 1.28 }]
+        : [main];
+  const fill =
+    layer === "a"
+      ? `linear-gradient(90deg, ${mix(p.board, "#000000", 0.35)}, ${p.board} 30%, ${mix(p.board, "#ffffff", 0.08)} 50%, ${p.board} 70%, ${mix(p.board, "#000000", 0.35)})`
+      : layer === "b"
+        ? `linear-gradient(90deg, ${rgba(mix(p.board, "#ffffff", 0.45), 0.85)}, ${rgba(mix(p.board, "#ffffff", 0.25), 0.85)})`
+        : `linear-gradient(180deg, ${mix(p.gold, "#ffffff", 0.25)}, ${p.gold} 50%, ${mix(p.gold, "#000000", 0.2)})`;
+  return (
+    <div style={{ width: W, height: H, display: "flex", position: "relative" }}>
+      {bands.map((band, i) => (
+        <div
+          key={i}
+          style={{
+            position: "absolute",
+            top: -H * 0.05,
+            left: band.left,
+            width: band.width,
+            height: H * 1.1,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            backgroundImage: fill,
+            transform: `skewX(-${skew.toFixed(2)}deg)`,
+          }}
+        >
+          {layer === "a" && (
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", transform: `skewX(${skew.toFixed(2)}deg)` }}>
+              <div style={{ display: "flex", width: 90 * u, height: 6 * u, background: p.gold, marginBottom: 22 * u }} />
+              <div style={{ display: "flex", ...D, fontSize: 84 * u, letterSpacing: 8 * u, color: "#ffffff", textAlign: "center", maxWidth: frameW * 0.86, justifyContent: "center" }}>
+                {(spec.h || "").toUpperCase()}
+              </div>
+            </div>
+          )}
+        </div>
+      ))}
     </div>
   );
 }

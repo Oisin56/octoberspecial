@@ -7,7 +7,7 @@ import { mediaUrl } from "@/lib/supabase";
 import { bugText, type ScoreBug } from "@/lib/scorebug";
 import { majorityShape, probeClips } from "@/lib/clipProbe";
 import { sendPoster } from "@/lib/trimmer";
-import { COMMENTARY, MOODS, voiceKey, lineFits, lineText, type LinePart, musicFits, planSeconds, segmentSeconds, type Brief, type Mood, type Plan, type PlanMusic, type ReelRow, type Segment } from "@/lib/director-types";
+import { COMMENTARY, MOODS, voiceKey, lineFits, lineText, recordingOf, LINE_PARTS, type LinePart, musicFits, planSeconds, segmentSeconds, type Brief, type Mood, type Plan, type PlanMusic, type ReelRow, type Segment } from "@/lib/director-types";
 
 interface Configured {
   claude: boolean;
@@ -688,6 +688,10 @@ export function DirectorPanel() {
                           <input type="checkbox" checked={!!s.finishes} disabled={locked || s.bug === false} onChange={(e) => updateSeg(s.id, { ...s, finishes: e.target.checked })} style={{ width: 18, height: 18 }} />
                           Finishes the hole
                         </label>
+                        <label className="row">
+                          <input type="checkbox" checked={!!s.replay} disabled={locked} onChange={(e) => updateSeg(s.id, { ...s, replay: e.target.checked || undefined })} style={{ width: 18, height: 18 }} />
+                          Slow-motion replay
+                        </label>
                       </div>
                       {s.bug !== false && bugs[s.id] && (
                         <div className="row" style={{ alignItems: "flex-start" }}>
@@ -732,7 +736,7 @@ export function DirectorPanel() {
                 )}
 
                 {plan.voiceOn &&
-                  (s.kind === "clip" ? (["voice", "payoff"] as LinePart[]) : (["voice"] as LinePart[])).map((part) => (
+                  (s.kind === "clip" ? LINE_PARTS.filter((pt) => pt !== "replay" || s.replay) : (["voice"] as LinePart[])).map((part) => (
                     <LineEditor
                       key={part}
                       seg={s}
@@ -740,7 +744,14 @@ export function DirectorPanel() {
                       voiceId={plan.voiceId}
                       locked={locked}
                       onChange={(text) =>
-                        updateSeg(s.id, part === "voice" ? { ...s, voice: text, voiceAuto: undefined } : ({ ...s, payoff: text, payoffAuto: undefined } as Segment))
+                        updateSeg(
+                          s.id,
+                          part === "voice"
+                            ? { ...s, voice: text, voiceAuto: undefined }
+                            : part === "payoff"
+                              ? ({ ...s, payoff: text, payoffAuto: undefined } as Segment)
+                              : ({ ...s, replayVoice: text, replayAuto: undefined } as Segment),
+                        )
                       }
                     />
                   ))}
@@ -790,8 +801,7 @@ export function DirectorPanel() {
   );
 }
 
-const PARTS: LinePart[] = ["voice", "payoff"];
-const recordingOf = (s: Segment, part: LinePart) => (part === "voice" ? { src: s.voiceSrc, key: s.voiceFor } : s.kind === "clip" ? { src: s.payoffSrc, key: s.payoffFor } : {});
+const PARTS = LINE_PARTS;
 const isRecorded = (s: Segment, part: LinePart, voiceId?: string) => {
   const r = recordingOf(s, part);
   return !!r.src && r.key === voiceKey(lineText(s, part), voiceId);
@@ -801,12 +811,12 @@ const recordedCount = (plan: Plan) => plan.segments.reduce((n, s) => n + PARTS.f
 
 /** One line of commentary: the words, how long it takes against the time it has, and a player once recorded. */
 function LineEditor({ seg, part, voiceId, locked, onChange }: { seg: Segment; part: LinePart; voiceId?: string; locked: boolean; onChange: (t: string) => void }) {
-  const text = part === "voice" ? (seg.voice ?? "") : seg.kind === "clip" ? (seg.payoff ?? "") : "";
-  const label = seg.kind !== "clip" ? "Narration" : part === "voice" ? "Set-up (before the shot)" : "Payoff (as the result shows)";
+  const text = part === "voice" ? (seg.voice ?? "") : seg.kind !== "clip" ? "" : part === "payoff" ? (seg.payoff ?? "") : (seg.replayVoice ?? "");
+  const label = seg.kind !== "clip" ? "Narration" : part === "voice" ? "Set-up (before the shot)" : part === "payoff" ? "Payoff (as the result shows)" : "Over the replay";
   const fit = lineFits(seg, part);
   const rec = recordingOf(seg, part);
   const recorded = isRecorded(seg, part, voiceId);
-  const auto = part === "voice" ? seg.voiceAuto : seg.kind === "clip" && seg.payoffAuto;
+  const auto = recordingOf(seg, part).auto;
   return (
     <div className="field line-editor">
       <label className="small">
@@ -820,7 +830,7 @@ function LineEditor({ seg, part, voiceId, locked, onChange }: { seg: Segment; pa
         )}
         {auto && <span className="muted"> · shortened to fit</span>}
       </label>
-      <textarea value={text} disabled={locked} onChange={(e) => onChange(e.target.value)} style={{ minHeight: part === "payoff" ? 36 : 44 }} placeholder={part === "payoff" ? "e.g. And in it goes!" : undefined} />
+      <textarea value={text} disabled={locked} onChange={(e) => onChange(e.target.value)} style={{ minHeight: part === "payoff" ? 36 : 44 }} placeholder={part === "payoff" ? "e.g. And in it goes!" : part === "replay" ? "e.g. Watch the pace on that." : undefined} />
       {text.trim() && (recorded ? <audio key={rec.src} src={rec.src} controls preload="none" style={{ height: 32, maxWidth: 300 }} /> : <span className="small muted">Not recorded yet</span>)}
     </div>
   );

@@ -56,6 +56,13 @@ export interface ClipSegment extends Base {
   payoffFor?: string;
   payoffSec?: number;
   payoffAuto?: boolean;
+  /** Slow-motion replay of the finish after the hold (big moments only), with its own short line */
+  replay?: boolean;
+  replayVoice?: string;
+  replaySrc?: string;
+  replayFor?: string;
+  replaySec?: number;
+  replayAuto?: boolean;
 }
 
 export interface VeoSegment extends Base {
@@ -188,54 +195,82 @@ export function voiceSeconds(text?: string) {
   return words.split(/\s+/).length / WPS + 0.4;
 }
 
-export type LinePart = "voice" | "payoff";
+export type LinePart = "voice" | "payoff" | "replay";
+export const LINE_PARTS: LinePart[] = ["voice", "payoff", "replay"];
 
-/** A segment's line of commentary for one part (clips have a set-up and a payoff; cards and AI shots just one). */
+/** A segment's line of commentary for one part (clips: set-up, payoff and replay line; cards and AI shots just one). */
 export function lineText(s: Segment, part: LinePart): string {
-  const t = part === "voice" ? s.voice : s.kind === "clip" ? s.payoff : undefined;
+  const t = part === "voice" ? s.voice : s.kind !== "clip" ? undefined : part === "payoff" ? s.payoff : s.replay ? s.replayVoice : undefined;
   return (t ?? "").trim();
+}
+
+type Rec = { src?: string; key?: string; sec?: number; auto?: boolean };
+/** The recording held for one part of a segment. */
+export function recordingOf(s: Segment, part: LinePart): Rec {
+  if (part === "voice") return { src: s.voiceSrc, key: s.voiceFor, sec: s.voiceSec, auto: s.voiceAuto };
+  if (s.kind !== "clip") return {};
+  return part === "payoff"
+    ? { src: s.payoffSrc, key: s.payoffFor, sec: s.payoffSec, auto: s.payoffAuto }
+    : { src: s.replaySrc, key: s.replayFor, sec: s.replaySec, auto: s.replayAuto };
 }
 
 /** Seconds the line takes: measured once recorded (same words), estimated before. */
 export function lineSeconds(s: Segment, part: LinePart): number {
   const text = lineText(s, part);
   if (!text) return 0;
-  const f = s as Segment & { payoffFor?: string; payoffSec?: number };
-  const forKey = part === "voice" ? s.voiceFor : f.payoffFor;
-  const sec = part === "voice" ? s.voiceSec : f.payoffSec;
-  if (forKey && sec != null && forKey.slice(forKey.indexOf("|") + 1) === text) return sec;
+  const r = recordingOf(s, part);
+  if (r.key && r.sec != null && r.key.slice(r.key.indexOf("|") + 1) === text) return r.sec;
   return voiceSeconds(text);
 }
 
-/** Timing inside a clip of `len` seconds: when each line starts, and the most each may take. */
-export const LEAD_IN = 0.3; // set-up starts this long after the cut
-export const TAIL = 0.4; // payoff ends this long before the clip does
+/** Broadcast timing, in seconds */
+export const LEAD_IN = 0.8; // first words this long after a cut (the picture lands first)
+export const TAIL = 0.3; // a payoff with no hold ends this long before the cut
 export const GAP = 0.4; // quiet between set-up and payoff (the shot itself)
-export function clipLayout(len: number, setupSec: number, payoffSec: number) {
-  const payoffMax = Math.max(1.4, Math.min(3.2, len * 0.4));
-  const payoffStart = payoffSec ? Math.max(LEAD_IN, len - TAIL - payoffSec) : len;
-  const setupEndBy = payoffSec ? payoffStart - GAP : len - LEAD_IN;
+export const HOLD = 1.4; // the result stays on screen this long after the footage, before moving on
+export const INTO_HOLD = 0.5; // a payoff may run this far into the hold
+export const STING = 0.94; // the branded swipe between holes and scenes
+
+/** How a clip's time is spent: the footage itself, the hold on the result, and an optional slow-motion replay. */
+export function clipParts(s: ClipSegment) {
+  const end = s.out ?? (s.duration != null ? Math.min(s.duration, s.in + 10) : s.in + 8);
+  const real = Math.max(1, Math.min(30, end - s.in));
+  const hold = s.payoff?.trim() || s.finishes || s.replay ? HOLD : 0;
+  // More footage after the chosen end? Hold on that; otherwise the last moments play at half speed
+  const spare = s.duration != null ? Math.max(0, s.duration - (s.in + real)) : 0;
+  const replay = s.replay ? Math.round(2 * Math.min(3, real) * 100) / 100 : 0;
+  return { real, hold, spare, replay };
+}
+
+/** Timing inside a clip: when each line starts, and the most each may take. */
+export function clipLayout(real: number, hold: number, setupSec: number, payoffSec: number) {
+  const payoffEnd = hold ? real + INTO_HOLD : real - TAIL;
+  const payoffMax = Math.max(1.4, Math.min(3.2, real * 0.4 + (hold ? INTO_HOLD : 0)));
+  const payoffStart = payoffSec ? Math.max(LEAD_IN, payoffEnd - payoffSec) : real + hold;
+  const setupEndBy = payoffSec ? payoffStart - GAP : real - 0.3;
   return { setupStart: LEAD_IN, setupMax: Math.max(0, setupEndBy - LEAD_IN), payoffStart, payoffMax };
 }
 
-/** Does this line fit its slot? (cards and AI shots stretch or are short, so only clips are checked closely) */
+/** Does this line fit its slot? (cards stretch, so they're only checked loosely) */
 export function lineFits(s: Segment, part: LinePart): { fits: boolean; sec: number; max: number } {
   const sec = lineSeconds(s, part);
   if (!sec) return { fits: true, sec: 0, max: 0 };
   if (s.kind === "card") return { fits: sec <= 12, sec, max: 12 };
   const len = segmentSeconds(s);
   if (s.kind === "veo") return { fits: sec <= len - LEAD_IN, sec, max: len - LEAD_IN };
-  const L = clipLayout(len, lineSeconds(s, "voice"), lineSeconds(s, "payoff"));
-  const max = part === "voice" ? L.setupMax : Math.min(L.payoffMax, len - 2 * LEAD_IN);
+  const p = clipParts(s);
+  if (part === "replay") return { fits: sec <= p.replay - LEAD_IN - 0.3 + 0.15, sec, max: p.replay - LEAD_IN - 0.3 };
+  const L = clipLayout(p.real, p.hold, lineSeconds(s, "voice"), lineSeconds(s, "payoff"));
+  const max = part === "voice" ? L.setupMax : Math.min(L.payoffMax, p.real + (p.hold ? INTO_HOLD : 0) - LEAD_IN);
   return { fits: sec <= max + 0.15, sec, max };
 }
 
 export function segmentSeconds(s: Segment): number {
   // Cards stay up until their line has finished
-  if (s.kind === "card") return Math.max(s.seconds, lineSeconds(s, "voice") ? lineSeconds(s, "voice") + LEAD_IN + 0.6 : 0);
+  if (s.kind === "card") return Math.max(s.seconds, lineSeconds(s, "voice") ? lineSeconds(s, "voice") + LEAD_IN + 0.7 : 0);
   if (s.kind === "veo") return s.status === "done" ? s.seconds : 0;
-  const end = s.out ?? (s.duration != null ? Math.min(s.duration, s.in + 10) : s.in + 8);
-  return Math.max(1, Math.min(30, end - s.in));
+  const p = clipParts(s);
+  return Math.round((p.real + p.hold + p.replay) * 100) / 100;
 }
 
 export function planSeconds(p: Plan) {

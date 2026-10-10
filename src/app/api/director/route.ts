@@ -16,10 +16,11 @@ import {
   shotstackRender,
   shotstackStatus,
   veoPoll,
+  whooshSound,
   veoStart,
   writePlan,
 } from "@/lib/director";
-import { COMMENTARY, lineSeconds, lineText, musicFits, planSeconds, voiceKey, type Brief, type ClipProbe, type Plan, type ReelRow } from "@/lib/director-types";
+import { COMMENTARY, LINE_PARTS, lineSeconds, lineText, recordingOf, musicFits, planSeconds, voiceKey, type Brief, type ClipProbe, type Plan, type ReelRow } from "@/lib/director-types";
 
 /** Clip shapes, lengths and stills sent by the browser: checked and capped. */
 function cleanProbes(raw: unknown): ClipProbe[] {
@@ -36,7 +37,7 @@ export const maxDuration = 300;
 
 /** Copy the commentary (words, recordings, lengths) from one copy of a plan to the latest saved one. */
 function copyCommentary(from: Plan, to: Plan) {
-  const keys = ["voice", "voiceSrc", "voiceFor", "voiceSec", "voiceAuto", "payoff", "payoffSrc", "payoffFor", "payoffSec", "payoffAuto"] as const;
+  const keys = ["voice", "voiceSrc", "voiceFor", "voiceSec", "voiceAuto", "payoff", "payoffSrc", "payoffFor", "payoffSec", "payoffAuto", "replayVoice", "replaySrc", "replayFor", "replaySec", "replayAuto"] as const;
   for (const s of to.segments) {
     const f = from.segments.find((x) => x.id === s.id);
     if (!f) continue;
@@ -224,6 +225,11 @@ export async function POST(req: Request) {
           s.payoffFor = was.payoffFor;
           s.payoffSec = was.payoffSec;
         }
+        if (s.kind === "clip" && was?.kind === "clip" && was.replaySrc && s.replay && s.replayVoice?.trim() && was.replayFor === voiceKey(s.replayVoice, plan.voiceId)) {
+          s.replaySrc = was.replaySrc;
+          s.replayFor = was.replayFor;
+          s.replaySec = was.replaySec;
+        }
         if (s.kind === "clip") {
           const mp = byId.get(s.postId);
           if (!mp) return false;
@@ -282,10 +288,10 @@ export async function POST(req: Request) {
       if (!reel?.plan) return bad("Reel not found", 404);
       if (reel.status === "rendering") return bad("This reel is rendering. Wait for it to finish.", 409);
       const work = structuredClone(reel.plan);
-      const before = JSON.stringify(work.segments.map((x) => [x.voiceFor, x.kind === "clip" ? x.payoffFor : null]));
+      const before = JSON.stringify(work.segments.map((x) => LINE_PARTS.map((pt) => recordingOf(x, pt).key)));
       const r = await fitCommentary(t.slug, work, 150_000);
       const plan = await patchPlan(reel.id, (p) => copyCommentary(work, p));
-      const recorded = JSON.stringify(work.segments.map((x) => [x.voiceFor, x.kind === "clip" ? x.payoffFor : null])) !== before;
+      const recorded = JSON.stringify(work.segments.map((x) => LINE_PARTS.map((pt) => recordingOf(x, pt).key))) !== before;
       return json({ plan, recorded: recorded ? 1 : 0, remaining: r.remaining, tightened: r.tightened, errors: r.errors });
     }
 
@@ -363,12 +369,11 @@ export async function POST(req: Request) {
         await patchPlan(reel.id, (p) => copyCommentary(plan, p));
         let lines = 0;
         for (const s of plan.segments) {
-          for (const part of ["voice", "payoff"] as const) {
+          for (const part of LINE_PARTS) {
             const text = lineText(s, part);
             if (!text) continue;
             lines++;
-            const src = part === "voice" ? s.voiceSrc : s.kind === "clip" ? s.payoffSrc : undefined;
-            const key = part === "voice" ? s.voiceFor : s.kind === "clip" ? s.payoffFor : undefined;
+            const { src, key } = recordingOf(s, part);
             if (src && key === voiceKey(text, plan.voiceId)) narration[`${s.id}:${part}`] = { src, sec: lineSeconds(s, part) };
           }
         }
@@ -402,6 +407,7 @@ export async function POST(req: Request) {
           }
         }
       }
+      const state = await loadServerState(t.id);
       const edit = buildTimeline(plan, {
         origin: origin(req),
         theme: t.theme,
@@ -409,8 +415,11 @@ export async function POST(req: Request) {
         music: musicUrl,
         musicComposed: composed,
         narration,
-        bugs: clipBugs(await loadServerState(t.id), plan),
+        bugs: clipBugs(state, plan),
         posters: await clipPosters(plan),
+        names: Object.fromEntries(state.players.map((pl) => [pl.id, pl.name])),
+        eventName: t.name,
+        whoosh: cfg.voice ? await whooshSound() : null,
       });
       try {
         const id = await shotstackRender(edit);
