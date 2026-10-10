@@ -540,7 +540,7 @@ export function DirectorPanel() {
                         <option value={6}>6 seconds</option>
                         <option value={8}>8 seconds</option>
                       </select>
-                      {s.status === "failed" && s.refetch && !locked && (
+                      {s.status === "failed" && (s.refetch || (s.op && !/safety filter/i.test(s.error ?? ""))) && !locked && (
                         <button className="btn" disabled={!!busy} onClick={() => refetchVeo(s.id)}>
                           {busy === `refetch-${s.id}` ? "Fetching…" : "Fetch it again (no charge)"}
                         </button>

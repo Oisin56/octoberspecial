@@ -249,7 +249,8 @@ export async function POST(req: Request) {
       // Google already made (and charged for) this shot: fetch it again, no new charge
       const plan = await patchPlan(String(b.reelId), (p) => {
         const s = p.segments.find((x) => x.id === b.segmentId);
-        if (s && s.kind === "veo" && s.op && s.refetch) {
+        // Any shot Google started can be fetched again (older plans don't carry the refetch flag)
+        if (s && s.kind === "veo" && s.op && s.status === "failed") {
           s.status = "pending";
           s.error = undefined;
           s.refetch = false;
