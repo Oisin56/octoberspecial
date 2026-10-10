@@ -312,6 +312,32 @@ export function DirectorPanel() {
         <Status ok={cfg.veo} label="Veo shots" />
       </div>
 
+      {/* saved films, first: open one to see its plan, AI shots and result */}
+      <div className="post stack films-list">
+        <h3>Your films</h3>
+        {reels.length === 0 ? (
+          <p className="small muted" style={{ margin: 0 }}>
+            None yet. Write a plan below to make your first.
+          </p>
+        ) : (
+          <>
+            {!current && (
+              <p className="small muted" style={{ margin: 0 }}>
+                Tap a film to open it.
+              </p>
+            )}
+            {reels.map((r) => (
+              <div key={r.id} className="row" style={{ justifyContent: "space-between" }}>
+                <button className="chip" aria-pressed={current?.id === r.id} onClick={() => open(r)}>
+                  {r.plan?.title ?? "Untitled"} · {new Date(r.created_at).toLocaleString("en-IE", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                </button>
+                <span className={`pill ${r.status === "done" ? "done" : r.status === "rendering" ? "live" : ""}`}>{r.status === "done" ? "ready" : r.status}</span>
+              </div>
+            ))}
+          </>
+        )}
+      </div>
+
       {/* brief */}
       <div className="post stack">
         <h3>New film</h3>
@@ -611,19 +637,6 @@ export function DirectorPanel() {
         </div>
       )}
 
-      {reels.length > 0 && (
-        <div className="stack">
-          <h3>Your films</h3>
-          {reels.map((r) => (
-            <div key={r.id} className="row" style={{ justifyContent: "space-between" }}>
-              <button className="chip" aria-pressed={current?.id === r.id} onClick={() => open(r)}>
-                {r.plan?.title ?? "Untitled"} · {new Date(r.created_at).toLocaleString("en-IE", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
-              </button>
-              <span className={`pill ${r.status === "done" ? "done" : r.status === "rendering" ? "live" : ""}`}>{r.status}</span>
-            </div>
-          ))}
-        </div>
-      )}
     </section>
   );
 }
