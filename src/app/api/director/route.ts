@@ -46,10 +46,39 @@ export async function POST(req: Request) {
     await db.from("reels").update({ plan, updated_at: new Date().toISOString(), ...extra }).eq("id", id);
   };
 
+  /** Check a rendering film with the renderer; when it's done, save it and post it to Highlights. */
+  const advance = async (reel: ReelRow): Promise<{ reel: ReelRow; progress?: string; copied?: boolean }> => {
+    if (reel.status !== "rendering" || !reel.render_id) return { reel };
+    const st = await shotstackStatus(reel.render_id).catch(() => ({ status: "rendering" }) as { status: string; url?: string; error?: string });
+    if (st.status === "done" && st.url) {
+      let pub;
+      try {
+        pub = await publishReel(t.id, t.slug, reel.id, st.url, reel.plan?.title ?? "Highlights", reel.round_id);
+      } catch (e) {
+        const { data } = await db.from("reels").update({ status: "failed", error: `Rendered, but saving failed: ${e instanceof Error ? e.message : e}. Film: ${st.url}` }).eq("id", reel.id).select().single();
+        return { reel: data as ReelRow };
+      }
+      const { data } = await db
+        .from("reels")
+        .update({ status: "done", video_path: pub.mediaPath, post_id: pub.postId, updated_at: new Date().toISOString() })
+        .eq("id", reel.id)
+        .select()
+        .single();
+      return { reel: data as ReelRow, copied: pub.copied };
+    }
+    if (st.status === "failed") {
+      const { data } = await db.from("reels").update({ status: "failed", error: st.error ?? "Render failed" }).eq("id", reel.id).select().single();
+      return { reel: data as ReelRow };
+    }
+    return { reel, progress: st.status };
+  };
+
   switch (b.action) {
     case "list": {
       const { data } = await db.from("reels").select("*").eq("tournament_id", t.id).order("created_at", { ascending: false }).limit(20);
-      return json({ reels: data ?? [], configured: cfg, music: mediaUrl(t.reel_music_path ?? null) });
+      // Finish any film that completed while nobody had this page open
+      const reels = await Promise.all(((data ?? []) as ReelRow[]).map((r) => (r.status === "rendering" ? advance(r).then((x) => x.reel) : r)));
+      return json({ reels, configured: cfg, music: mediaUrl(t.reel_music_path ?? null) });
     }
 
     case "setMusic": {
@@ -264,29 +293,8 @@ export async function POST(req: Request) {
     case "status": {
       const reel = await getReel(String(b.reelId));
       if (!reel) return bad("Reel not found", 404);
-      if (reel.status !== "rendering" || !reel.render_id) return json({ reel });
-      const st = await shotstackStatus(reel.render_id).catch(() => ({ status: "rendering" }) as { status: string; url?: string; error?: string });
-      if (st.status === "done" && st.url) {
-        let pub;
-        try {
-          pub = await publishReel(t.id, t.slug, reel.id, st.url, reel.plan?.title ?? "Highlights", reel.round_id);
-        } catch (e) {
-          const { data } = await db.from("reels").update({ status: "failed", error: `Rendered, but saving failed: ${e instanceof Error ? e.message : e}. Film: ${st.url}` }).eq("id", reel.id).select().single();
-          return json({ reel: data });
-        }
-        const { data } = await db
-          .from("reels")
-          .update({ status: "done", video_path: pub.mediaPath, post_id: pub.postId, updated_at: new Date().toISOString() })
-          .eq("id", reel.id)
-          .select()
-          .single();
-        return json({ reel: data, copied: pub.copied });
-      }
-      if (st.status === "failed") {
-        const { data } = await db.from("reels").update({ status: "failed", error: st.error ?? "Render failed" }).eq("id", reel.id).select().single();
-        return json({ reel: data });
-      }
-      return json({ reel, progress: st.status });
+      const r = await advance(reel);
+      return json(r);
     }
 
     case "delete": {

@@ -63,8 +63,17 @@ export function DirectorPanel() {
   const load = useCallback(async () => {
     const r = await call({ action: "list" });
     if (!r.ok) return setMsg(String(r.j.error ?? "Couldn't load reels"));
-    setReels(r.j.reels as ReelRow[]);
+    const list = r.j.reels as ReelRow[];
+    setReels(list);
     setCfg(r.j.configured as Configured);
+    // Coming back: reopen a film that's rendering, or the latest one if it was worked on in the last hour
+    setCurrent((cur) => {
+      if (cur) return list.find((x) => x.id === cur.id) ?? cur;
+      const recent = (x: ReelRow) => Date.now() - new Date(x.updated_at ?? x.created_at).getTime() < 60 * 60 * 1000;
+      const pick = list.find((x) => x.status === "rendering") ?? (list[0] && recent(list[0]) ? list[0] : undefined);
+      if (pick) setPlan(pick.plan);
+      return pick ?? null;
+    });
     setMusic((r.j.music as string) ?? null);
   }, [call]);
 
@@ -94,6 +103,8 @@ export function DirectorPanel() {
         load();
         refresh();
         if (reel.status === "done") setMsg(r.j.copied === false ? "Film ready. It was too big to copy to your storage, so it's linked from the renderer. Download it soon." : "Film ready and published to Highlights.");
+        if (reel.status === "failed") setMsg(`The film didn't render. ${reel.error ?? ""}`.trim());
+        document.getElementById("film-result")?.scrollIntoView({ behavior: "smooth", block: "start" });
       }
     }, 5000);
     return () => clearInterval(t);
@@ -341,6 +352,7 @@ export function DirectorPanel() {
             </h3>
             <span className={`pill ${current.status === "done" ? "done" : current.status === "rendering" ? "live" : ""}`}>{current.status}</span>
           </div>
+          <FilmResult reel={current} progress={progress} highlights={href("/highlights")} />
           <div className="row">
             <div className="field" style={{ flex: "2 1 220px" }}>
               <label htmlFor="dir-title">Film title</label>
@@ -566,21 +578,7 @@ export function DirectorPanel() {
                 {busy === "render" ? "Starting…" : current.status === "done" ? "Render again" : "Render the film"}
               </button>
             )}
-            {current.status === "failed" && current.error && <span className="error small">{current.error}</span>}
           </div>
-          {current.status === "done" && current.video_path && (
-            <div className="stack">
-              <video src={mediaUrl(current.video_path)!} controls playsInline style={{ width: "100%", maxHeight: "70vh", background: "#000", borderRadius: 6 }} />
-              <div className="row">
-                <a className="btn secondary" href={mediaUrl(current.video_path)!} download>
-                  Download
-                </a>
-                <Link className="btn secondary" href={href("/highlights")}>
-                  See it in Highlights
-                </Link>
-              </div>
-            </div>
-          )}
         </div>
       )}
 
@@ -684,4 +682,42 @@ function MusicChoice({
       )}
     </div>
   );
+}
+
+/** Where the film is: rendering, ready (with the film itself), or failed (with the reason). */
+function FilmResult({ reel, progress, highlights }: { reel: ReelRow; progress: string | null; highlights: string }) {
+  if (reel.status === "rendering")
+    return (
+      <div id="film-result" className="film-result is-rendering" role="status">
+        <strong>Rendering your film</strong>
+        <span>
+          Usually 2 to 5 minutes{progress ? ` (${progress})` : ""}. You can leave this page; the film is saved to Highlights when it&apos;s done.
+        </span>
+      </div>
+    );
+  if (reel.status === "failed")
+    return (
+      <div id="film-result" className="film-result is-failed" role="alert">
+        <strong>The film didn&apos;t render</strong>
+        <span>{reel.error ?? "The renderer gave no reason."}</span>
+        <span>Fix anything it mentions and press Render again. If it happens again, copy the message above for help.</span>
+      </div>
+    );
+  if (reel.status === "done" && reel.video_path)
+    return (
+      <div id="film-result" className="film-result is-done">
+        <strong>Your film is ready</strong>
+        <span>It&apos;s on the Highlights page for everyone following the trip.</span>
+        <video src={mediaUrl(reel.video_path)!} controls playsInline />
+        <div className="row">
+          <a className="btn secondary" href={mediaUrl(reel.video_path)!} download>
+            Download
+          </a>
+          <Link className="btn secondary" href={highlights}>
+            See it in Highlights
+          </Link>
+        </div>
+      </div>
+    );
+  return null;
 }
