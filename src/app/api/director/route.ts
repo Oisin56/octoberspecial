@@ -11,15 +11,15 @@ import {
   configured,
   listVoices,
   publishReel,
+  recordLines,
   sanitisePlan,
   shotstackRender,
   shotstackStatus,
-  speak,
   veoPoll,
   veoStart,
   writePlan,
 } from "@/lib/director";
-import { musicFits, planSeconds, type Brief, type ClipProbe, type Plan, type ReelRow } from "@/lib/director-types";
+import { COMMENTARY, musicFits, planSeconds, voiceKey, type Brief, type ClipProbe, type Plan, type ReelRow } from "@/lib/director-types";
 
 /** Clip shapes, lengths and stills sent by the browser: checked and capped. */
 function cleanProbes(raw: unknown): ClipProbe[] {
@@ -151,6 +151,9 @@ export async function POST(req: Request) {
         aspect: b.brief?.aspect === "9:16" ? "9:16" : "16:9",
         voice: !!b.brief?.voice && cfg.voice,
         veo: !!b.brief?.veo && cfg.veo,
+        style: COMMENTARY.some((c) => c.id === b.brief?.style) ? b.brief.style : "classic",
+        amount: b.brief?.amount === "light" ? "light" : "full",
+        voiceId: typeof b.brief?.voiceId === "string" && /^[\w-]{6,64}$/.test(b.brief.voiceId) ? b.brief.voiceId : undefined,
       };
       let roundId: string | null = null;
       if (brief.roundNumber != null) {
@@ -182,6 +185,12 @@ export async function POST(req: Request) {
       const storagePrefix = mediaUrl("x")!.slice(0, -1);
       const prev = new Map((reel.plan?.segments ?? []).map((s) => [s.id, s]));
       plan.segments = plan.segments.filter((s) => {
+        // Recorded commentary is the server's record: keep it while the line and voice are unchanged
+        const was = prev.get(s.id);
+        if (was?.voiceSrc && s.voice?.trim() && was.voiceFor === voiceKey(s.voice, plan.voiceId)) {
+          s.voiceSrc = was.voiceSrc;
+          s.voiceFor = was.voiceFor;
+        }
         if (s.kind === "clip") {
           const mp = byId.get(s.postId);
           if (!mp) return false;
@@ -231,6 +240,26 @@ export async function POST(req: Request) {
       } catch (e) {
         return bad(e instanceof Error ? e.message : "Music didn't compose", 500);
       }
+    }
+
+    case "voiceRecord": {
+      // Record the commentary lines that aren't recorded yet (a batch per call; the page calls again until done)
+      if (!cfg.voice) return bad("ELEVENLABS_API_KEY isn't set, so commentary can't be recorded", 500);
+      const reel = await getReel(String(b.reelId));
+      if (!reel?.plan) return bad("Reel not found", 404);
+      if (reel.status === "rendering") return bad("This reel is rendering. Wait for it to finish.", 409);
+      const r = await recordLines(t.slug, reel.plan.segments, reel.plan.voiceId, 150_000);
+      const plan = await patchPlan(reel.id, (p) => {
+        for (const s of p.segments) {
+          const got = r.recorded.get(s.id);
+          // Only if the line wasn't changed while it was being recorded
+          if (got && s.voice?.trim() && voiceKey(s.voice, p.voiceId) === got.key) {
+            s.voiceSrc = got.src;
+            s.voiceFor = got.key;
+          }
+        }
+      });
+      return json({ plan, recorded: r.recorded.size, remaining: r.remaining, errors: r.errors });
     }
 
     case "veoStart": {
@@ -299,18 +328,31 @@ export async function POST(req: Request) {
       if (reel.status === "rendering") return bad("Already rendering", 409);
       const plan = reel.plan;
       if (plan.segments.some((s) => s.kind === "veo" && s.status === "pending")) return bad("Wait for the AI shots to finish (or remove them) first");
-      // Narration audio for each segment with a voice line
-      let narration: Record<string, string> = {};
+      // Narration: lines recorded earlier are reused; any missing are recorded now (two at a time)
+      const narration: Record<string, string> = {};
       let warning: string | null = null;
       if (plan.voiceOn && cfg.voice) {
-        try {
-          const lines = plan.segments.filter((s) => s.voice?.trim());
-          const urls = await Promise.all(lines.map((s) => speak(t.slug, s.voice!.trim(), plan.voiceId)));
-          lines.forEach((s, i) => (narration[s.id] = urls[i]));
-        } catch (e) {
-          // A voice problem shouldn't cost the whole film: render without narration and say why
-          narration = {};
-          warning = `The voice-over didn't record (${e instanceof Error ? e.message : "voice service error"}), so this film has music and captions only.`;
+        const r = await recordLines(t.slug, plan.segments, plan.voiceId, 150_000);
+        if (r.recorded.size) {
+          await patchPlan(reel.id, (p) => {
+            for (const s of p.segments) {
+              const got = r.recorded.get(s.id);
+              if (got) (s.voiceSrc = got.src), (s.voiceFor = got.key);
+            }
+          });
+        }
+        for (const s of plan.segments) {
+          const got = r.recorded.get(s.id);
+          if (got) narration[s.id] = got.src;
+          else if (s.voiceSrc && s.voice?.trim() && s.voiceFor === voiceKey(s.voice, plan.voiceId)) narration[s.id] = s.voiceSrc;
+        }
+        const lines = plan.segments.filter((s) => s.voice?.trim()).length;
+        const missing = lines - Object.keys(narration).length;
+        if (missing > 0) {
+          warning =
+            missing === lines
+              ? `The commentary didn't record (${r.errors[0] ?? "voice service busy"}), so this film has music and captions only.`
+              : `${missing} of ${lines} commentary lines didn't record${r.errors[0] ? ` (${r.errors[0]})` : ""}; the rest are in.`;
         }
       }
       // Music: composed for this film (reused if it still fits), the uploaded track, or none

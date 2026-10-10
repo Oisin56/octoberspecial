@@ -6,6 +6,9 @@ interface Base {
   id: string;
   /** Narration read over this segment (optional). */
   voice?: string;
+  /** The recorded narration, and what it was recorded from (text + voice), so it's reused until either changes */
+  voiceSrc?: string;
+  voiceFor?: string;
 }
 
 export interface CardSegment extends Base {
@@ -105,13 +108,48 @@ export const stripTags = (s: string) => s.replace(/\[(?:[a-z ]{2,24})\]\s*/gi, "
 export const MUSIC_SLACK = 2;
 export const musicFits = (m: PlanMusic | undefined, seconds: number) => !!m?.src && m.seconds != null && Math.abs(m.seconds - Math.ceil(seconds)) <= MUSIC_SLACK;
 
+export type CommentaryStyle = "classic" | "excitable" | "dry" | "banter";
+export const COMMENTARY: { id: CommentaryStyle; name: string; note: string; persona: string }[] = [
+  {
+    id: "classic",
+    name: "Classic TV golf",
+    note: "Calm, knowledgeable, lifts for the big moments",
+    persona: "a seasoned TV golf commentator on a major championship broadcast: authoritative, warm, economical, with a feel for tension. Hushed and sparing over putts; lift for birdies; dry wit for mishaps",
+  },
+  {
+    id: "excitable",
+    name: "Excitable",
+    note: "Big calls, high drama, every shot an event",
+    persona: "an excitable sports commentator calling it like a Ryder Cup Sunday: big calls, rising excitement, theatrical but never silly",
+  },
+  {
+    id: "dry",
+    name: "Dry and witty",
+    note: "Understated, deadpan, quietly cutting",
+    persona: "a bone-dry, understated commentator: deadpan, precise, quietly cutting about the bad shots and grudgingly impressed by the good ones",
+  },
+  {
+    id: "banter",
+    name: "Banter",
+    note: "Like a mate on the mic, friendly ribbing",
+    persona: "a funny friend of the group on the mic: warm, cheeky ribbing, in-jokes from the articles and player profiles, never nasty",
+  },
+];
+
 export interface Brief {
   roundNumber: number | null; // null = whole tournament
   length: 60 | 180 | 300;
   aspect: Aspect;
   voice: boolean;
   veo: boolean;
+  /** How the commentary sounds and how much of it there is */
+  style?: CommentaryStyle;
+  amount?: "light" | "full";
+  voiceId?: string;
 }
+
+/** Key for a recorded line: re-record when the words or the voice change. */
+export const voiceKey = (text: string, voiceId?: string) => `${voiceId ?? "default"}|${text.trim()}`;
 
 export interface ReelRow {
   id: string;

@@ -269,7 +269,7 @@ export function ReelFeed({
       muted
       loop={!it.film}
       preload={i === active || i === active + 1 ? "auto" : "metadata"}
-      className={`reel-video${isPortrait(it) ? " fill" : ""}`}
+      className="reel-video"
       onLoadedMetadata={(e) => {
         const v = e.currentTarget;
         if (v.videoWidth) setShape((s) => ({ ...s, [it.post.id]: v.videoHeight >= v.videoWidth ? "portrait" : "landscape" }));
@@ -335,6 +335,7 @@ export function ReelFeed({
               <div className="device-screen" onClick={togglePause}>
                 {items.map((it, i) => (
                   <div key={it.post.id} className="reel-item" hidden={i !== active}>
+                    {it.poster && <div className="reel-blur" style={{ backgroundImage: `url("${it.poster}")` }} aria-hidden />}
                     {video(it, i)}
                     {overlay(it, i)}
                   </div>
@@ -374,7 +375,7 @@ export function ReelFeed({
           <div className="reel-scroller" ref={scroller}>
             {items.map((it, i) => (
               <section key={it.post.id} className="reel-item" data-i={i} onClick={tap}>
-                {it.poster && !isPortrait(it) && <div className="reel-blur" style={{ backgroundImage: `url("${it.poster}")` }} aria-hidden />}
+                {it.poster && <div className="reel-blur" style={{ backgroundImage: `url("${it.poster}")` }} aria-hidden />}
                 {video(it, i)}
                 {overlay(it, i)}
               </section>

@@ -6,7 +6,7 @@ import { useT } from "./Providers";
 import { mediaUrl } from "@/lib/supabase";
 import { bugText, type ScoreBug } from "@/lib/scorebug";
 import { majorityShape, probeClips } from "@/lib/clipProbe";
-import { MOODS, musicFits, planSeconds, segmentSeconds, voiceSeconds, type Brief, type Mood, type Plan, type PlanMusic, type ReelRow, type Segment } from "@/lib/director-types";
+import { COMMENTARY, MOODS, voiceKey, musicFits, planSeconds, segmentSeconds, voiceSeconds, type Brief, type Mood, type Plan, type PlanMusic, type ReelRow, type Segment } from "@/lib/director-types";
 
 interface Configured {
   claude: boolean;
@@ -39,7 +39,7 @@ export function DirectorPanel() {
   const [current, setCurrent] = useState<ReelRow | null>(null);
   const [plan, setPlan] = useState<Plan | null>(null);
   const [dirty, setDirty] = useState(false);
-  const [brief, setBrief] = useState<Brief>({ roundNumber: null, length: 180, aspect: "16:9", voice: true, veo: false });
+  const [brief, setBrief] = useState<Brief>({ roundNumber: null, length: 180, aspect: "16:9", voice: true, veo: false, style: "classic", amount: "full" });
   /** "auto" = match the shape most clips were filmed in */
   const [shape, setShape] = useState<"auto" | Brief["aspect"]>("auto");
   const [voices, setVoices] = useState<{ id: string; name: string; note: string; preview: string | null }[]>([]);
@@ -187,6 +187,37 @@ export function DirectorPanel() {
     return true;
   }
 
+  /** Record any commentary lines not yet recorded in the chosen voice. Returns the problems, if any. */
+  async function recordCommentary(): Promise<{ ok: boolean; errors: string[] }> {
+    if (!current || !plan) return { ok: false, errors: [] };
+    if (dirty && !(await save())) return { ok: false, errors: [] };
+    setBusy("voice");
+    let errors: string[] = [];
+    let done = 0;
+    const total = plan.segments.filter((x) => x.voice?.trim()).length;
+    for (let round = 0; round < 6; round++) {
+      setMsg(`Recording the commentary… ${Math.min(total, recordedCount(plan) + done)} of ${total} lines`);
+      const r = await call({ action: "voiceRecord", reelId: current.id });
+      if (!r.ok) {
+        errors = [String(r.j.error ?? "The voice service didn't answer")];
+        break;
+      }
+      const next = r.j.plan as Plan;
+      setPlan(next);
+      done += Number(r.j.recorded) || 0;
+      errors = (r.j.errors as string[]) ?? [];
+      if (!Number(r.j.remaining) || !Number(r.j.recorded)) break;
+    }
+    setBusy(null);
+    return { ok: errors.length === 0, errors };
+  }
+
+  async function record() {
+    const r = await recordCommentary();
+    if (r.ok) setMsg("Commentary recorded. Press play on any line to hear it.");
+    else if (r.errors.length) setMsg(`Some lines didn't record: ${r.errors.slice(0, 2).join("; ")}. Press Record commentary to try those again.`);
+  }
+
   async function render() {
     if (!current || !plan) return;
     const notReady = plan.segments.filter((s) => s.kind === "veo" && s.status !== "done").length;
@@ -205,8 +236,16 @@ export function DirectorPanel() {
         setComposedAt(len);
       } else if (!confirm(`The music didn't compose (${String(m.j.error ?? "unknown error")}). Render without music?`)) return;
     }
+    // Record the commentary as its own step, two lines at a time, so nothing is dropped
+    if (plan.voiceOn && cfg?.voice && recordedCount(plan) < plan.segments.filter((x) => x.voice?.trim()).length) {
+      const v = await recordCommentary();
+      if (!v.ok && v.errors.length && !confirm(`Some commentary didn't record (${v.errors[0]}). Render with the lines that did?`)) {
+        setMsg("Not rendered. Press Record commentary to try the missing lines again.");
+        return;
+      }
+    }
     setBusy("render");
-    setMsg(plan?.voiceOn ? "Recording the voice-over and sending the edit to the renderer…" : "Sending the edit to the renderer…");
+    setMsg("Sending the edit to the renderer…");
     const r = await call({ action: "render", reelId: current.id });
     setBusy(null);
     if (!r.ok) return setMsg(String(r.j.error ?? "Render failed"));
@@ -398,6 +437,54 @@ export function DirectorPanel() {
             Suggest cinematic AI shots
           </label>
         </div>
+        {brief.voice && cfg.voice && (
+          <div className="stack commentary-choice">
+            <div className="row">
+              <div className="field" style={{ flex: "1 1 200px" }}>
+                <label htmlFor="dir-style">Commentary style</label>
+                <select id="dir-style" value={brief.style ?? "classic"} onChange={(e) => setBrief({ ...brief, style: e.target.value as Brief["style"] })}>
+                  {COMMENTARY.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="field" style={{ flex: "1 1 200px" }}>
+                <label htmlFor="dir-amount">How much talking</label>
+                <select id="dir-amount" value={brief.amount ?? "full"} onChange={(e) => setBrief({ ...brief, amount: e.target.value as Brief["amount"] })}>
+                  <option value="full">Over every clip</option>
+                  <option value="light">Big moments only</option>
+                </select>
+              </div>
+              {voices.length > 0 && (
+                <div className="field" style={{ flex: "1 1 220px" }}>
+                  <label htmlFor="dir-brief-voice">Voice</label>
+                  <select id="dir-brief-voice" value={brief.voiceId ?? ""} onChange={(e) => setBrief({ ...brief, voiceId: e.target.value || undefined })}>
+                    <option value="">Default commentator</option>
+                    {voices.map((v) => (
+                      <option key={v.id} value={v.id}>
+                        {v.name}
+                        {v.note ? ` (${v.note})` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+            <p className="small muted" style={{ margin: 0 }}>
+              {COMMENTARY.find((c) => c.id === (brief.style ?? "classic"))?.note}
+              {brief.voiceId && voices.find((v) => v.id === brief.voiceId)?.preview && (
+                <>
+                  {" "}
+                  <button className="linkish" onClick={() => new Audio(voices.find((v) => v.id === brief.voiceId)!.preview!).play()}>
+                    Hear the voice
+                  </button>
+                </>
+              )}
+            </p>
+          </div>
+        )}
         <div className="row">
           <button className="btn" disabled={!!busy || !cfg.claude} onClick={writePlan}>
             {busy === "plan" ? "Writing the plan…" : "Write the plan"}
@@ -439,7 +526,7 @@ export function DirectorPanel() {
           {plan.voiceOn && cfg.voice && voices.length > 0 && (
             <div className="row">
               <div className="field" style={{ flex: "1 1 240px" }}>
-                <label htmlFor="dir-voice">Commentator</label>
+                <label htmlFor="dir-voice">Voice</label>
                 <select id="dir-voice" value={plan.voiceId ?? ""} disabled={locked} onChange={(e) => (setPlan({ ...plan, voiceId: e.target.value || undefined }), setDirty(true))}>
                   <option value="">Default commentator</option>
                   {voices.map((v) => (
@@ -456,6 +543,10 @@ export function DirectorPanel() {
                 </button>
               )}
             </div>
+          )}
+
+          {plan.voiceOn && cfg.voice && (
+            <CommentaryStatus plan={plan} busy={busy} locked={locked} onRecord={record} />
           )}
 
           <MusicChoice
@@ -633,6 +724,11 @@ export function DirectorPanel() {
                       )}
                     </label>
                     <textarea value={s.voice ?? ""} disabled={locked} onChange={(e) => updateSeg(s.id, { ...s, voice: e.target.value })} style={{ minHeight: 44 }} />
+                    {s.voice?.trim() && (s.voiceSrc && s.voiceFor === voiceKey(s.voice, plan.voiceId) ? (
+                      <audio key={s.voiceSrc} src={s.voiceSrc} controls preload="none" style={{ height: 32, maxWidth: 300 }} />
+                    ) : (
+                      <span className="small muted">Not recorded yet</span>
+                    ))}
                   </div>
                 )}
               </li>
@@ -678,6 +774,28 @@ export function DirectorPanel() {
       )}
 
     </section>
+  );
+}
+
+const recordedCount = (plan: Plan) => plan.segments.filter((x) => x.voice?.trim() && x.voiceSrc && x.voiceFor === voiceKey(x.voice, plan.voiceId)).length;
+
+/** How much of the commentary is recorded, with a button to record the rest. */
+function CommentaryStatus({ plan, busy, locked, onRecord }: { plan: Plan; busy: string | null; locked: boolean; onRecord: () => void }) {
+  const total = plan.segments.filter((x) => x.voice?.trim()).length;
+  const done = recordedCount(plan);
+  if (!total) return null;
+  return (
+    <div className="post row commentary-status">
+      <span className="display" style={{ flex: "1 1 220px" }}>
+        {done === total ? `Commentary recorded: all ${total} lines.` : done ? `Commentary: ${done} of ${total} lines recorded.` : `Commentary: ${total} lines to record.`}
+        <span className="small muted"> Changing a line or the voice means that line is recorded again.</span>
+      </span>
+      {done < total && !locked && (
+        <button className="btn secondary" disabled={!!busy} onClick={onRecord}>
+          {busy === "voice" ? "Recording…" : done ? "Record the rest" : "Record commentary"}
+        </button>
+      )}
+    </div>
   );
 }
 
