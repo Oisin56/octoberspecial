@@ -341,8 +341,8 @@ export function DirectorPanel() {
         ? (p.player_ids ?? []).map((id) => state?.players.find((x) => x.id === id)?.name ?? id).join(" & ")
         : `Hole ${p.hole ?? "–"} · ${p.author_name}`,
       sub: p.body?.slice(0, 50) ?? undefined,
-      in: 0,
-      out: null,
+      in: p.trim_in != null ? Number(p.trim_in) : 0,
+      out: p.trim_out != null ? Number(p.trim_out) : null,
       round: r?.number ?? null,
       hole: p.hole,
       playerIds: p.player_ids ?? [],

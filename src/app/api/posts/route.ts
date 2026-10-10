@@ -3,8 +3,9 @@ import { bad, context, json } from "@/lib/server-data";
 
 const TAGS = new Set([
   "birdie", "eagle", "chip-in", "long putt", "3-putt", "water", "bunker", "OB", "lip-out",
-  "shank", "great drive", "near miss", "banter", "weather", "rules",
+  "shank", "great drive", "near miss", "banter", "weather", "rules", "lost ball", "great recovery", "gimme",
 ]);
+const DETAIL = /^[\w '&-]{1,30}$/;
 
 export async function POST(req: Request) {
   const b = await req.json().catch(() => ({}));
@@ -31,25 +32,38 @@ export async function POST(req: Request) {
     if (!data) roundId = null;
   }
 
-  const { data, error } = await adminClient()
-    .from("posts")
-    .insert({
-      tournament_id: t.id,
-      round_id: roundId,
-      hole,
-      author_name: session.name,
-      author_player_id: session.playerId ?? null,
-      kind,
-      body: body || null,
-      tags,
-      media_path: mediaPath,
-      visibility: b.visibility === "report" ? "report" : "public",
-      player_ids: playerIds,
-      clip_start: num(b.clipStart),
-      clip_end: num(b.clipEnd),
-    })
-    .select()
-    .single();
+  const trimIn = num(b.trimIn);
+  const trimOut = num(b.trimOut);
+  const d = (b.details ?? {}) as Record<string, unknown>;
+  const details = Object.fromEntries(
+    (["shot", "result", "club"] as const).filter((k) => typeof d[k] === "string" && DETAIL.test(String(d[k]))).map((k) => [k, String(d[k])]),
+  );
+  const row = {
+    tournament_id: t.id,
+    round_id: roundId,
+    hole,
+    author_name: session.name,
+    author_player_id: session.playerId ?? null,
+    kind,
+    body: body || null,
+    tags,
+    media_path: mediaPath,
+    visibility: b.visibility === "report" ? "report" : "public",
+    player_ids: playerIds,
+    clip_start: num(b.clipStart),
+    clip_end: num(b.clipEnd),
+  };
+  const extra = {
+    trim_in: trimIn,
+    trim_out: trimOut != null && trimIn != null && trimOut <= trimIn ? null : trimOut,
+    details: Object.keys(details).length ? details : null,
+  };
+  let { data, error } = await adminClient().from("posts").insert({ ...row, ...extra }).select().single();
+  // Database not updated yet (schema.sql not re-run): keep the post, lose only the trim and details
+  if (error && /trim_in|trim_out|details/.test(error.message)) {
+    console.error("[posts] run the latest supabase/schema.sql to keep clip trims and details:", error.message);
+    ({ data, error } = await adminClient().from("posts").insert(row).select().single());
+  }
   if (error) return bad(error.message, 500);
   return json({ post: data });
 }

@@ -7,6 +7,8 @@ import { useT } from "@/components/Providers";
 import { Loading, gameLine } from "@/components/ui";
 import { enqueue, flush, pendingHole, queued } from "@/lib/offlineQueue";
 import { readScorePos, writeScorePos } from "@/lib/scorePos";
+import { HoleMoments } from "@/components/HoleMoments";
+import { groupPlayers } from "@/lib/courseCards";
 import { ballsOfGame, gameHole, gameShots, ONE_BALL, type BallHole } from "@/lib/engine";
 import { shotsOnHole } from "@/lib/scoring";
 import { ballName, formatLabel, sideLabel, toRoundCfg } from "@/lib/types";
@@ -33,6 +35,8 @@ function ScoreInner() {
   const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [saved, setSaved] = useState<"saving" | "saved" | "phone" | null>(null);
   const [picking, setPicking] = useState(false);
+  /** The hole just finished, while the "anything the card won't show?" card is up */
+  const [moments, setMoments] = useState<number | null>(null);
 
   const round = useMemo(() => {
     if (!state) return null;
@@ -52,6 +56,18 @@ function ScoreInner() {
     () => (state && round && game ? state.entries.filter((e) => e.round_id === round.id && (e.game ?? "main") === game.id) : []),
     [state, round, game],
   );
+
+  // Back from the camera: say the clip is saved
+  useEffect(() => {
+    try {
+      const f = sessionStorage.getItem("mgs_flash");
+      if (f) {
+        sessionStorage.removeItem("mgs_flash");
+        setMsg(f);
+        setTimeout(() => setMsg(null), 4000);
+      }
+    } catch {}
+  }, []);
 
   // The scorecard is a full-screen view on the course (the bar below has the way out)
   useEffect(() => {
@@ -262,7 +278,14 @@ function ScoreInner() {
     send();
     setMsg(`Hole ${hole} saved.`);
     setTimeout(() => setMsg(null), 2000);
-    if (hole! < 18) setHole(hole! + 1);
+    setMoments(hole!);
+  }
+
+  /** On from the moments card to the next hole (or the round's page after 18). */
+  function onward() {
+    const was = moments ?? hole!;
+    setMoments(null);
+    if (was < 18) setHole(was + 1);
     else router.push(href("/live"));
   }
 
@@ -304,6 +327,18 @@ function ScoreInner() {
           ›
         </button>
       </div>
+
+      {moments != null && (
+        <HoleMoments
+          roundId={round.id}
+          roundNumber={round.number}
+          hole={moments}
+          players={groupPlayers(state, round.id, game.id)}
+          nextLabel={moments < 18 ? `On to hole ${moments + 1}` : "Finish the round"}
+          onContinue={onward}
+          onLeave={() => moments < 18 && writeScorePos(slug, round.id, { game: game.id, hole: moments + 1 })}
+        />
+      )}
 
       {picking && (
         <div className="hole-sheet" role="dialog" aria-label="Choose a hole">

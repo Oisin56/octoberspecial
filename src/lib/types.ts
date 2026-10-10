@@ -146,6 +146,17 @@ export interface PostRow {
   player_ids?: string[];
   clip_start?: number | null;
   clip_end?: number | null;
+  /** Play only this part of the clip (seconds) */
+  trim_in?: number | null;
+  trim_out?: number | null;
+  /** What's in the clip, from the on-course cards */
+  details?: ClipDetails | null;
+}
+
+export interface ClipDetails {
+  shot?: string;
+  result?: string;
+  club?: string;
 }
 
 export interface CommentRow {

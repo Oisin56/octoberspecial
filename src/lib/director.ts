@@ -76,6 +76,10 @@ interface ClipFact {
   statusBefore: string;
   statusAfter: string;
   seconds?: number | null;
+  /** What the person filming said is in the clip (shot, how it finished, club): reliable, use it */
+  shot?: string;
+  result?: string;
+  club?: string;
   shape?: "portrait" | "landscape";
   stills?: number;
 }
@@ -127,6 +131,9 @@ function clipFacts(s: TournamentState, clips: PostRow[]): ClipFact[] {
       scoresOnHole,
       statusBefore,
       statusAfter,
+      ...(c.details?.shot ? { shot: c.details.shot } : {}),
+      ...(c.details?.result ? { result: c.details.result } : {}),
+      ...(c.details?.club ? { club: c.details.club } : {}),
     };
   });
 }
@@ -212,7 +219,9 @@ export async function writePlan(tournamentId: string, brief: Brief, probes: Clip
   const probeById = new Map(probes.filter((p) => clips.some((c) => c.id === p.id)).map((p) => [p.id, p]));
   const facts = clipFacts(s, clips).map((f) => {
     const pr = probeById.get(f.id);
-    return pr ? { ...f, seconds: pr.duration, shape: (pr.h > pr.w ? "portrait" : "landscape") as "portrait" | "landscape", stills: pr.frames.length } : f;
+    const post = clips.find((c) => c.id === f.id);
+    const trimmed = post?.trim_out != null ? Number(post.trim_out) - Number(post.trim_in ?? 0) : null;
+    return pr ? { ...f, seconds: trimmed ?? pr.duration, shape: (pr.h > pr.w ? "portrait" : "landscape") as "portrait" | "landscape", stills: pr.frames.length } : f;
   });
   const roundsInScope = (scopeRound ? [scopeRound] : s.rounds).filter((r) => clips.some((c) => c.round_id === r.id) || r.status !== "upcoming");
   const cardBudget = 4 + roundsInScope.length * 7 + (scopeRound ? 0 : 5);
@@ -281,7 +290,7 @@ export async function writePlan(tournamentId: string, brief: Brief, probes: Clip
         .join("\n")}`,
       `OVERALL STANDINGS NOW: ${standingsRows(s).map(([n, v]) => `${n} ${v}`).join(", ")}`,
       stories ? `THE STORY SO FAR (published previews and reports; reuse their storylines, running jokes and nicknames, but facts come from the scores):\n${stories}` : "",
-      `AVAILABLE CLIPS (JSON). seconds = clip length; statusBefore/statusAfter = the match before and after that hole; holeNote = background on the hole:\n${JSON.stringify(facts)}`,
+      `AVAILABLE CLIPS (JSON). seconds = clip length; statusBefore/statusAfter = the match before and after that hole; holeNote = background on the hole; shot/result/club (when present) were entered by the person filming and are reliable:\n${JSON.stringify(facts)}`,
     ]
       .filter(Boolean)
       .join("\n\n");
@@ -396,8 +405,9 @@ export async function writePlan(tournamentId: string, brief: Brief, probes: Clip
         src: mediaUrl(c.media_path)!,
         caption: (pick.caption ?? defaultCaption(s, c)).slice(0, 40),
         sub: (pick.sub ?? c.body ?? "").slice(0, 50) || undefined,
-        in: 0,
-        out: null,
+        // trimmed on the phone: the film uses the same part
+        in: c.trim_in != null ? Number(c.trim_in) : 0,
+        out: c.trim_out != null ? Number(c.trim_out) : null,
         round: r.number,
         hole: c.hole,
         playerIds: c.player_ids ?? [],

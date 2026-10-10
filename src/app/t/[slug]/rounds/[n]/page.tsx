@@ -8,7 +8,7 @@ import { PLAY_LABEL, SCORING_LABEL, ballName, toRoundCfg } from "@/lib/types";
 import { courseBySlug } from "@/data/courses";
 import { GUIDES } from "@/data/course-guides";
 import { RoundBanner } from "@/components/visual";
-import { mediaUrl } from "@/lib/supabase";
+import { mediaUrl, clipUrl } from "@/lib/supabase";
 import { gameShots } from "@/lib/engine";
 
 export default function RoundPage({ params }: { params: Promise<{ n: string }> }) {
@@ -141,7 +141,7 @@ export default function RoundPage({ params }: { params: Promise<{ n: string }> }
                       <span className="where">Hole {c.hole ?? "–"}</span> · {c.author_name}
                     </div>
                     {c.body && <p style={{ margin: "4px 0 0" }}>{c.body}</p>}
-                    <video src={mediaUrl(c.media_path)!} controls playsInline preload="metadata" />
+                    <video src={clipUrl(c)!} controls playsInline preload="metadata" />
                   </div>
                 ))}
               </div>

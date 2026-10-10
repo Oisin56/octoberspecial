@@ -1,11 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useT } from "./Providers";
 import { currentHole } from "@/lib/scorePos";
-import { setPendingClip } from "@/lib/pendingClip";
 
 /**
  * While a round is live, anyone logged in gets three big buttons at the foot of every page:
@@ -14,8 +13,6 @@ import { setPendingClip } from "@/lib/pendingClip";
 export function OnCourseBar() {
   const { state, session, href, slug } = useT();
   const path = usePathname();
-  const router = useRouter();
-  const input = useRef<HTMLInputElement>(null);
   const [, bump] = useState(0);
 
   const live = useMemo(() => state?.rounds.find((r) => r.status === "live") ?? null, [state]);
@@ -56,7 +53,8 @@ export function OnCourseBar() {
     };
   }, [show]);
 
-  if (!show || !live || !state) return null;
+  // The camera is full screen: no bar over it
+  if (!show || !live || !state || path?.endsWith("/record")) return null;
   const hole = currentHole(slug, live.id);
   const where = `round=${live.number}${hole ? `&hole=${hole}` : ""}`;
   const onScore = path?.endsWith("/score");
@@ -70,24 +68,10 @@ export function OnCourseBar() {
         <Glyph k="score" />
         <span>Score</span>
       </Link>
-      <label className="oc-btn oc-record">
+      <Link className="oc-btn oc-record" href={href(video ? `/record?${where}` : `/post?${where}&from=course`)}>
         <Glyph k="record" />
         <span>{video ? "Record" : "Photo"}</span>
-        <input
-          ref={input}
-          type="file"
-          accept={video ? "video/*" : "image/*"}
-          capture="environment"
-          hidden
-          onChange={(e) => {
-            const f = e.target.files?.[0];
-            e.target.value = "";
-            if (!f) return;
-            setPendingClip(f);
-            router.push(href(`/post?${where}&clip=1&from=course`));
-          }}
-        />
-      </label>
+      </Link>
       <Link className="oc-btn" href={href(`/post?${where}&from=course`)}>
         <Glyph k="note" />
         <span>Note</span>

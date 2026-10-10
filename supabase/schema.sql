@@ -127,6 +127,9 @@ create table if not exists posts (
 alter table posts add column if not exists player_ids text[] not null default '{}';   -- who played the shot in a clip
 alter table posts add column if not exists clip_start numeric;                       -- where the cut came from in the original recording
 alter table posts add column if not exists clip_end numeric;
+alter table posts add column if not exists trim_in numeric;                          -- play only this part of the uploaded clip (trimmed on the phone, no cutting)
+alter table posts add column if not exists trim_out numeric;
+alter table posts add column if not exists details jsonb;                            -- what's in the clip: {shot, result, club}
 
 create table if not exists comments (
   id uuid primary key default gen_random_uuid(),

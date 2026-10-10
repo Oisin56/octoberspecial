@@ -14,6 +14,9 @@ export interface FeedItem {
   title: string;
   where: string;
   caption: string;
+  /** Trimmed on the phone: play only this part */
+  trimIn: number | null;
+  trimOut: number | null;
 }
 
 /** Films first (newest first), then clips in round and hole order. */
@@ -35,6 +38,8 @@ export function feedItems(state: TournamentState, roundFilter: string | null): F
       title: film ? (p.body ?? "").replace(/^Highlights reel:\s*/, "") || "Highlights" : p.hole ? `Hole ${p.hole}` : "From the course",
       where: film ? (r ? `Round ${r.number} highlights` : "Tournament highlights") : r ? `Round ${r.number}, ${r.course_name}` : "",
       caption: film ? "" : [p.author_name, p.body].filter(Boolean).join(": "),
+      trimIn: p.trim_in != null ? Number(p.trim_in) : null,
+      trimOut: p.trim_out != null ? Number(p.trim_out) : null,
     };
   });
 }
@@ -273,12 +278,20 @@ export function ReelFeed({
       onLoadedMetadata={(e) => {
         const v = e.currentTarget;
         if (v.videoWidth) setShape((s) => ({ ...s, [it.post.id]: v.videoHeight >= v.videoWidth ? "portrait" : "landscape" }));
+        if (it.trimIn) v.currentTime = it.trimIn;
         if (i === active) {
           v.muted = !sound;
           v.play().catch(() => {});
         }
       }}
-      onTimeUpdate={(e) => i === active && e.currentTarget.duration && setProgress(e.currentTarget.currentTime / e.currentTarget.duration)}
+      onTimeUpdate={(e) => {
+        const v = e.currentTarget;
+        // Trimmed clips loop within the chosen part
+        const a = it.trimIn ?? 0;
+        const b = it.trimOut ?? v.duration;
+        if ((it.trimOut && v.currentTime >= it.trimOut) || (it.trimIn && v.currentTime < it.trimIn - 0.2)) v.currentTime = a;
+        if (i === active && b > a) setProgress(Math.max(0, Math.min(1, (v.currentTime - a) / (b - a))));
+      }}
       onEnded={() => it.film && go(1)}
     />
   );

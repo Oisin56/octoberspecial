@@ -178,7 +178,7 @@ export async function sendClip(c: Omit<PendingClip, "id" | "at">, onProgress?: (
     if (!r.ok) throw Object.assign(new Error(j.error ?? `Failed (${r.status})`), { status: r.status });
     return j;
   };
-  const up = await post("/api/upload-url", { filename: c.filename, contentType: "video/mp4" });
+  const up = await post("/api/upload-url", { filename: c.filename, contentType: c.blob.type?.split(";")[0] || "video/mp4" });
   await new Promise<void>((ok, fail) => {
     const xhr = new XMLHttpRequest();
     xhr.open("PUT", up.signedUrl);
@@ -192,12 +192,12 @@ export async function sendClip(c: Omit<PendingClip, "id" | "at">, onProgress?: (
     fd.append("", c.blob, c.filename);
     xhr.send(fd);
   });
-  await uploadPoster(c.slug, up.path, c.blob);
+  await uploadPoster(c.slug, up.path, c.blob, typeof c.meta.trimIn === "number" ? c.meta.trimIn : undefined);
   return post("/api/posts", { ...c.meta, kind: "video", mediaPath: up.path });
 }
 
 /** A still frame (about half a second in) from a video file, as a JPEG no wider than 720px. Null if it can't be read. */
-export async function posterFrom(blob: Blob): Promise<Blob | null> {
+export async function posterFrom(blob: Blob, at?: number): Promise<Blob | null> {
   if (typeof document === "undefined") return null;
   const url = URL.createObjectURL(blob);
   const v = document.createElement("video");
@@ -213,7 +213,7 @@ export async function posterFrom(blob: Blob): Promise<Blob | null> {
     });
   try {
     if (!(await wait("loadedmetadata")) || !v.videoWidth) return null;
-    v.currentTime = Math.min(0.5, Number.isFinite(v.duration) ? v.duration / 2 : 0.5);
+    v.currentTime = at != null ? at + 0.3 : Math.min(0.5, Number.isFinite(v.duration) ? v.duration / 2 : 0.5);
     if (!(await wait("seeked"))) return null;
     const scale = Math.min(1, 720 / Math.max(v.videoWidth, v.videoHeight));
     const c = document.createElement("canvas");
@@ -229,9 +229,9 @@ export async function posterFrom(blob: Blob): Promise<Blob | null> {
 }
 
 /** Save a still frame next to an uploaded video (<path>.jpg). Best effort: a clip without one still plays. */
-export async function uploadPoster(slug: string, videoPath: string, video: Blob) {
+export async function uploadPoster(slug: string, videoPath: string, video: Blob, at?: number) {
   try {
-    const jpg = await posterFrom(video);
+    const jpg = await posterFrom(video, at);
     if (jpg) await sendPoster(slug, videoPath, jpg);
   } catch {
     /* no poster is fine */

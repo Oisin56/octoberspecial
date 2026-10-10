@@ -5,7 +5,7 @@ import { useState } from "react";
 import { useT } from "./Providers";
 import { cleanBody, cleanTitle } from "@/lib/cleanText";
 import { CountUp, CourseImage, Icon } from "./visual";
-import { mediaUrl } from "@/lib/supabase";
+import { mediaUrl, clipUrl } from "@/lib/supabase";
 import { ballsOfGame, gameHole, type Game, type GameSummary, type SegmentResult } from "@/lib/engine";
 import { shotsOnHole } from "@/lib/scoring";
 import {
@@ -438,7 +438,7 @@ export function PostCard({ post }: { post: PostRow }) {
         // eslint-disable-next-line @next/next/no-img-element
         <img src={url} alt={post.body ?? `Photo from hole ${post.hole ?? ""}`} loading="lazy" />
       )}
-      {url && post.kind === "video" && <video src={url} controls playsInline preload="metadata" />}
+      {url && post.kind === "video" && <video src={clipUrl(post) ?? url} controls playsInline preload="metadata" />}
       {post.tags.length > 0 && (
         <div className="tags">
           {post.tags.map((t) => (
