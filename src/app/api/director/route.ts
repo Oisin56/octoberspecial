@@ -89,14 +89,14 @@ export async function POST(req: Request) {
   /** Check a rendering film with the renderer; when it's done, save it and post it to Highlights. */
   const advance = async (reel: ReelRow): Promise<{ reel: ReelRow; progress?: string; copied?: boolean }> => {
     if (reel.status !== "rendering" || !reel.render_id) return { reel };
-    const st = await shotstackStatus(reel.render_id).catch(() => ({ status: "rendering" }) as { status: string; url?: string; error?: string });
+    const st = await shotstackStatus(reel.render_id).catch(() => ({ status: "rendering" }) as { status: string; url?: string; poster?: string; error?: string });
     if (st.status === "done" && st.url) {
       // Claim it: whichever request clears render_id first does the saving and posting
       const { data: claimed } = await db.from("reels").update({ render_id: null }).eq("id", reel.id).eq("render_id", reel.render_id).select().maybeSingle();
       if (!claimed) return { reel: { ...reel, render_id: null } };
       let pub;
       try {
-        pub = await publishReel(t.id, t.slug, reel.id, st.url, reel.plan?.title ?? "Highlights", reel.round_id);
+        pub = await publishReel(t.id, t.slug, reel.id, st.url, reel.plan?.title ?? "Highlights", reel.round_id, st.poster);
       } catch (e) {
         const { data } = await db.from("reels").update({ status: "failed", error: `Rendered, but saving failed: ${e instanceof Error ? e.message : e}. Film: ${st.url}` }).eq("id", reel.id).select().single();
         return { reel: data as ReelRow };

@@ -70,5 +70,7 @@ export function majorityShape(probes: ClipProbe[]): "16:9" | "9:16" | null {
   const sized = probes.filter((p) => p.w && p.h);
   if (!sized.length) return null;
   const upright = sized.filter((p) => p.h > p.w).length;
-  return upright > sized.length / 2 ? "9:16" : "16:9";
+  // Phone-first: portrait unless nearly everything was filmed sideways
+  const sideways = sized.length - upright;
+  return sideways >= sized.length * 0.8 ? "16:9" : "9:16";
 }

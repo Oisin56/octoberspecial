@@ -655,7 +655,10 @@ export function buildTimeline(
     timeline.soundtrack = { src: opts.music, effect: opts.musicComposed ? "fadeIn" : "fadeInFadeOut", volume: Math.max(0, Math.min(1, plan.voiceOn ? plan.musicVolume * 0.5 : plan.musicVolume)) };
   }
   const long = t > 200;
-  return { timeline, output: { format: "mp4", resolution: long ? "sd" : "hd", aspectRatio: plan.aspect, fps: 30 } };
+  // Portrait films are for phones and social apps: full HD 1080x1920 (720p if very long, to keep renders quick)
+  const resolution = portrait ? (long ? "hd" : "1080") : long ? "sd" : "hd";
+  // poster: a still from 1 second in, used while the film loads
+  return { timeline, output: { format: "mp4", resolution, aspectRatio: plan.aspect, fps: 30, poster: { capture: 1 } } };
 }
 
 export async function shotstackRender(edit: Json): Promise<string> {
@@ -669,15 +672,15 @@ export async function shotstackRender(edit: Json): Promise<string> {
   return j.response.id as string;
 }
 
-export async function shotstackStatus(id: string): Promise<{ status: string; url?: string; error?: string }> {
+export async function shotstackStatus(id: string): Promise<{ status: string; url?: string; poster?: string; error?: string }> {
   const r = await fetch(`${SHOTSTACK()}/render/${id}`, { headers: { "x-api-key": process.env.SHOTSTACK_API_KEY! } });
   const j = await r.json().catch(() => ({}));
   if (!r.ok) return { status: "failed", error: `Shotstack status ${r.status}` };
-  return { status: j.response?.status, url: j.response?.url, error: j.response?.error };
+  return { status: j.response?.status, url: j.response?.url, poster: j.response?.poster ?? undefined, error: j.response?.error };
 }
 
 /** Copy the finished film into our storage (if it fits) and post it to Highlights. */
-export async function publishReel(tournamentId: string, slug: string, reelId: string, url: string, title: string, roundId: string | null) {
+export async function publishReel(tournamentId: string, slug: string, reelId: string, url: string, title: string, roundId: string | null, posterUrl?: string) {
   let path: string | null = null;
   try {
     const v = await fetch(url);
@@ -686,6 +689,11 @@ export async function publishReel(tournamentId: string, slug: string, reelId: st
       if (buf.byteLength <= 50 * 1024 * 1024) {
         path = `video/${slug}/reel-${reelId}.mp4`;
         await adminClient().storage.from("media").upload(path, buf, { contentType: "video/mp4", upsert: true });
+        // its still frame sits next to it, like a clip's
+        if (posterUrl) {
+          const pr = await fetch(posterUrl).catch(() => null);
+          if (pr?.ok) await adminClient().storage.from("media").upload(`${path}.jpg`, await pr.arrayBuffer(), { contentType: "image/jpeg", upsert: true });
+        }
       }
     }
   } catch {

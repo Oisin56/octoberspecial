@@ -192,7 +192,57 @@ export async function sendClip(c: Omit<PendingClip, "id" | "at">, onProgress?: (
     fd.append("", c.blob, c.filename);
     xhr.send(fd);
   });
+  await uploadPoster(c.slug, up.path, c.blob);
   return post("/api/posts", { ...c.meta, kind: "video", mediaPath: up.path });
+}
+
+/** A still frame (about half a second in) from a video file, as a JPEG no wider than 720px. Null if it can't be read. */
+export async function posterFrom(blob: Blob): Promise<Blob | null> {
+  if (typeof document === "undefined") return null;
+  const url = URL.createObjectURL(blob);
+  const v = document.createElement("video");
+  v.muted = true;
+  v.playsInline = true;
+  v.preload = "auto";
+  v.src = url;
+  const wait = (ev: string) =>
+    new Promise<boolean>((res) => {
+      const t = setTimeout(() => res(false), 8000);
+      v.addEventListener(ev, () => (clearTimeout(t), res(true)), { once: true });
+      v.addEventListener("error", () => (clearTimeout(t), res(false)), { once: true });
+    });
+  try {
+    if (!(await wait("loadedmetadata")) || !v.videoWidth) return null;
+    v.currentTime = Math.min(0.5, Number.isFinite(v.duration) ? v.duration / 2 : 0.5);
+    if (!(await wait("seeked"))) return null;
+    const scale = Math.min(1, 720 / Math.max(v.videoWidth, v.videoHeight));
+    const c = document.createElement("canvas");
+    c.width = Math.round(v.videoWidth * scale);
+    c.height = Math.round(v.videoHeight * scale);
+    c.getContext("2d")?.drawImage(v, 0, 0, c.width, c.height);
+    return await new Promise<Blob | null>((res) => c.toBlob((b) => res(b), "image/jpeg", 0.78));
+  } catch {
+    return null;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+/** Save a still frame next to an uploaded video (<path>.jpg). Best effort: a clip without one still plays. */
+export async function uploadPoster(slug: string, videoPath: string, video: Blob) {
+  try {
+    const jpg = await posterFrom(video);
+    if (!jpg) return;
+    const r = await fetch("/api/upload-url", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ t: slug, contentType: "image/jpeg", filename: "poster.jpg", posterFor: videoPath }) });
+    const up = await r.json().catch(() => ({}));
+    if (!r.ok || !up.signedUrl) return;
+    const fd = new FormData();
+    fd.append("cacheControl", "3600");
+    fd.append("", jpg, "poster.jpg");
+    await fetch(up.signedUrl, { method: "PUT", body: fd, headers: { apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, "x-upsert": "true" } });
+  } catch {
+    /* no poster is fine */
+  }
 }
 
 let flushing = false;

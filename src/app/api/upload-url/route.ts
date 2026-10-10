@@ -14,7 +14,11 @@ export async function POST(req: Request) {
   if (type.startsWith("audio") && session?.role !== "organiser" && !(await isOwner())) return bad("Only the organiser can upload music", 403);
   const ext = (String(body.filename ?? "").split(".").pop() || type.split("/")[1]).toLowerCase().replace(/[^a-z0-9]/g, "");
   const folder = type.startsWith("video") ? "video" : type.startsWith("audio") ? "audio" : "photo";
-  const path = `${folder}/${t?.slug ?? "site"}/${crypto.randomUUID()}.${ext}`;
+  // A still frame for a video is stored right next to it: <video path>.jpg
+  const posterFor = String(body.posterFor ?? "");
+  const isPoster = type === "image/jpeg" && new RegExp(`^video/${t?.slug ?? "site"}/[\\w-]+\\.[a-z0-9]+$`).test(posterFor);
+  if (body.posterFor && !isPoster) return bad("Bad poster");
+  const path = isPoster ? `${posterFor}.jpg` : `${folder}/${t?.slug ?? "site"}/${crypto.randomUUID()}.${ext}`;
   const { data, error } = await adminClient().storage.from("media").createSignedUploadUrl(path);
   if (error || !data) return bad(error?.message ?? "Upload not available", 500);
   return json({ path, token: data.token, signedUrl: data.signedUrl });

@@ -7,6 +7,7 @@ import { useT } from "@/components/Providers";
 import { Loading } from "@/components/ui";
 import { ClipTrimmer } from "@/components/ClipTrimmer";
 import { TrimmerReady } from "@/components/TrimmerReady";
+import { uploadPoster } from "@/lib/trimmer";
 
 const TAGS = [
   "birdie", "eagle", "chip-in", "long putt", "3-putt", "water", "bunker", "OB",
@@ -124,6 +125,7 @@ function PostInner() {
         if (!up.ok) throw new Error(String(up.j.error ?? "Couldn't start the upload"));
         await uploadWithProgress(String(up.j.signedUrl), file, setProgress);
         mediaPath = String(up.j.path);
+        if (file.type.startsWith("video")) await uploadPoster(slug, mediaPath, file);
       }
       const r = await api("/api/posts", {
         roundId: roundId || null,
