@@ -51,6 +51,9 @@ export async function POST(req: Request) {
     if (reel.status !== "rendering" || !reel.render_id) return { reel };
     const st = await shotstackStatus(reel.render_id).catch(() => ({ status: "rendering" }) as { status: string; url?: string; error?: string });
     if (st.status === "done" && st.url) {
+      // Claim it: whichever request clears render_id first does the saving and posting
+      const { data: claimed } = await db.from("reels").update({ render_id: null }).eq("id", reel.id).eq("render_id", reel.render_id).select().maybeSingle();
+      if (!claimed) return { reel: { ...reel, render_id: null } };
       let pub;
       try {
         pub = await publishReel(t.id, t.slug, reel.id, st.url, reel.plan?.title ?? "Highlights", reel.round_id);
@@ -77,7 +80,7 @@ export async function POST(req: Request) {
     case "list": {
       const { data } = await db.from("reels").select("*").eq("tournament_id", t.id).order("created_at", { ascending: false }).limit(20);
       // Finish any film that completed while nobody had this page open
-      const reels = await Promise.all(((data ?? []) as ReelRow[]).map((r) => (r.status === "rendering" ? advance(r).then((x) => x.reel) : r)));
+      const reels = await Promise.all(((data ?? []) as ReelRow[]).map((r) => (r.status === "rendering" ? advance(r).then((x) => x.reel).catch(() => r) : r)));
       return json({ reels, configured: cfg, music: mediaUrl(t.reel_music_path ?? null) });
     }
 
@@ -242,7 +245,9 @@ export async function POST(req: Request) {
       let warning: string | null = null;
       if (plan.voiceOn && cfg.voice) {
         try {
-          for (const s of plan.segments) if (s.voice?.trim()) narration[s.id] = await speak(t.slug, s.voice.trim());
+          const lines = plan.segments.filter((s) => s.voice?.trim());
+          const urls = await Promise.all(lines.map((s) => speak(t.slug, s.voice!.trim())));
+          lines.forEach((s, i) => (narration[s.id] = urls[i]));
         } catch (e) {
           // A voice problem shouldn't cost the whole film: render without narration and say why
           narration = {};
@@ -282,7 +287,7 @@ export async function POST(req: Request) {
       });
       try {
         const id = await shotstackRender(edit);
-        await db.from("reels").update({ status: "rendering", render_id: id, error: null, updated_at: new Date().toISOString() }).eq("id", reel.id);
+        await db.from("reels").update({ status: "rendering", render_id: id, error: warning, updated_at: new Date().toISOString() }).eq("id", reel.id);
         return json({ ok: true, renderId: id, warning });
       } catch (e) {
         await db.from("reels").update({ status: "failed", error: e instanceof Error ? e.message : "Render failed" }).eq("id", reel.id);

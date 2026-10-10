@@ -463,7 +463,7 @@ export function buildTimeline(
           asset: { type: "image", src: card({ k: "bug", h: "", b: bug.before, wt: wholeTrip }) },
           start: r2(start + 0.3),
           length: r2(Math.max(0.5, flip - 0.3 - (bug.after ? 0 : 0.3))),
-          fit: "none",
+          fit: "contain",
           transition: { in: "fade", ...(bug.after ? {} : { out: "fade" }) },
         });
         if (bug.after) {
@@ -471,7 +471,7 @@ export function buildTimeline(
             asset: { type: "image", src: card({ k: "bug", h: "", b: bug.after, wt: wholeTrip }) },
             start: r2(start + flip),
             length: r2(Math.max(0.5, len - flip - 0.3)),
-            fit: "none",
+            fit: "contain",
             transition: { in: "zoom", out: "fade" },
           });
         }
@@ -481,7 +481,7 @@ export function buildTimeline(
           asset: { type: "image", src: card({ k: "caption", h: s.caption, s: s.sub }) },
           start: Math.round((start + 0.4) * 100) / 100,
           length: Math.max(1, len - 0.8),
-          fit: "none",
+          fit: "contain",
           transition: { in: "fade", out: "fade" },
         });
       }
@@ -621,7 +621,7 @@ export function sanitisePlan(p: Plan): Plan {
 
 function sanitiseMusic(m: PlanMusic | undefined): PlanMusic {
   // Plans made before composed music keep using the uploaded track
-  if (!m || typeof m !== "object") return { source: "upload", mood: "epic" };
+  if (!m || typeof m !== "object") return { source: process.env.ELEVENLABS_API_KEY ? "made" : "upload", mood: "epic" };
   const src = typeof m.src === "string" && /^https?:\/\/\S+$/.test(m.src) ? m.src : undefined;
   return {
     source: m.source === "made" || m.source === "none" ? m.source : "upload",

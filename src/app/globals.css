@@ -619,3 +619,4 @@ main.wrap { padding-top: 28px; padding-bottom: 72px; }
 .film-result.is-failed { border-color: var(--red); background: color-mix(in srgb, var(--red) 6%, var(--paper)); }
 .film-result.is-failed strong { color: var(--red); }
 .film-result.is-done { border-color: color-mix(in srgb, var(--ok) 50%, var(--rule)); }
+.film-result .film-note { color: var(--bracken); font-weight: 600; }

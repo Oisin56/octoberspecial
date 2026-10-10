@@ -170,8 +170,23 @@ export function DirectorPanel() {
   }
 
   async function render() {
-    if (!current) return;
+    if (!current || !plan) return;
+    const notReady = plan.segments.filter((s) => s.kind === "veo" && s.status !== "done").length;
+    if (notReady && !confirm(`${notReady === 1 ? "An AI shot isn't" : `${notReady} AI shots aren't`} generated yet, so ${notReady === 1 ? "it'll" : "they'll"} be left out. Render anyway?`)) return;
     if (dirty && !(await save())) return;
+    // Compose the music as its own step first, so the render step stays quick
+    const len = planSeconds(plan);
+    const fits = composedAt != null ? Math.abs(composedAt - len) <= 2 : musicFits(plan.music, len);
+    if (plan.music?.source === "made" && cfg?.voice && !fits) {
+      setBusy("compose");
+      setMsg("Composing the music to fit the film. About a minute.");
+      const m = await call({ action: "composeMusic", reelId: current.id });
+      setBusy(null);
+      if (m.ok) {
+        setPlan((p) => (p ? { ...p, music: m.j.music as PlanMusic } : p));
+        setComposedAt(len);
+      } else if (!confirm(`The music didn't compose (${String(m.j.error ?? "unknown error")}). Render without music?`)) return;
+    }
     setBusy("render");
     setMsg(plan?.voiceOn ? "Recording the voice-over and sending the edit to the renderer…" : "Sending the edit to the renderer…");
     const r = await call({ action: "render", reelId: current.id });
@@ -270,7 +285,7 @@ export function DirectorPanel() {
     setDirty(true);
   }
 
-  if (!state || !cfg) return <p className="muted">Loading…</p>;
+  if (!state || !cfg) return msg ? <p className="error">{msg}</p> : <p className="muted">Loading…</p>;
   const unused = state.posts.filter((p) => p.kind === "video" && p.media_path && !(p.body ?? "").startsWith("Highlights reel") && !plan?.segments.some((s) => s.kind === "clip" && s.postId === p.id));
   const total = plan ? planSeconds(plan) : 0;
   const locked = current?.status === "rendering";
@@ -693,6 +708,7 @@ function FilmResult({ reel, progress, highlights }: { reel: ReelRow; progress: s
         <span>
           Usually 2 to 5 minutes{progress ? ` (${progress})` : ""}. You can leave this page; the film is saved to Highlights when it&apos;s done.
         </span>
+        {reel.error && <span className="film-note">{reel.error}</span>}
       </div>
     );
   if (reel.status === "failed")
@@ -708,6 +724,7 @@ function FilmResult({ reel, progress, highlights }: { reel: ReelRow; progress: s
       <div id="film-result" className="film-result is-done">
         <strong>Your film is ready</strong>
         <span>It&apos;s on the Highlights page for everyone following the trip.</span>
+        {reel.error && <span className="film-note">{reel.error}</span>}
         <video src={mediaUrl(reel.video_path)!} controls playsInline />
         <div className="row">
           <a className="btn secondary" href={mediaUrl(reel.video_path)!} download>
