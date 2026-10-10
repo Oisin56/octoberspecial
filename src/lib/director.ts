@@ -7,6 +7,7 @@ import { mediaUrl } from "./supabase";
 import { gameSummary, tournamentSummary } from "./engine";
 import { TONES, courseInfo, forecast } from "./ai";
 import { cleanBody, cleanTitle } from "./cleanText";
+import { readPlanJson } from "./planJson";
 import { scoreBug, type ScoreBug } from "./scorebug";
 import {
   ballName,
@@ -310,24 +311,30 @@ export async function writePlan(tournamentId: string, brief: Brief, probes: Clip
     content.push({ type: "text", text: task });
 
     const client = new Anthropic({ baseURL: process.env.ANTHROPIC_BASE_URL || undefined });
-    const msg = await client.messages.create({
-      model: MODEL,
-      max_tokens: 8000,
-      system: `You are the director and lead commentator of a golf highlights package for a private tournament between friends. House style for the event: ${tone.voice}. Irish/British English.`,
-      messages: [{ role: "user", content }],
-    });
-    const text = msg.content
-      .filter((b) => b.type === "text")
-      .map((b) => (b as { text: string }).text)
-      .join("");
-    const m = text.match(/\{[\s\S]*\}/);
-    if (m) {
-      try {
-        cp = JSON.parse(m[0]);
-      } catch {
-        cp = {};
+    const system = `You are the director and lead commentator of a golf highlights package for a private tournament between friends. House style for the event: ${tone.voice}. Irish/British English.`;
+    const messages: Anthropic.MessageParam[] = [{ role: "user", content }];
+    // The plan must come back as readable JSON with the story in it; if not, ask once more before giving up
+    let problem = "";
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const msg = await client.messages.create({ model: MODEL, max_tokens: 16000, system, messages });
+      const text = msg.content
+        .filter((b) => b.type === "text")
+        .map((b) => (b as { text: string }).text)
+        .join("");
+      const got = readPlanJson(text) as ClaudePlan | null;
+      if (got && Array.isArray(got.chapters) && got.chapters.length) {
+        cp = got;
+        problem = "";
+        break;
       }
+      problem = msg.stop_reason === "max_tokens" ? "the reply was cut off" : got ? "the reply had no chapters" : "the reply wasn't readable JSON";
+      console.error(`[director] plan attempt ${attempt + 1}: ${problem} (stop: ${msg.stop_reason}). Start of reply: ${text.slice(0, 400)}`);
+      messages.push(
+        { role: "assistant", content: text.trim() || "(no reply)" },
+        { role: "user", content: `That reply couldn't be used (${problem}). Reply again with ONLY the JSON object in the shape asked for, no other text. Keep every line short.` },
+      );
     }
+    if (problem) throw new Error(`The director's reply couldn't be read (${problem}), even on a second try. Press Write the plan again; if it keeps happening, try a shorter film.`);
   }
 
   // ---- assemble the plan: deterministic cards + Claude's choices (validated)
