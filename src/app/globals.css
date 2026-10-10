@@ -701,3 +701,4 @@ main.wrap { padding-top: 28px; padding-bottom: 72px; }
 .commentary-choice { border-left: 3px solid var(--board); padding-left: 12px; }
 .commentary-status { align-items: center; }
 .linkish { background: none; border: 0; padding: 0; color: var(--board); text-decoration: underline; font: inherit; cursor: pointer; }
+.line-editor .warn { color: var(--red, #c8102e); }

@@ -6,7 +6,8 @@ import { useT } from "./Providers";
 import { mediaUrl } from "@/lib/supabase";
 import { bugText, type ScoreBug } from "@/lib/scorebug";
 import { majorityShape, probeClips } from "@/lib/clipProbe";
-import { COMMENTARY, MOODS, voiceKey, musicFits, planSeconds, segmentSeconds, voiceSeconds, type Brief, type Mood, type Plan, type PlanMusic, type ReelRow, type Segment } from "@/lib/director-types";
+import { sendPoster } from "@/lib/trimmer";
+import { COMMENTARY, MOODS, voiceKey, lineFits, lineText, type LinePart, musicFits, planSeconds, segmentSeconds, type Brief, type Mood, type Plan, type PlanMusic, type ReelRow, type Segment } from "@/lib/director-types";
 
 interface Configured {
   claude: boolean;
@@ -163,6 +164,16 @@ export function DirectorPanel() {
     setMsg(`Watching your clips… 0 of ${candidates.length}`);
     const probes = await probeClips(candidates, (d, n) => setMsg(`Watching your clips… ${d} of ${n}`));
     const aspect = shape === "auto" ? majorityShape(probes) ?? "16:9" : shape;
+    // Clips posted before stills were saved get one now, from what the browser just saw (for the cards' backgrounds)
+    await Promise.all(
+      probes.map(async (pr) => {
+        const post = state?.posts.find((x) => x.id === pr.id);
+        const frame = pr.frames[1] ?? pr.frames[0];
+        if (!post?.media_path || !frame || !state) return;
+        const has = await fetch(mediaUrl(post.media_path + ".jpg")!, { method: "HEAD" }).then((r) => r.ok).catch(() => false);
+        if (!has) await sendPoster(state.tournament.slug, post.media_path, await (await fetch(`data:image/jpeg;base64,${frame}`)).blob());
+      }),
+    );
     setMsg("The director is writing the plan and the commentary… (about 30–60 seconds)");
     const r = await call({ action: "plan", brief: { ...brief, aspect }, probes });
     setBusy(null);
@@ -188,13 +199,15 @@ export function DirectorPanel() {
   }
 
   /** Record any commentary lines not yet recorded in the chosen voice. Returns the problems, if any. */
-  async function recordCommentary(): Promise<{ ok: boolean; errors: string[] }> {
-    if (!current || !plan) return { ok: false, errors: [] };
-    if (dirty && !(await save())) return { ok: false, errors: [] };
+  async function recordCommentary(): Promise<{ ok: boolean; errors: string[]; plan: Plan | null; tightened: number }> {
+    if (!current || !plan) return { ok: false, errors: [], plan: null, tightened: 0 };
+    if (dirty && !(await save())) return { ok: false, errors: [], plan: null, tightened: 0 };
     setBusy("voice");
     let errors: string[] = [];
     let done = 0;
-    const total = plan.segments.filter((x) => x.voice?.trim()).length;
+    let tightened = 0;
+    let latest: Plan = plan;
+    const total = lineCount(plan);
     for (let round = 0; round < 6; round++) {
       setMsg(`Recording the commentary… ${Math.min(total, recordedCount(plan) + done)} of ${total} lines`);
       const r = await call({ action: "voiceRecord", reelId: current.id });
@@ -202,19 +215,20 @@ export function DirectorPanel() {
         errors = [String(r.j.error ?? "The voice service didn't answer")];
         break;
       }
-      const next = r.j.plan as Plan;
-      setPlan(next);
+      latest = r.j.plan as Plan;
+      setPlan(latest);
       done += Number(r.j.recorded) || 0;
+      tightened += Number(r.j.tightened) || 0;
       errors = (r.j.errors as string[]) ?? [];
       if (!Number(r.j.remaining) || !Number(r.j.recorded)) break;
     }
     setBusy(null);
-    return { ok: errors.length === 0, errors };
+    return { ok: errors.length === 0, errors, plan: latest, tightened };
   }
 
   async function record() {
     const r = await recordCommentary();
-    if (r.ok) setMsg("Commentary recorded. Press play on any line to hear it.");
+    if (r.ok) setMsg(`Commentary recorded${r.tightened ? `, and ${r.tightened === 1 ? "one line was" : `${r.tightened} lines were`} shortened to fit` : ""}. Press play on any line to hear it.`);
     else if (r.errors.length) setMsg(`Some lines didn't record: ${r.errors.slice(0, 2).join("; ")}. Press Record commentary to try those again.`);
   }
 
@@ -223,10 +237,20 @@ export function DirectorPanel() {
     const notReady = plan.segments.filter((s) => s.kind === "veo" && s.status !== "done").length;
     if (notReady && !confirm(`${notReady === 1 ? "An AI shot isn't" : `${notReady} AI shots aren't`} generated yet, so ${notReady === 1 ? "it'll" : "they'll"} be left out. Render anyway?`)) return;
     if (dirty && !(await save())) return;
-    // Compose the music as its own step first, so the render step stays quick
-    const len = planSeconds(plan);
+    // Record the commentary first (two lines at a time, shortened to fit where needed): its timing sets the film's length
+    let p: Plan = plan;
+    if (plan.voiceOn && cfg?.voice && recordedCount(plan) < lineCount(plan)) {
+      const v = await recordCommentary();
+      if (v.plan) p = v.plan;
+      if (!v.ok && v.errors.length && !confirm(`Some commentary didn't record (${v.errors[0]}). Render with the lines that did?`)) {
+        setMsg("Not rendered. Press Record commentary to try the missing lines again.");
+        return;
+      }
+    }
+    // Then compose the music to the film's length, as its own step so the render step stays quick
+    const len = planSeconds(p);
     const fits = composedAt != null ? Math.abs(composedAt - len) <= 2 : musicFits(plan.music, len);
-    if (plan.music?.source === "made" && cfg?.voice && !fits) {
+    if (p.music?.source === "made" && cfg?.voice && !fits) {
       setBusy("compose");
       setMsg("Composing the music to fit the film. About a minute.");
       const m = await call({ action: "composeMusic", reelId: current.id });
@@ -235,14 +259,6 @@ export function DirectorPanel() {
         setPlan((p) => (p ? { ...p, music: m.j.music as PlanMusic } : p));
         setComposedAt(len);
       } else if (!confirm(`The music didn't compose (${String(m.j.error ?? "unknown error")}). Render without music?`)) return;
-    }
-    // Record the commentary as its own step, two lines at a time, so nothing is dropped
-    if (plan.voiceOn && cfg?.voice && recordedCount(plan) < plan.segments.filter((x) => x.voice?.trim()).length) {
-      const v = await recordCommentary();
-      if (!v.ok && v.errors.length && !confirm(`Some commentary didn't record (${v.errors[0]}). Render with the lines that did?`)) {
-        setMsg("Not rendered. Press Record commentary to try the missing lines again.");
-        return;
-      }
     }
     setBusy("render");
     setMsg("Sending the edit to the renderer…");
@@ -715,22 +731,19 @@ export function DirectorPanel() {
                   </div>
                 )}
 
-                {plan.voiceOn && (
-                  <div className="field">
-                    <label className="small">
-                      Narration{" "}
-                      {s.voice && voiceSeconds(s.voice) > segmentSeconds(s) + 0.5 && s.kind !== "card" && (
-                        <span className="error">· too long for this clip ({voiceSeconds(s.voice).toFixed(1)}s)</span>
-                      )}
-                    </label>
-                    <textarea value={s.voice ?? ""} disabled={locked} onChange={(e) => updateSeg(s.id, { ...s, voice: e.target.value })} style={{ minHeight: 44 }} />
-                    {s.voice?.trim() && (s.voiceSrc && s.voiceFor === voiceKey(s.voice, plan.voiceId) ? (
-                      <audio key={s.voiceSrc} src={s.voiceSrc} controls preload="none" style={{ height: 32, maxWidth: 300 }} />
-                    ) : (
-                      <span className="small muted">Not recorded yet</span>
-                    ))}
-                  </div>
-                )}
+                {plan.voiceOn &&
+                  (s.kind === "clip" ? (["voice", "payoff"] as LinePart[]) : (["voice"] as LinePart[])).map((part) => (
+                    <LineEditor
+                      key={part}
+                      seg={s}
+                      part={part}
+                      voiceId={plan.voiceId}
+                      locked={locked}
+                      onChange={(text) =>
+                        updateSeg(s.id, part === "voice" ? { ...s, voice: text, voiceAuto: undefined } : ({ ...s, payoff: text, payoffAuto: undefined } as Segment))
+                      }
+                    />
+                  ))}
               </li>
             ))}
           </ol>
@@ -777,11 +790,45 @@ export function DirectorPanel() {
   );
 }
 
-const recordedCount = (plan: Plan) => plan.segments.filter((x) => x.voice?.trim() && x.voiceSrc && x.voiceFor === voiceKey(x.voice, plan.voiceId)).length;
+const PARTS: LinePart[] = ["voice", "payoff"];
+const recordingOf = (s: Segment, part: LinePart) => (part === "voice" ? { src: s.voiceSrc, key: s.voiceFor } : s.kind === "clip" ? { src: s.payoffSrc, key: s.payoffFor } : {});
+const isRecorded = (s: Segment, part: LinePart, voiceId?: string) => {
+  const r = recordingOf(s, part);
+  return !!r.src && r.key === voiceKey(lineText(s, part), voiceId);
+};
+const lineCount = (plan: Plan) => plan.segments.reduce((n, s) => n + PARTS.filter((p) => lineText(s, p)).length, 0);
+const recordedCount = (plan: Plan) => plan.segments.reduce((n, s) => n + PARTS.filter((p) => lineText(s, p) && isRecorded(s, p, plan.voiceId)).length, 0);
+
+/** One line of commentary: the words, how long it takes against the time it has, and a player once recorded. */
+function LineEditor({ seg, part, voiceId, locked, onChange }: { seg: Segment; part: LinePart; voiceId?: string; locked: boolean; onChange: (t: string) => void }) {
+  const text = part === "voice" ? (seg.voice ?? "") : seg.kind === "clip" ? (seg.payoff ?? "") : "";
+  const label = seg.kind !== "clip" ? "Narration" : part === "voice" ? "Set-up (before the shot)" : "Payoff (as the result shows)";
+  const fit = lineFits(seg, part);
+  const rec = recordingOf(seg, part);
+  const recorded = isRecorded(seg, part, voiceId);
+  const auto = part === "voice" ? seg.voiceAuto : seg.kind === "clip" && seg.payoffAuto;
+  return (
+    <div className="field line-editor">
+      <label className="small">
+        {label}
+        {text.trim() && (
+          <span className={fit.fits || seg.kind === "card" ? "muted" : "warn"}>
+            {" "}
+            · {fit.sec.toFixed(1)}s{seg.kind === "card" ? "" : ` of ${Math.max(0, fit.max).toFixed(1)}s`} {recorded ? "" : "(estimate)"}{" "}
+            {seg.kind === "card" ? "" : fit.fits ? "✓" : recorded && auto ? "· still a little long; the next line will wait for it" : "· too long: it'll be shortened automatically when recorded"}
+          </span>
+        )}
+        {auto && <span className="muted"> · shortened to fit</span>}
+      </label>
+      <textarea value={text} disabled={locked} onChange={(e) => onChange(e.target.value)} style={{ minHeight: part === "payoff" ? 36 : 44 }} placeholder={part === "payoff" ? "e.g. And in it goes!" : undefined} />
+      {text.trim() && (recorded ? <audio key={rec.src} src={rec.src} controls preload="none" style={{ height: 32, maxWidth: 300 }} /> : <span className="small muted">Not recorded yet</span>)}
+    </div>
+  );
+}
 
 /** How much of the commentary is recorded, with a button to record the rest. */
 function CommentaryStatus({ plan, busy, locked, onRecord }: { plan: Plan; busy: string | null; locked: boolean; onRecord: () => void }) {
-  const total = plan.segments.filter((x) => x.voice?.trim()).length;
+  const total = lineCount(plan);
   const done = recordedCount(plan);
   if (!total) return null;
   return (

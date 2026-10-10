@@ -11,7 +11,7 @@ import {
   configured,
   listVoices,
   publishReel,
-  recordLines,
+  fitCommentary,
   sanitisePlan,
   shotstackRender,
   shotstackStatus,
@@ -19,7 +19,7 @@ import {
   veoStart,
   writePlan,
 } from "@/lib/director";
-import { COMMENTARY, musicFits, planSeconds, voiceKey, type Brief, type ClipProbe, type Plan, type ReelRow } from "@/lib/director-types";
+import { COMMENTARY, lineSeconds, lineText, musicFits, planSeconds, voiceKey, type Brief, type ClipProbe, type Plan, type ReelRow } from "@/lib/director-types";
 
 /** Clip shapes, lengths and stills sent by the browser: checked and capped. */
 function cleanProbes(raw: unknown): ClipProbe[] {
@@ -33,6 +33,33 @@ function cleanProbes(raw: unknown): ClipProbe[] {
 }
 
 export const maxDuration = 300;
+
+/** Copy the commentary (words, recordings, lengths) from one copy of a plan to the latest saved one. */
+function copyCommentary(from: Plan, to: Plan) {
+  const keys = ["voice", "voiceSrc", "voiceFor", "voiceSec", "voiceAuto", "payoff", "payoffSrc", "payoffFor", "payoffSec", "payoffAuto"] as const;
+  for (const s of to.segments) {
+    const f = from.segments.find((x) => x.id === s.id);
+    if (!f) continue;
+    for (const k of keys) {
+      const v = (f as unknown as Record<string, unknown>)[k];
+      if (v === undefined) delete (s as unknown as Record<string, unknown>)[k];
+      else (s as unknown as Record<string, unknown>)[k] = v;
+    }
+  }
+}
+
+/** Which clips have a still saved next to them (made when the clip was posted, or by the director page). */
+async function clipPosters(plan: Plan): Promise<Record<string, string>> {
+  const clips = plan.segments.filter((s) => s.kind === "clip");
+  const found = await Promise.all(
+    clips.map(async (c) => {
+      const url = `${c.src}.jpg`;
+      const r = await fetch(url, { method: "HEAD" }).catch(() => null);
+      return r?.ok && (r.headers.get("content-type") ?? "").startsWith("image") ? ([c.id, url] as const) : null;
+    }),
+  );
+  return Object.fromEntries(found.filter((x): x is readonly [string, string] => !!x));
+}
 
 function origin(req: Request) {
   if (process.env.SITE_URL) return process.env.SITE_URL.replace(/\/$/, "");
@@ -190,6 +217,12 @@ export async function POST(req: Request) {
         if (was?.voiceSrc && s.voice?.trim() && was.voiceFor === voiceKey(s.voice, plan.voiceId)) {
           s.voiceSrc = was.voiceSrc;
           s.voiceFor = was.voiceFor;
+          s.voiceSec = was.voiceSec;
+        }
+        if (s.kind === "clip" && was?.kind === "clip" && was.payoffSrc && s.payoff?.trim() && was.payoffFor === voiceKey(s.payoff, plan.voiceId)) {
+          s.payoffSrc = was.payoffSrc;
+          s.payoffFor = was.payoffFor;
+          s.payoffSec = was.payoffSec;
         }
         if (s.kind === "clip") {
           const mp = byId.get(s.postId);
@@ -248,18 +281,12 @@ export async function POST(req: Request) {
       const reel = await getReel(String(b.reelId));
       if (!reel?.plan) return bad("Reel not found", 404);
       if (reel.status === "rendering") return bad("This reel is rendering. Wait for it to finish.", 409);
-      const r = await recordLines(t.slug, reel.plan.segments, reel.plan.voiceId, 150_000);
-      const plan = await patchPlan(reel.id, (p) => {
-        for (const s of p.segments) {
-          const got = r.recorded.get(s.id);
-          // Only if the line wasn't changed while it was being recorded
-          if (got && s.voice?.trim() && voiceKey(s.voice, p.voiceId) === got.key) {
-            s.voiceSrc = got.src;
-            s.voiceFor = got.key;
-          }
-        }
-      });
-      return json({ plan, recorded: r.recorded.size, remaining: r.remaining, errors: r.errors });
+      const work = structuredClone(reel.plan);
+      const before = JSON.stringify(work.segments.map((x) => [x.voiceFor, x.kind === "clip" ? x.payoffFor : null]));
+      const r = await fitCommentary(t.slug, work, 150_000);
+      const plan = await patchPlan(reel.id, (p) => copyCommentary(work, p));
+      const recorded = JSON.stringify(work.segments.map((x) => [x.voiceFor, x.kind === "clip" ? x.payoffFor : null])) !== before;
+      return json({ plan, recorded: recorded ? 1 : 0, remaining: r.remaining, tightened: r.tightened, errors: r.errors });
     }
 
     case "veoStart": {
@@ -328,25 +355,23 @@ export async function POST(req: Request) {
       if (reel.status === "rendering") return bad("Already rendering", 409);
       const plan = reel.plan;
       if (plan.segments.some((s) => s.kind === "veo" && s.status === "pending")) return bad("Wait for the AI shots to finish (or remove them) first");
-      // Narration: lines recorded earlier are reused; any missing are recorded now (two at a time)
-      const narration: Record<string, string> = {};
+      // Commentary: recorded and fitted (anything already recorded is reused)
+      const narration: Record<string, { src: string; sec: number }> = {};
       let warning: string | null = null;
       if (plan.voiceOn && cfg.voice) {
-        const r = await recordLines(t.slug, plan.segments, plan.voiceId, 150_000);
-        if (r.recorded.size) {
-          await patchPlan(reel.id, (p) => {
-            for (const s of p.segments) {
-              const got = r.recorded.get(s.id);
-              if (got) (s.voiceSrc = got.src), (s.voiceFor = got.key);
-            }
-          });
-        }
+        const r = await fitCommentary(t.slug, plan, 150_000);
+        await patchPlan(reel.id, (p) => copyCommentary(plan, p));
+        let lines = 0;
         for (const s of plan.segments) {
-          const got = r.recorded.get(s.id);
-          if (got) narration[s.id] = got.src;
-          else if (s.voiceSrc && s.voice?.trim() && s.voiceFor === voiceKey(s.voice, plan.voiceId)) narration[s.id] = s.voiceSrc;
+          for (const part of ["voice", "payoff"] as const) {
+            const text = lineText(s, part);
+            if (!text) continue;
+            lines++;
+            const src = part === "voice" ? s.voiceSrc : s.kind === "clip" ? s.payoffSrc : undefined;
+            const key = part === "voice" ? s.voiceFor : s.kind === "clip" ? s.payoffFor : undefined;
+            if (src && key === voiceKey(text, plan.voiceId)) narration[`${s.id}:${part}`] = { src, sec: lineSeconds(s, part) };
+          }
         }
-        const lines = plan.segments.filter((s) => s.voice?.trim()).length;
         const missing = lines - Object.keys(narration).length;
         if (missing > 0) {
           warning =
@@ -385,6 +410,7 @@ export async function POST(req: Request) {
         musicComposed: composed,
         narration,
         bugs: clipBugs(await loadServerState(t.id), plan),
+        posters: await clipPosters(plan),
       });
       try {
         const id = await shotstackRender(edit);

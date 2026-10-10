@@ -232,7 +232,15 @@ export async function posterFrom(blob: Blob): Promise<Blob | null> {
 export async function uploadPoster(slug: string, videoPath: string, video: Blob) {
   try {
     const jpg = await posterFrom(video);
-    if (!jpg) return;
+    if (jpg) await sendPoster(slug, videoPath, jpg);
+  } catch {
+    /* no poster is fine */
+  }
+}
+
+/** Save a still next to a posted video (used behind the film's title cards and as the feed's first frame). */
+export async function sendPoster(slug: string, videoPath: string, jpg: Blob) {
+  try {
     const r = await fetch("/api/upload-url", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ t: slug, contentType: "image/jpeg", filename: "poster.jpg", posterFor: videoPath }) });
     const up = await r.json().catch(() => ({}));
     if (!r.ok || !up.signedUrl) return;

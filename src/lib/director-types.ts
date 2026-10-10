@@ -9,6 +9,10 @@ interface Base {
   /** The recorded narration, and what it was recorded from (text + voice), so it's reused until either changes */
   voiceSrc?: string;
   voiceFor?: string;
+  /** Measured length of the recording, in seconds */
+  voiceSec?: number;
+  /** The line was shortened automatically to fit */
+  voiceAuto?: boolean;
 }
 
 export interface CardSegment extends Base {
@@ -43,6 +47,15 @@ export interface ClipSegment extends Base {
   finishes?: boolean;
   /** Filmed upright (read by the browser). A clip of the other shape gets a blurred fill behind it */
   portrait?: boolean;
+  /**
+   * Clips have two lines: `voice` is the set-up, read from the start and never giving away the result;
+   * `payoff` is a short reaction timed to end just before the clip does, once the result is on screen.
+   */
+  payoff?: string;
+  payoffSrc?: string;
+  payoffFor?: string;
+  payoffSec?: number;
+  payoffAuto?: boolean;
 }
 
 export interface VeoSegment extends Base {
@@ -175,8 +188,51 @@ export function voiceSeconds(text?: string) {
   return words.split(/\s+/).length / WPS + 0.4;
 }
 
+export type LinePart = "voice" | "payoff";
+
+/** A segment's line of commentary for one part (clips have a set-up and a payoff; cards and AI shots just one). */
+export function lineText(s: Segment, part: LinePart): string {
+  const t = part === "voice" ? s.voice : s.kind === "clip" ? s.payoff : undefined;
+  return (t ?? "").trim();
+}
+
+/** Seconds the line takes: measured once recorded (same words), estimated before. */
+export function lineSeconds(s: Segment, part: LinePart): number {
+  const text = lineText(s, part);
+  if (!text) return 0;
+  const f = s as Segment & { payoffFor?: string; payoffSec?: number };
+  const forKey = part === "voice" ? s.voiceFor : f.payoffFor;
+  const sec = part === "voice" ? s.voiceSec : f.payoffSec;
+  if (forKey && sec != null && forKey.slice(forKey.indexOf("|") + 1) === text) return sec;
+  return voiceSeconds(text);
+}
+
+/** Timing inside a clip of `len` seconds: when each line starts, and the most each may take. */
+export const LEAD_IN = 0.3; // set-up starts this long after the cut
+export const TAIL = 0.4; // payoff ends this long before the clip does
+export const GAP = 0.4; // quiet between set-up and payoff (the shot itself)
+export function clipLayout(len: number, setupSec: number, payoffSec: number) {
+  const payoffMax = Math.max(1.4, Math.min(3.2, len * 0.4));
+  const payoffStart = payoffSec ? Math.max(LEAD_IN, len - TAIL - payoffSec) : len;
+  const setupEndBy = payoffSec ? payoffStart - GAP : len - LEAD_IN;
+  return { setupStart: LEAD_IN, setupMax: Math.max(0, setupEndBy - LEAD_IN), payoffStart, payoffMax };
+}
+
+/** Does this line fit its slot? (cards and AI shots stretch or are short, so only clips are checked closely) */
+export function lineFits(s: Segment, part: LinePart): { fits: boolean; sec: number; max: number } {
+  const sec = lineSeconds(s, part);
+  if (!sec) return { fits: true, sec: 0, max: 0 };
+  if (s.kind === "card") return { fits: sec <= 12, sec, max: 12 };
+  const len = segmentSeconds(s);
+  if (s.kind === "veo") return { fits: sec <= len - LEAD_IN, sec, max: len - LEAD_IN };
+  const L = clipLayout(len, lineSeconds(s, "voice"), lineSeconds(s, "payoff"));
+  const max = part === "voice" ? L.setupMax : Math.min(L.payoffMax, len - 2 * LEAD_IN);
+  return { fits: sec <= max + 0.15, sec, max };
+}
+
 export function segmentSeconds(s: Segment): number {
-  if (s.kind === "card") return Math.max(s.seconds, voiceSeconds(s.voice));
+  // Cards stay up until their line has finished
+  if (s.kind === "card") return Math.max(s.seconds, lineSeconds(s, "voice") ? lineSeconds(s, "voice") + LEAD_IN + 0.6 : 0);
   if (s.kind === "veo") return s.status === "done" ? s.seconds : 0;
   const end = s.out ?? (s.duration != null ? Math.min(s.duration, s.in + 10) : s.in + 8);
   return Math.max(1, Math.min(30, end - s.in));

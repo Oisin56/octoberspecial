@@ -15,7 +15,14 @@ export interface CardSpec {
   colors?: { primary?: string; accent?: string; background?: string } | null;
   w: number;
   ht: number;
+  /** Full cards: paint a background in the tournament's colours (nothing behind the card) */
+  bg?: boolean;
+  /** Design version: part of the address, so a new design is never served from an old cached image */
+  v?: number;
 }
+
+/** Bump whenever the card design changes. */
+export const CARD_DESIGN = 3;
 
 export function signCard(d: string) {
   return createHmac("sha256", process.env.SESSION_SECRET ?? "dev").update(`card:${d}`).digest("base64url").slice(0, 24);
@@ -23,6 +30,6 @@ export function signCard(d: string) {
 
 /** Public, signed URL for a rendered card image. */
 export function cardUrl(origin: string, spec: CardSpec) {
-  const d = Buffer.from(JSON.stringify(spec)).toString("base64url");
+  const d = Buffer.from(JSON.stringify({ ...spec, v: CARD_DESIGN })).toString("base64url");
   return `${origin}/api/director/card?d=${d}&sig=${signCard(d)}`;
 }

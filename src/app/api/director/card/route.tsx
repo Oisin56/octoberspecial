@@ -97,7 +97,10 @@ function FullCard({ spec, p, W, H, u, portrait }: CardProps) {
         alignItems: "center",
         justifyContent: "center",
         color: "#ffffff",
-        backgroundImage: `radial-gradient(ellipse at 50% 42%, ${rgba(p.glass, 0.28)} 0%, ${rgba(p.glass, 0.5)} 55%, ${rgba(p.glass, 0.78)} 100%)`,
+        // Over blurred footage: a glass wash. With nothing behind (bg): the tournament's colours, deepening to the edges
+        backgroundImage: spec.bg
+          ? `radial-gradient(ellipse at 50% 38%, ${mix(p.board, "#ffffff", 0.1)} 0%, ${p.board} 45%, ${mix(p.board, "#000000", 0.7)} 100%)`
+          : `radial-gradient(ellipse at 50% 42%, ${rgba(p.glass, 0.28)} 0%, ${rgba(p.glass, 0.5)} 55%, ${rgba(p.glass, 0.78)} 100%)`,
         padding: `${80 * u}px ${portrait ? 70 * u : 120 * u}px`,
       }}
     >
