@@ -446,16 +446,31 @@ async function tts(text: string, model: string, voiceId: string) {
 
 /** Record one line of commentary. Falls back to the older model (tags removed) if v3 isn't available. */
 let v3Refused = false;
+/**
+ * Record one line of commentary. Tries the chosen voice on Eleven v3, then the older model (tags removed),
+ * then the default commentator, so a refused model or voice never silences the film.
+ */
 export async function speak(slug: string, text: string, voiceId?: string): Promise<string> {
-  const voice = voiceId || VOICE_ID();
-  const model = v3Refused ? "eleven_multilingual_v2" : voiceModel();
-  let r = await tts(model === "eleven_v3" ? text : stripTags(text), model, voice);
-  if (!r.ok && model === "eleven_v3" && r.status >= 400 && r.status < 500 && r.status !== 401) {
-    v3Refused = true; // remembered while this server instance lives, so later lines go straight to the older model
-    r = await tts(stripTags(text), "eleven_multilingual_v2", voice);
+  const chosen = voiceId || VOICE_ID();
+  const attempts: [string, string][] = [];
+  if (!v3Refused && voiceModel() === "eleven_v3") attempts.push(["eleven_v3", chosen]);
+  attempts.push([voiceModel() === "eleven_v3" ? "eleven_multilingual_v2" : voiceModel(), chosen]);
+  if (chosen !== VOICE_ID()) {
+    if (!v3Refused && voiceModel() === "eleven_v3") attempts.push(["eleven_v3", VOICE_ID()]);
+    attempts.push(["eleven_multilingual_v2", VOICE_ID()]);
   }
-  if (!r.ok) throw new Error(`Voice-over failed (${r.status}): ${(await r.text()).slice(0, 200)}`);
-  return uploadBuffer(`audio/${slug}/${crypto.randomUUID()}.mp3`, await r.arrayBuffer(), "audio/mpeg");
+  let last = "";
+  for (const [i, [model, voice]] of attempts.entries()) {
+    const r = await tts(model === "eleven_v3" ? text : stripTags(text), model, voice);
+    if (r.ok) {
+      // v3 refused but the older model worked with the same voice: skip v3 for the rest of this film
+      if (model !== "eleven_v3" && voice === chosen && i > 0 && attempts[0][0] === "eleven_v3") v3Refused = true;
+      return uploadBuffer(`audio/${slug}/${crypto.randomUUID()}.mp3`, await r.arrayBuffer(), "audio/mpeg");
+    }
+    last = `${r.status}: ${(await r.text()).slice(0, 200)}`;
+    if (r.status === 401) break; // the key itself is wrong: no point trying other voices
+  }
+  throw new Error(`Voice-over failed (${last})`);
 }
 
 /** The voices on the organiser's ElevenLabs account (needs the key's voices permission; empty if not allowed). */
