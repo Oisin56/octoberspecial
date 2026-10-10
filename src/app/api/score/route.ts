@@ -7,7 +7,7 @@ import { maybeBulletin } from "@/lib/ai";
 
 export const maxDuration = 60;
 
-/** The scorer saves one hole for one game. Re-sending a hole overwrites it. */
+/** The scorer saves one hole for one game. Re-sending a hole overwrites it. `final: false` = still being entered (no bulletin yet). */
 export async function POST(req: Request) {
   const body = await req.json().catch(() => null);
   if (!body) return bad("Bad request");
@@ -67,6 +67,8 @@ export async function POST(req: Request) {
 
   if (round.status === "upcoming") await db.from("rounds").update({ status: "live" }).eq("id", roundId);
 
+  // Scores are saved as they're tapped in; news of the hole waits until the scorer has finished with it
+  if (body.final === false) return json({ ok: true });
   after(async () => {
     try {
       await maybeBulletin(t.id, roundId, gameId, hole);

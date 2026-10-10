@@ -40,8 +40,17 @@ export function queued(): QueuedHole[] {
   return read();
 }
 
-export function enqueue(item: QueuedHole) {
-  write([...read().filter((x) => !same(x, item)), item]);
+export function enqueue(input: Omit<QueuedHole, "at"> & { at?: number }) {
+  const item: QueuedHole = { ...input, at: input.at ?? Date.now() };
+  // An unsent "finished" save stays finished when a quick correction replaces it
+  const prev = read().find((x) => same(x, item));
+  const keepFinal = prev?.payload.final !== false && prev != null && item.payload.final === false;
+  write([...read().filter((x) => !same(x, item)), keepFinal ? { ...item, payload: { ...item.payload, final: true } } : item]);
+}
+
+/** The newest unsent save of one hole, if any (it beats what the server last sent us). */
+export function pendingHole(slug: string, roundId: string, game: string, hole: number): QueuedHole | undefined {
+  return read().find((x) => x.slug === slug && x.roundId === roundId && x.game === game && x.hole === hole);
 }
 
 let flushing = false;

@@ -1,11 +1,12 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useT } from "@/components/Providers";
-import { GameStatus, Loading, gameLine } from "@/components/ui";
-import { enqueue, flush, queued } from "@/lib/offlineQueue";
+import { Loading, gameLine } from "@/components/ui";
+import { enqueue, flush, pendingHole, queued } from "@/lib/offlineQueue";
+import { readScorePos, writeScorePos } from "@/lib/scorePos";
 import { ballsOfGame, gameHole, gameShots, ONE_BALL, type BallHole } from "@/lib/engine";
 import { shotsOnHole } from "@/lib/scoring";
 import { ballName, formatLabel, sideLabel, toRoundCfg } from "@/lib/types";
@@ -24,6 +25,14 @@ function ScoreInner() {
   const [waiting, setWaiting] = useState(0);
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  // Every tap is saved at once; the hole is "finished" (and news of it goes out) when the scorer moves on,
+  // or after two quiet minutes
+  const latest = useRef<{ draft: Draft; ctp: string | null; ld: string | null }>({ draft: {}, ctp: null, ld: null });
+  const unfinished = useRef<number | null>(null);
+  const sendTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [saved, setSaved] = useState<"saving" | "saved" | "phone" | null>(null);
+  const [picking, setPicking] = useState(false);
 
   const round = useMemo(() => {
     if (!state) return null;
@@ -44,24 +53,52 @@ function ScoreInner() {
     [state, round, game],
   );
 
+  // The scorecard is a full-screen view on the course (the bar below has the way out)
+  useEffect(() => {
+    document.documentElement.classList.add("on-score");
+    return () => document.documentElement.classList.remove("on-score");
+  }, []);
+
+  // Back from the camera or another page: the same match and hole as before
+  useEffect(() => {
+    if (!round || gameId || !myGames.length) return;
+    const pos = readScorePos(slug, round.id);
+    if (pos?.game && myGames.some((g) => g.id === pos.game)) setGameId(pos.game);
+  }, [round, gameId, myGames, slug]);
+
   useEffect(() => {
     if (!round || !game || hole != null) return;
+    const pos = readScorePos(slug, round.id);
+    if (pos?.game === game.id && pos.hole >= 1 && pos.hole <= 18) return setHole(pos.hole);
     const done = new Set(entries.map((e) => e.hole));
     setHole(round.holes.find((h) => !done.has(h.number))?.number ?? 18);
-  }, [round, game, entries, hole]);
+  }, [round, game, entries, hole, slug]);
+
+  useEffect(() => {
+    if (round && game && hole != null) writeScorePos(slug, round.id, { game: game.id, hole });
+  }, [slug, round, game, hole]);
 
   useEffect(() => {
     if (!round || hole == null || !game) return;
     const h = round.holes.find((x) => x.number === hole)!;
+    // A save still waiting on this phone beats what the server last told us
+    const pend = pendingHole(slug, round.id, game.id, hole)?.payload as { scores?: Draft; ctpWinner?: string | null; ldWinner?: string | null } | undefined;
     const e = entries.find((x) => x.hole === hole);
     const d: Draft = {};
-    for (const b of balls) d[b] = e?.scores[b] ?? { gross: h.par, gir: false, pickedUp: false };
+    for (const b of balls) d[b] = pend?.scores?.[b] ?? e?.scores[b] ?? { gross: h.par, gir: false, pickedUp: false };
+    const c = pend ? (pend.ctpWinner ?? null) : (e?.ctp_winner ?? null);
+    const l = pend ? (pend.ldWinner ?? null) : (e?.ld_winner ?? null);
+    latest.current = { draft: d, ctp: c, ld: l };
     setDraft(d);
-    setCtp(e?.ctp_winner ?? null);
-    setLd(e?.ld_winner ?? null);
+    setCtp(c);
+    setLd(l);
     setErr(null);
+    // a hole that already has scores is finished again when the scorer leaves it (news is only sent once)
+    unfinished.current = pend || e ? hole : null;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [round?.id, game?.id, hole]);
+
+
 
   const syncQueue = useCallback(async () => {
     const r = await flush();
@@ -136,24 +173,22 @@ function ScoreInner() {
   const canPickUp = rcfg.scoring !== "stroke" || rcfg.play === "fourball";
   const oneBall = ONE_BALL.includes(rcfg.play);
 
-  function setB(b: string, p: Partial<BallHole>) {
-    setDraft((d) => ({ ...d, [b]: { ...d[b], ...p } }));
-  }
-
-  async function save(goNext: boolean) {
+  /** Save a hole: on this phone straight away, to everyone as soon as there's signal. */
+  function commit(holeNo: number, final: boolean) {
     if (!round || !game) return;
-    setErr(null);
-    const payload = { scores: draft, ctpWinner: h.par === 3 ? ctp : null, ldWinner: h.par === 5 ? ld : null };
-    patch((s) => ({
-      ...s,
+    const hh = round.holes.find((x) => x.number === holeNo)!;
+    const { draft: d, ctp: c, ld: l } = latest.current;
+    const payload = { scores: d, ctpWinner: hh.par === 3 ? c : null, ldWinner: hh.par === 5 ? l : null, final };
+    patch((st) => ({
+      ...st,
       entries: [
-        ...s.entries.filter((e) => !(e.round_id === round.id && (e.game ?? "main") === game.id && e.hole === hole)),
+        ...st.entries.filter((e) => !(e.round_id === round.id && (e.game ?? "main") === game.id && e.hole === holeNo)),
         {
-          id: `local-${game.id}-${hole}`,
+          id: `local-${game.id}-${holeNo}`,
           round_id: round.id,
           game: game.id,
-          hole: hole!,
-          scores: draft,
+          hole: holeNo,
+          scores: d,
           ctp_winner: payload.ctpWinner,
           ld_winner: payload.ldWinner,
           updated_by: session?.name ?? null,
@@ -161,14 +196,74 @@ function ScoreInner() {
         },
       ],
     }));
-    enqueue({ slug, roundId: round.id, game: game.id, hole: hole!, payload, at: Date.now() });
+    enqueue({ slug, roundId: round.id, game: game.id, hole: holeNo, payload });
+    if (final && unfinished.current === holeNo) unfinished.current = null;
+  }
+
+  async function send() {
+    setSaved("saving");
     const r = await flush();
     setWaiting(r.left);
     if (r.error) setErr(r.error);
-    setMsg(r.left ? `Hole ${hole} saved on this phone. It'll send when there's signal.` : `Hole ${hole} saved.`);
-    setTimeout(() => setMsg(null), 2500);
-    if (goNext && hole! < 18) setHole(hole! + 1);
-    if (goNext && hole === 18) router.push(href("/live"));
+    setSaved(r.left ? "phone" : "saved");
+  }
+
+  /** A change on this hole: saved now, sent a moment later, finished after two quiet minutes. */
+  function changed() {
+    const holeNo = hole!;
+    setTimeout(() => {
+      commit(holeNo, false);
+      unfinished.current = holeNo;
+      if (sendTimer.current) clearTimeout(sendTimer.current);
+      sendTimer.current = setTimeout(send, 800);
+      if (idleTimer.current) clearTimeout(idleTimer.current);
+      idleTimer.current = setTimeout(() => {
+        if (unfinished.current === holeNo) {
+          commit(holeNo, true);
+          send();
+        }
+      }, 120_000);
+    }, 0);
+    setSaved("saving");
+  }
+
+  /** Leaving a hole (any way): if it was changed, it's finished. */
+  function goTo(next: number) {
+    if (unfinished.current != null) {
+      commit(unfinished.current, true);
+      send();
+    }
+    setHole(next);
+  }
+
+  function setB(b: string, p: Partial<BallHole>) {
+    const n = { ...latest.current.draft, [b]: { ...latest.current.draft[b], ...p } };
+    latest.current = { ...latest.current, draft: n };
+    setDraft(n);
+    changed();
+  }
+  function pickCtp(v: string | null) {
+    setCtp(v);
+    latest.current = { ...latest.current, ctp: v };
+    changed();
+  }
+  function pickLd(v: string | null) {
+    setLd(v);
+    latest.current = { ...latest.current, ld: v };
+    changed();
+  }
+
+  /** "Next hole": saves this one as it stands (pars if untouched) and moves on. */
+  async function next() {
+    if (!round || !game) return;
+    commit(hole!, true);
+    if (idleTimer.current) clearTimeout(idleTimer.current);
+    unfinished.current = null;
+    send();
+    setMsg(`Hole ${hole} saved.`);
+    setTimeout(() => setMsg(null), 2000);
+    if (hole! < 18) setHole(hole! + 1);
+    else router.push(href("/live"));
   }
 
   const sideChoices = [...balls.map((b) => ({ id: b as string | null, label: ballName(b, game, state.players) })), { id: null, label: "Nobody" }];
@@ -180,44 +275,58 @@ function ScoreInner() {
       : null;
 
   return (
-    <div className="scorer">
-      <div className="row" style={{ justifyContent: "space-between", marginBottom: 8 }}>
-        <div className="display" style={{ fontSize: 17 }}>
-          R{round.number} {round.course_name} · {formatLabel(round)}
-          {rcfg.games.length > 1 && (
-            <>
-              {" · "}
-              <button className="chip" onClick={() => { setGameId(null); setHole(null); }}>
-                {game.name ?? `Match ${gi + 1}`} (change)
-              </button>
-            </>
-          )}
-        </div>
-        <Link className="display small" href={href(`/post?round=${round.number}&hole=${hole}`)}>
-          Add clip or note for this hole
-        </Link>
+    <div className="scorer scorecard">
+      <div className="score-top">
+        <span className="where">
+          R{round.number} · {round.course_name}
+        </span>
+        <span className="status">{gameLine(round, game, summary.rounds[ri].games[gi], state.players)}</span>
+        {rcfg.games.length > 1 && (
+          <button className="chip" onClick={() => { setGameId(null); setHole(null); }}>
+            {game.name ?? `Match ${gi + 1}`} ▾
+          </button>
+        )}
       </div>
 
       <div className="hole-head">
-        <button className="navbtn" aria-label="Previous hole" onClick={() => setHole(Math.max(1, hole - 1))}>
+        <button className="navbtn" aria-label="Previous hole" disabled={hole === 1} onClick={() => goTo(Math.max(1, hole - 1))}>
           ‹
         </button>
-        <div className="row" style={{ gap: 14 }}>
+        <button className="hole-pick" aria-label={`Hole ${hole}. Tap to choose another hole`} onClick={() => setPicking(true)}>
           <span className="n">{hole}</span>
           <span className="info">
             Par {h.par} · SI {h.si}
-            {h.yards ? (
-              <>
-                <br />
-                {h.yards} yds
-              </>
-            ) : null}
+            {h.yards ? <br /> : null}
+            {h.yards ? `${h.yards} yds` : null}
           </span>
-        </div>
-        <button className="navbtn" aria-label="Next hole" onClick={() => setHole(Math.min(18, hole + 1))}>
+        </button>
+        <button className="navbtn" aria-label="Next hole" disabled={hole === 18} onClick={() => goTo(Math.min(18, hole + 1))}>
           ›
         </button>
       </div>
+
+      {picking && (
+        <div className="hole-sheet" role="dialog" aria-label="Choose a hole">
+          <div className="grid">
+            {round.holes.map((x) => (
+              <button
+                key={x.number}
+                className={x.number === hole ? "current" : done.has(x.number) ? "done" : ""}
+                onClick={() => {
+                  setPicking(false);
+                  goTo(x.number);
+                }}
+              >
+                {x.number}
+                <small>Par {x.par}</small>
+              </button>
+            ))}
+          </div>
+          <button className="btn secondary block" onClick={() => setPicking(false)}>
+            Back to hole {hole}
+          </button>
+        </div>
+      )}
 
       {balls.map((b) => {
         const sc = draft[b] ?? { gross: h.par };
@@ -230,13 +339,13 @@ function ScoreInner() {
         const label = ballName(b, game, state.players);
         return (
           <section className="pscore" key={b} aria-label={`${label} score`}>
-            <div className="top">
-              <span className="pname" style={{ fontSize: label.length > 16 ? 19 : undefined }}>
-                {label}
-              </span>
-              <span className="shots">{st > 0 ? `${st} shot${st > 1 ? "s" : ""} here` : ""}</span>
-            </div>
             <div className="stepper">
+              <span className="pwho">
+                <span className="pname" style={{ fontSize: label.length > 12 ? 19 : undefined }}>
+                  {label}
+                </span>
+                <span className="shots">{st > 0 ? `${st} shot${st > 1 ? "s" : ""} here` : ""}</span>
+              </span>
               <button aria-label={`${label} one less`} onClick={() => setB(b, { gross: Math.max(1, (sc.gross ?? h.par) - 1), pickedUp: false })}>
                 −
               </button>
@@ -270,13 +379,11 @@ function ScoreInner() {
       })}
 
       {h.par === 3 && (
-        <section className="pscore">
-          <div className="pname" style={{ fontSize: 20 }}>
-            Closest to the pin <span className="muted small">(on the green)</span>
-          </div>
+        <section className="pscore side-game">
+          <div className="pname">Closest to the pin</div>
           <div className="side-pick" style={{ gridTemplateColumns: `repeat(${Math.min(3, sideChoices.length)}, 1fr)` }}>
             {sideChoices.map((c) => (
-              <button key={String(c.id)} className="toggle" aria-pressed={ctp === c.id} onClick={() => setCtp(c.id)}>
+              <button key={String(c.id)} className="toggle" aria-pressed={ctp === c.id} onClick={() => pickCtp(c.id)}>
                 {c.label}
               </button>
             ))}
@@ -284,13 +391,11 @@ function ScoreInner() {
         </section>
       )}
       {h.par === 5 && (
-        <section className="pscore">
-          <div className="pname" style={{ fontSize: 20 }}>
-            Long drive <span className="muted small">(on the fairway)</span>
-          </div>
+        <section className="pscore side-game">
+          <div className="pname">Long drive</div>
           <div className="side-pick" style={{ gridTemplateColumns: `repeat(${Math.min(3, sideChoices.length)}, 1fr)` }}>
             {sideChoices.map((c) => (
-              <button key={String(c.id)} className="toggle" aria-pressed={ld === c.id} onClick={() => setLd(c.id)}>
+              <button key={String(c.id)} className="toggle" aria-pressed={ld === c.id} onClick={() => pickLd(c.id)}>
                 {c.label}
               </button>
             ))}
@@ -306,10 +411,13 @@ function ScoreInner() {
       {oneBall && <p className="small muted" style={{ textAlign: "center" }}>One score per side: enter the team&apos;s score on the hole.</p>}
 
       <div className="sticky-save">
-        <button className="btn block" style={{ fontSize: 22, padding: "14px" }} onClick={() => save(true)}>
-          {hole < 18 ? `Save hole ${hole}, go to ${hole + 1}` : "Save hole 18, finish"}
+        <button className="btn block next-hole" onClick={next}>
+          {hole < 18 ? `Next: hole ${hole + 1}` : "Finish the round"}
+          <small className={`saved-line${saved === "phone" ? " phone" : ""}`} aria-live="polite">
+            {msg ?? (saved === "saving" ? "Saving…" : saved === "saved" ? "✓ Saved for everyone" : saved === "phone" ? "Saved on this phone. Sends when there's signal" : "Every tap is saved as you go")}
+          </small>
         </button>
-        {msg && <p className="queue">{msg}</p>}
+
         {err && <p className="queue error">{err}</p>}
         {waiting > 0 && (
           <p className="queue" style={{ color: "var(--bracken)" }}>
@@ -319,18 +427,6 @@ function ScoreInner() {
             </button>
           </p>
         )}
-      </div>
-
-      <div className="hole-strip" aria-label="Jump to hole">
-        {round.holes.map((x) => (
-          <button key={x.number} className={x.number === hole ? "current" : done.has(x.number) ? "done" : ""} onClick={() => setHole(x.number)}>
-            {x.number}
-          </button>
-        ))}
-      </div>
-
-      <div className="section">
-        <GameStatus round={round} gameIndex={gi} compact />
       </div>
 
       <Attest roundId={round.id} />

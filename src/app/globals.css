@@ -702,3 +702,85 @@ main.wrap { padding-top: 28px; padding-bottom: 72px; }
 .commentary-status { align-items: center; }
 .linkish { background: none; border: 0; padding: 0; color: var(--board); text-decoration: underline; font: inherit; cursor: pointer; }
 .line-editor .warn { color: var(--red, #c8102e); }
+
+/* ---- On the course: big buttons at the foot of every page while a round is live */
+:root { --oc-h: 0px; }
+html.has-oncourse { --oc-h: calc(84px + env(safe-area-inset-bottom)); }
+html.has-oncourse .theme-root { padding-bottom: var(--oc-h); box-sizing: border-box; min-height: 100dvh; }
+html.has-oncourse .made-with { display: none; }
+.oncourse { position: fixed; left: 0; right: 0; bottom: 0; z-index: 60; display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding: 8px 10px calc(8px + env(safe-area-inset-bottom)); background: var(--board-deep); box-shadow: 0 -6px 24px rgba(0, 0, 0, 0.25); }
+.oc-btn { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 68px; border-radius: 14px; background: var(--board); color: var(--tile); font-family: var(--font-display); font-weight: 700; font-size: 20px; text-decoration: none; cursor: pointer; user-select: none; -webkit-tap-highlight-color: transparent; }
+.oc-btn svg { width: 26px; height: 26px; }
+.oc-btn.here { background: var(--tile); color: var(--board-deep); }
+.oc-btn.oc-record svg { color: #e5484d; }
+.oc-btn:active { transform: scale(0.97); }
+.install-hint { position: fixed; left: 10px; right: 10px; bottom: calc(var(--oc-h) + 8px); z-index: 59; background: var(--paper); border: 1px solid var(--rule); border-radius: 14px; padding: 12px 14px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2); }
+.install-hint p { margin: 0 0 10px; font-size: 17px; line-height: 1.35; }
+.install-hint .btn { min-height: 52px; flex: 1; font-size: 18px; }
+
+/* ---- Scoring: no small targets, fits one screen */
+.sticky-save { bottom: var(--oc-h); }
+.next-hole { font-size: 24px; min-height: 64px; }
+.saved-line { text-align: center; min-height: 1.4em; }
+.hole-head .navbtn { width: 60px; height: 60px; font-size: 32px; border-radius: 12px; }
+.stepper { grid-template-columns: 80px 1fr 80px; }
+.stepper button { height: 76px; font-size: 40px; border-radius: 14px; }
+.toggle { height: 56px; font-size: 18px; border-radius: 12px; }
+.hole-strip button { height: 48px; font-size: 17px; border-radius: 10px; }
+
+/* ---- The scorecard on the course: one screen, big targets */
+html.has-oncourse.on-score .site-head { display: none; }
+.scorecard { padding-top: 6px; }
+.score-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-family: var(--font-display); font-size: 16px; margin: 4px 0 8px; }
+.score-top .where { color: var(--ink-soft); }
+.score-top .status { margin-left: auto; font-weight: 700; }
+.score-top .chip { min-height: 40px; }
+.scorecard .hole-head { grid-template-columns: 64px 1fr 64px; padding: 8px; }
+.scorecard .hole-head .navbtn:disabled { opacity: 0.35; }
+.hole-pick { display: flex; align-items: center; justify-content: center; gap: 14px; background: none; border: 0; color: inherit; cursor: pointer; min-height: 60px; font: inherit; }
+.hole-pick .n { font-family: var(--font-display); font-size: 50px; font-weight: 700; line-height: 0.9; }
+.hole-pick .info { font-family: var(--font-display); font-size: 17px; line-height: 1.25; text-align: left; }
+.scorecard .pscore { padding: 10px 12px; margin-top: 8px; }
+.scorecard .stepper { grid-template-columns: 1fr 72px 84px 72px; gap: 8px; margin-top: 0; }
+.scorecard .stepper .pwho { display: flex; flex-direction: column; min-width: 0; }
+.scorecard .stepper .pwho .pname { font-size: 24px; line-height: 1.05; overflow: hidden; text-overflow: ellipsis; }
+.scorecard .stepper .pwho .shots { font-size: 14px; }
+.scorecard .stepper button { height: 72px; }
+.scorecard .stepper .val { font-size: 46px; }
+.scorecard .stepper .val small { font-size: 13px; white-space: nowrap; }
+.scorecard .toggles { margin-top: 8px; }
+.scorecard .toggle { height: 52px; }
+.scorecard .side-game { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 10px; }
+.scorecard .side-game .pname { font-size: 17px; line-height: 1.1; max-width: 80px; }
+.scorecard .side-pick { display: grid; gap: 6px; }
+.scorecard .sticky-save { margin-top: 6px; padding-top: 8px; }
+.scorecard .saved-line { margin: 6px 0 0; }
+.hole-sheet { position: fixed; inset: 0 0 var(--oc-h) 0; z-index: 70; background: var(--mist); padding: 16px 14px; display: flex; flex-direction: column; gap: 12px; overflow: auto; }
+.hole-sheet .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.hole-sheet .grid button { min-height: 66px; border-radius: 14px; border: 1.5px solid var(--rule); background: var(--paper); font-family: var(--font-display); font-size: 30px; font-weight: 700; color: var(--ink); cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1; }
+.hole-sheet .grid button small { font-size: 14px; font-weight: 500; color: var(--ink-soft); margin-top: 4px; }
+.hole-sheet .grid button.done { background: #dbe8df; }
+.hole-sheet .grid button.current { background: var(--board); color: var(--tile); border-color: var(--board); }
+.hole-sheet .grid button.current small { color: var(--tile); }
+.hole-sheet .btn { min-height: 60px; font-size: 20px; }
+.scorecard .stepper .pwho .pname { color: var(--ink); }
+html.has-oncourse.on-score main.wrap { padding-top: 2px; padding-bottom: 0; }
+html.has-oncourse.on-score main { padding-bottom: 0; }
+.scorecard .score-top { margin: 2px 0 6px; }
+.scorecard .hole-head .navbtn { width: 58px; height: 58px; }
+.scorecard .hole-pick { min-height: 56px; }
+.scorecard .next-hole { min-height: 62px; }
+.scorecard .side-game { padding: 8px 12px; }
+.scorecard .side-game .toggle { height: 54px; }
+.scorecard .score-top .saved-line { flex-basis: 100%; font-family: var(--font-body, inherit); font-size: 14px; color: var(--ink-soft); margin: -2px 0 0; text-align: left; min-height: 0; }
+.scorecard .score-top .saved-line.phone { color: var(--bracken); font-weight: 600; }
+.scorecard .stepper button { height: 66px; }
+.scorecard .toggle { height: 50px; }
+.scorecard .toggles { margin-top: 6px; }
+.scorecard .pscore { padding: 8px 10px; margin-top: 6px; }
+.scorecard .hole-head { padding: 6px 8px; }
+.scorecard .hole-head .navbtn { width: 56px; height: 56px; }
+.scorecard .sticky-save { padding-top: 6px; padding-bottom: 8px; }
+.scorecard .next-hole { display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.05; padding: 8px 12px; }
+.scorecard .next-hole .saved-line { display: block; font-family: var(--font-body, inherit); font-size: 13px; font-weight: 500; opacity: 0.85; margin-top: 3px; letter-spacing: 0; }
+.scorecard .next-hole .saved-line.phone { color: #ffd76a; opacity: 1; }

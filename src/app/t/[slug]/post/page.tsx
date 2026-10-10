@@ -8,6 +8,7 @@ import { Loading } from "@/components/ui";
 import { ClipTrimmer } from "@/components/ClipTrimmer";
 import { TrimmerReady } from "@/components/TrimmerReady";
 import { uploadPoster } from "@/lib/trimmer";
+import { takePendingClip } from "@/lib/pendingClip";
 
 const TAGS = [
   "birdie", "eagle", "chip-in", "long putt", "3-putt", "water", "bunker", "OB",
@@ -78,6 +79,18 @@ function PostInner() {
     if (defaultHole && !hole) setHole(String(defaultHole));
   }, [defaultRound, defaultHole, roundId, hole]);
 
+  // Filmed from the on-course bar: straight in, no second pick
+  const fromCourse = sp.get("from") === "course";
+  useEffect(() => {
+    if (sp.get("clip") !== "1") return;
+    const f = takePendingClip();
+    if (!f) return;
+    setFile(f);
+    if (f.type.startsWith("video") || /\.(mov|mp4|m4v)$/i.test(f.name)) setTrim(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const backToScoring = () => router.push(href("/score"));
+
   useEffect(() => {
     try {
       localStorage.setItem(`os_post_draft_${slug}`, body);
@@ -143,6 +156,7 @@ function PostInner() {
       } catch {}
       await refresh();
       const rn = state?.rounds.find((x) => x.id === roundId)?.number;
+      if (fromCourse) return backToScoring();
       router.push(rn ? href(`/rounds/${rn}`) : href("/feed"));
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Something went wrong. Your text is saved; try again.");
@@ -162,10 +176,11 @@ function PostInner() {
           file={file}
           roundId={roundId || null}
           defaultHole={hole ? Number(hole) : null}
-          onCancel={() => (setTrim(false), setFile(null))}
+          onCancel={() => (setTrim(false), setFile(null), fromCourse && backToScoring())}
           onDone={(posted, queued) => {
             setTrim(false);
             setFile(null);
+            if (fromCourse) return backToScoring();
             setDone(
               `${posted ? `${posted} clip${posted > 1 ? "s" : ""} posted. ` : ""}${queued ? `${queued} saved on this phone; they'll send when there's signal.` : ""}`,
             );
