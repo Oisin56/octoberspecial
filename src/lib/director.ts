@@ -379,7 +379,7 @@ export async function veoStart(prompt: string, aspect: "16:9" | "9:16", seconds:
     headers: { "x-goog-api-key": process.env.GEMINI_API_KEY!, "content-type": "application/json" },
     body: JSON.stringify({
       instances: [{ prompt: `${prompt}. Cinematic, natural light, no people, no text, no logos.` }],
-      parameters: { aspectRatio: aspect, resolution: "720p", durationSeconds: String(seconds), negativePrompt: "people, faces, text, logos, watermark" },
+      parameters: { aspectRatio: aspect, resolution: "720p", durationSeconds: Number(seconds), negativePrompt: "people, faces, text, logos, watermark" },
     }),
   });
   const j = await r.json().catch(() => ({}));

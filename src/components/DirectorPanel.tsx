@@ -497,7 +497,7 @@ export function DirectorPanel() {
 
                 {s.kind === "veo" && (
                   <div className="stack">
-                    <textarea value={s.prompt} disabled={locked || s.status === "pending"} onChange={(e) => updateSeg(s.id, { ...s, prompt: e.target.value, status: s.status === "done" ? "idle" : s.status })} style={{ minHeight: 60 }} aria-label="Shot description" />
+                    <textarea value={s.prompt} disabled={locked || s.status === "pending"} onChange={(e) => updateSeg(s.id, { ...s, prompt: e.target.value, status: s.status === "done" ? "idle" : s.status })} style={{ minHeight: 120 }} aria-label="Shot description" />
                     <div className="row">
                       <select value={s.seconds} disabled={locked || s.status === "pending"} onChange={(e) => updateSeg(s.id, { ...s, seconds: Number(e.target.value) as 4 | 6 | 8 })}>
                         <option value={4}>4 seconds</option>

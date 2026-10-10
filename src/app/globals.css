@@ -263,7 +263,8 @@ table.card td { vertical-align: top; }
 .grid2 > *, .stack > *, .round-list > * { min-width: 0; }
 
 /* AI director edit list */
-.director-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
+.director-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 14px; }
+.stack > .director-list { margin-top: 16px; }
 
 /* trimmer */
 .thumbs { display: flex; gap: 4px; overflow-x: auto; padding-bottom: 4px; -webkit-overflow-scrolling: touch; }
