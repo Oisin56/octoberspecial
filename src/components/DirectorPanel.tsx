@@ -163,7 +163,7 @@ export function DirectorPanel() {
     const r = await call({ action: "render", reelId: current.id });
     setBusy(null);
     if (!r.ok) return setMsg(String(r.j.error ?? "Render failed"));
-    setMsg("Rendering. Usually a minute or two. You can leave this page; it carries on.");
+    setMsg(`${r.j.warning ? `${r.j.warning} ` : ""}Rendering. Usually a minute or two. You can leave this page; it carries on.`);
     setCurrent({ ...current, status: "rendering" });
   }
 

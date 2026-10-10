@@ -184,12 +184,15 @@ export async function POST(req: Request) {
       const plan = reel.plan;
       if (plan.segments.some((s) => s.kind === "veo" && s.status === "pending")) return bad("Wait for the AI shots to finish (or remove them) first");
       // Narration audio for each segment with a voice line
-      const narration: Record<string, string> = {};
+      let narration: Record<string, string> = {};
+      let warning: string | null = null;
       if (plan.voiceOn && cfg.voice) {
         try {
           for (const s of plan.segments) if (s.voice?.trim()) narration[s.id] = await speak(t.slug, s.voice.trim());
         } catch (e) {
-          return bad(e instanceof Error ? e.message : "Voice-over failed", 500);
+          // A voice problem shouldn't cost the whole film: render without narration and say why
+          narration = {};
+          warning = `The voice-over didn't record (${e instanceof Error ? e.message : "voice service error"}), so this film has music and captions only.`;
         }
       }
       const edit = buildTimeline(plan, {
@@ -203,7 +206,7 @@ export async function POST(req: Request) {
       try {
         const id = await shotstackRender(edit);
         await db.from("reels").update({ status: "rendering", render_id: id, error: null, updated_at: new Date().toISOString() }).eq("id", reel.id);
-        return json({ ok: true, renderId: id });
+        return json({ ok: true, renderId: id, warning });
       } catch (e) {
         await db.from("reels").update({ status: "failed", error: e instanceof Error ? e.message : "Render failed" }).eq("id", reel.id);
         return bad(e instanceof Error ? e.message : "Render failed", 500);
