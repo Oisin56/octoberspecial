@@ -8,6 +8,7 @@ import { gameSummary, tournamentSummary } from "./engine";
 import { TONES, courseInfo, forecast } from "./ai";
 import { cleanBody, cleanTitle } from "./cleanText";
 import { readPlanJson } from "./planJson";
+import { shotLine } from "./shots";
 import { scoreBug, type ScoreBug } from "./scorebug";
 import {
   ballName,
@@ -80,6 +81,8 @@ interface ClipFact {
   shot?: string;
   result?: string;
   club?: string;
+  /** Every shot logged on the course for the clip's player on this hole, in order */
+  holeLog?: string;
   shape?: "portrait" | "landscape";
   stills?: number;
 }
@@ -131,6 +134,11 @@ function clipFacts(s: TournamentState, clips: PostRow[]): ClipFact[] {
       scoresOnHole,
       statusBefore,
       statusAfter,
+      // The player's whole hole, as logged on the course (tee shot right; approach stiff; ...)
+      ...(() => {
+        const log = round && c.hole ? (s.shots ?? []).filter((x) => x.round_id === round.id && x.hole === c.hole && (c.player_ids ?? []).includes(x.player_id)).sort((a, b) => a.logged_at.localeCompare(b.logged_at)) : [];
+        return log.length ? { holeLog: log.map((x) => `${s.players.find((p) => p.id === x.player_id)?.name ?? x.player_id}: ${shotLine(x)}`).join("; ") } : {};
+      })(),
       ...(c.details?.shot ? { shot: c.details.shot } : {}),
       ...(c.details?.result ? { result: c.details.result } : {}),
       ...(c.details?.club ? { club: c.details.club } : {}),
@@ -290,7 +298,7 @@ export async function writePlan(tournamentId: string, brief: Brief, probes: Clip
         .join("\n")}`,
       `OVERALL STANDINGS NOW: ${standingsRows(s).map(([n, v]) => `${n} ${v}`).join(", ")}`,
       stories ? `THE STORY SO FAR (published previews and reports; reuse their storylines, running jokes and nicknames, but facts come from the scores):\n${stories}` : "",
-      `AVAILABLE CLIPS (JSON). seconds = clip length; statusBefore/statusAfter = the match before and after that hole; holeNote = background on the hole; shot/result/club (when present) were entered by the person filming and are reliable:\n${JSON.stringify(facts)}`,
+      `AVAILABLE CLIPS (JSON). seconds = clip length; statusBefore/statusAfter = the match before and after that hole; holeNote = background on the hole; shot/result/club (when present) were entered by the person filming and are reliable; holeLog is how the player played the whole hole, as logged on the course (use it to set up and pay off the shot):\n${JSON.stringify(facts)}`,
     ]
       .filter(Boolean)
       .join("\n\n");

@@ -35,9 +35,11 @@ export async function POST(req: Request) {
   const trimIn = num(b.trimIn);
   const trimOut = num(b.trimOut);
   const d = (b.details ?? {}) as Record<string, unknown>;
-  const details = Object.fromEntries(
+  const details: Record<string, string> = Object.fromEntries(
     (["shot", "result", "club"] as const).filter((k) => typeof d[k] === "string" && DETAIL.test(String(d[k]))).map((k) => [k, String(d[k])]),
   );
+  // the logged shot this clip shows
+  if (typeof d.shotId === "string" && /^[\w-]{8,64}$/.test(d.shotId)) details.shotId = d.shotId;
   const row = {
     tournament_id: t.id,
     round_id: roundId,

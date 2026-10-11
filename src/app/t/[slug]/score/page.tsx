@@ -7,12 +7,13 @@ import { useT } from "@/components/Providers";
 import { Loading, gameLine } from "@/components/ui";
 import { enqueue, flush, pendingHole, queued } from "@/lib/offlineQueue";
 import { readScorePos, writeScorePos } from "@/lib/scorePos";
-import { HoleMoments } from "@/components/HoleMoments";
+import { ShotCard } from "@/components/ShotCard";
+import { matchMoment, scorePrompt, type HoleInfo, type Prompt } from "@/lib/shots";
 import { groupPlayers } from "@/lib/courseCards";
 import { useSwipe } from "@/lib/useSwipe";
 import { ballsOfGame, gameHole, gameShots, ONE_BALL, type BallHole } from "@/lib/engine";
 import { shotsOnHole } from "@/lib/scoring";
-import { ballName, formatLabel, sideLabel, toRoundCfg } from "@/lib/types";
+import { ballName, sideLabel, toRoundCfg } from "@/lib/types";
 
 type Draft = Record<string, BallHole>;
 
@@ -290,6 +291,42 @@ function ScoreInner() {
     setMoments(hole!);
   }
 
+  /** The hole as the shot card needs it, and the questions its scores raise. */
+  function holeQuestions(n: number): { info: HoleInfo; prompts: Prompt[]; headline: { text: string; playerId: string } | null } {
+    const hh = round!.holes.find((x) => x.number === n)!;
+    const info: HoleInfo = { par: hh.par, yards: hh.yards, note: round!.course_guide?.holes?.[String(n)] ?? "" };
+    const e = entries.find((x) => x.hole === n);
+    const prompts: Prompt[] = [];
+    for (const b of balls) {
+      const p = state!.players.find((x) => x.id === b);
+      if (!p) continue; // team balls: no single player to ask about
+      const pr = scorePrompt(p.name, p.id, e?.scores[b]?.pickedUp ? null : e?.scores[b]?.gross, info);
+      if (pr) prompts.push(pr);
+    }
+    // birdies first, then the disasters
+    prompts.sort((a, b) => Number(/went wrong/.test(a.question)) - Number(/went wrong/.test(b.question)));
+    let headline: { text: string; playerId: string } | null = null;
+    if (rcfg!.scoring === "match" && game!.sides.length === 2) {
+      const [A, B] = game!.sides;
+      const played = entries.filter((x) => x.hole <= n).sort((a, b) => a.hole - b.hole);
+      let d = 0;
+      const diffs: number[] = [];
+      let lastWinner: string | null = null;
+      for (const x of played) {
+        const gh = gameHole(rcfg!, game!, shots, { game: game!.id, hole: x.hole, scores: x.scores });
+        if (gh.winner === A.id) d++;
+        else if (gh.winner === B.id) d--;
+        if (x.hole === n) lastWinner = gh.winner === A.id || gh.winner === B.id ? gh.winner : null;
+        diffs.push(d);
+      }
+      const nameOf = (sideId: string) => sideLabel(sideId, game!, state!.players);
+      const text = matchMoment(diffs, n, round!.holes.length, lastWinner ? nameOf(lastWinner) : null, nameOf(A.id), nameOf(B.id));
+      const side = game!.sides.find((x) => x.id === lastWinner);
+      if (text && side?.playerIds[0]) headline = { text, playerId: side.playerIds[0] };
+    }
+    return { info, prompts, headline };
+  }
+
   /** On from the moments card to the next hole (or the round's page after 18). */
   function onward() {
     const was = moments ?? hole!;
@@ -338,18 +375,26 @@ function ScoreInner() {
         </button>
       </div>
 
-      {moments != null && (
-        <HoleMoments
-          roundId={round.id}
-          roundNumber={round.number}
-          hole={moments}
-          players={groupPlayers(state, round.id, game.id)}
-          nextLabel={moments < 18 ? `On to hole ${moments + 1}` : "Finish the round"}
-          onContinue={onward}
-          onBack={() => (setMoments(null), setSlide("back"))}
-          onLeave={() => moments < 18 && writeScorePos(slug, round.id, { game: game.id, hole: moments + 1 })}
-        />
-      )}
+      {moments != null && (() => {
+        const q = holeQuestions(moments);
+        return (
+          <ShotCard
+            key={moments}
+            roundId={round.id}
+            roundNumber={round.number}
+            hole={moments}
+            holeInfo={q.info}
+            players={groupPlayers(state, round.id, game.id)}
+            prompts={q.prompts}
+            headline={q.headline}
+            nextLabel={moments < 18 ? `On to hole ${moments + 1}` : "Finish the round"}
+            backLabel={`back to hole ${moments}`}
+            onContinue={onward}
+            onBack={() => (setMoments(null), setSlide("back"))}
+            onLeave={() => moments < 18 && writeScorePos(slug, round.id, { game: game.id, hole: moments + 1 })}
+          />
+        );
+      })()}
 
       {picking && (
         <div className="hole-sheet" role="dialog" aria-label="Choose a hole">

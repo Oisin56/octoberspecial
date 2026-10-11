@@ -72,7 +72,7 @@ export function OnCourseBar() {
         <Glyph k="record" />
         <span>{video ? "Record" : "Photo"}</span>
       </Link>
-      <Link className="oc-btn" href={href(`/post?${where}&from=course`)}>
+      <Link className={`oc-btn${path?.endsWith("/shots") ? " here" : ""}`} href={href(`/shots?${where}`)}>
         <Glyph k="note" />
         <span>Note</span>
       </Link>

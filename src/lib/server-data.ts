@@ -43,12 +43,14 @@ export async function loadServerState(tournamentId: string): Promise<TournamentS
     db.from("votes").select("*").eq("tournament_id", tid),
   ]);
   const roundIds = (rounds.data ?? []).map((r: RoundRow) => r.id);
-  const [entries, attestations] = roundIds.length
+  const [entries, attestations, shots] = roundIds.length
     ? await Promise.all([
         db.from("hole_entries").select("*").in("round_id", roundIds),
         db.from("attestations").select("*").in("round_id", roundIds),
+        // shots: an empty list if the database doesn't have the table yet
+        db.from("shots").select("*").eq("tournament_id", tid).order("logged_at"),
       ])
-    : [{ data: [] }, { data: [] }];
+    : [{ data: [] }, { data: [] }, { data: [] }];
   return {
     tournament,
     players: players.data ?? [],
@@ -59,6 +61,7 @@ export async function loadServerState(tournamentId: string): Promise<TournamentS
     comments: comments.data ?? [],
     pieces: pieces.data ?? [],
     votes: votes.data ?? [],
+    shots: shots.error ? [] : (shots.data ?? []),
   };
 }
 

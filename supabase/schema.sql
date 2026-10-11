@@ -131,6 +131,24 @@ alter table posts add column if not exists trim_in numeric;                     
 alter table posts add column if not exists trim_out numeric;
 alter table posts add column if not exists details jsonb;                            -- what's in the clip: {shot, result, club}
 
+-- Shots logged on the course: who, which hole, what kind of shot and how it finished (one row per shot)
+create table if not exists shots (
+  id uuid primary key default gen_random_uuid(),
+  tournament_id uuid not null references tournaments(id) on delete cascade,
+  round_id uuid not null references rounds(id) on delete cascade,
+  hole int not null check (hole between 1 and 18),
+  player_id text not null,
+  kind text not null,          -- tee | second | approach | chip | bunker | putt | recovery
+  outcome text not null,
+  club text,                   -- Driver | Wood/Hybrid | Long iron | Mid iron | Short iron | Wedge | Putter
+  distance text,               -- approaches: Under 100 | 100–150 | 150–200 | 200+
+  author_name text not null,
+  client_id text not null unique,  -- made on the phone, so a save sent twice (no signal, retry) is one shot
+  logged_at timestamptz not null default now(),
+  created_at timestamptz not null default now()
+);
+create index if not exists shots_round_idx on shots (round_id, hole);
+
 create table if not exists comments (
   id uuid primary key default gen_random_uuid(),
   tournament_id uuid not null references tournaments(id) on delete cascade,
@@ -186,6 +204,7 @@ alter table posts enable row level security;
 alter table comments enable row level security;
 alter table ai_pieces enable row level security;
 alter table votes enable row level security;
+alter table shots enable row level security;
 
 drop policy if exists read_all on rounds;
 create policy read_all on rounds for select using (true);
@@ -193,6 +212,8 @@ drop policy if exists read_all on hole_entries;
 create policy read_all on hole_entries for select using (true);
 drop policy if exists read_all on attestations;
 create policy read_all on attestations for select using (true);
+drop policy if exists read_all on shots;
+create policy read_all on shots for select using (true);
 drop policy if exists read_public on posts;
 create policy read_public on posts for select using (not hidden and visibility = 'public');
 drop policy if exists read_public on comments;
@@ -231,6 +252,7 @@ begin
   begin alter publication supabase_realtime add table rounds; exception when others then null; end;
   begin alter publication supabase_realtime add table attestations; exception when others then null; end;
   begin alter publication supabase_realtime add table votes; exception when others then null; end;
+  begin alter publication supabase_realtime add table shots; exception when others then null; end;
 end $$;
 
 -- ------------------------------------------------------------ storage
@@ -282,7 +304,7 @@ alter table ai_pieces add column if not exists prev_body text;
 grant usage on schema public to anon, authenticated, service_role;
 grant all on all tables in schema public to service_role;
 grant all on all sequences in schema public to service_role;
-grant select on rounds, hole_entries, attestations, posts, comments, ai_pieces, votes to anon, authenticated;
+grant select on rounds, hole_entries, attestations, posts, comments, ai_pieces, votes, shots to anon, authenticated;
 grant select on public_tournaments, public_players to anon, authenticated;
 revoke all on reels from anon, authenticated;
 revoke all on subscribers from anon, authenticated;

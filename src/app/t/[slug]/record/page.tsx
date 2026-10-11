@@ -6,6 +6,7 @@ import { useT } from "@/components/Providers";
 import { Loading } from "@/components/ui";
 import { ClipDetail } from "@/components/ClipDetail";
 import { setPendingClip } from "@/lib/pendingClip";
+import { mergeShots } from "@/lib/shotQueue";
 
 const MAX_SECONDS = 60;
 const MAX_BYTES = 50 * 1024 * 1024;
@@ -25,7 +26,7 @@ function pickType() {
  * camera or the camera roll work instead.
  */
 function RecordInner() {
-  const { state, href } = useT();
+  const { state, href, slug } = useT();
   const sp = useSearchParams();
   const router = useRouter();
   const round = useMemo(() => {
@@ -34,6 +35,18 @@ function RecordInner() {
     return (n && state.rounds.find((r) => r.number === Number(n))) || state.rounds.find((r) => r.status === "live") || null;
   }, [state, sp]);
   const hole = sp.get("hole") ? Number(sp.get("hole")) : null;
+  // Filmed from the shot card: the player (and their last shot) are already known
+  const prefill = useMemo(() => {
+    const player = sp.get("player");
+    if (!player || !state || !round || !hole) return null;
+    const shots = mergeShots(state.shots, slug, state.tournament.id).filter((s) => s.round_id === round.id && s.hole === hole && s.player_id === player);
+    const s = shots.find((x) => x.client_id === sp.get("shot")) ?? shots[shots.length - 1];
+    return { playerId: player, kind: s?.kind, outcome: s?.outcome, club: s?.club, shotClientId: s?.client_id };
+  }, [sp, state, round, hole, slug]);
+  const holeInfo = useMemo(() => {
+    const hh = round && hole ? round.holes.find((x) => x.number === hole) : null;
+    return hh ? { par: hh.par, yards: hh.yards, note: round?.course_guide?.holes?.[String(hole)] ?? "" } : undefined;
+  }, [round, hole]);
 
   const preview = useRef<HTMLVideoElement>(null);
   const stream = useRef<MediaStream | null>(null);
@@ -129,6 +142,8 @@ function RecordInner() {
         blob={clip}
         roundId={round?.id ?? null}
         hole={hole}
+        holeInfo={holeInfo}
+        prefill={prefill}
         onDone={(msg) => toScorecard(msg)}
         onCancel={() => {
           if (confirm("Throw this clip away?")) setClip(null);

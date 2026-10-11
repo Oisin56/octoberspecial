@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useT } from "./Providers";
 import { flushClips, pendingClips } from "@/lib/trimmer";
 import { flushPosts, queuedPosts } from "@/lib/postQueue";
+import { flushShots, pendingShots } from "@/lib/shotQueue";
 
 /** Sends clips saved on this phone whenever there's signal, and shows how many are waiting. */
 export function ClipQueue() {
@@ -16,6 +17,7 @@ export function ClipQueue() {
     const count = async () => alive && setWaiting((await pendingClips(slug)).length + queuedPosts(slug).length);
     const flush = async () => {
       if (queuedPosts(slug).length) await flushPosts(slug);
+      if (pendingShots(slug).length && (await flushShots(slug)) === 0) refresh();
       if (!(await pendingClips(slug)).length) return count();
       const r = await flushClips(slug);
       if (!alive) return;

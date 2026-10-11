@@ -205,6 +205,23 @@ export interface TournamentState {
   comments: CommentRow[];
   pieces: AiPieceRow[];
   votes: VoteRow[];
+  /** Shots logged on the course (absent until the database has the table) */
+  shots?: ShotRow[];
+}
+
+export interface ShotRow {
+  id: string;
+  tournament_id: string;
+  round_id: string;
+  hole: number;
+  player_id: string;
+  kind: string;
+  outcome: string;
+  club: string | null;
+  distance: string | null;
+  author_name: string;
+  client_id: string;
+  logged_at: string;
 }
 
 // ------------------------------------------------------------ conversion to engine

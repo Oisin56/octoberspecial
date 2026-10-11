@@ -2,7 +2,9 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useT } from "./Providers";
-import { CLUBS, RESULTS, SHOTS, groupPlayers, resultTags } from "@/lib/courseCards";
+import { groupPlayers } from "@/lib/courseCards";
+import { CLUB_GROUPS, KIND_LABEL, kindsFor, outcomesFor, tagsFor, type HoleInfo, type ShotKind } from "@/lib/shots";
+import { flushShots, saveShot } from "@/lib/shotQueue";
 import { flushClips, queueClip } from "@/lib/trimmer";
 import { readScorePos } from "@/lib/scorePos";
 import { HoldToTalk } from "./HoldToTalk";
@@ -16,7 +18,24 @@ const t1 = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(
  * chosen part), then say who, what shot, how it finished and the club, one tap each. Saved on the phone
  * and sent in the background, so it's straight back to the scorecard.
  */
-export function ClipDetail({ blob, roundId, hole, onDone, onCancel }: { blob: Blob; roundId: string | null; hole: number | null; onDone: (msg: string) => void; onCancel: () => void }) {
+export function ClipDetail({
+  blob,
+  roundId,
+  hole,
+  holeInfo,
+  prefill,
+  onDone,
+  onCancel,
+}: {
+  blob: Blob;
+  roundId: string | null;
+  hole: number | null;
+  holeInfo?: HoleInfo;
+  /** From the shot just logged for this player: who, what and how it finished are already known */
+  prefill?: { playerId: string; kind?: string; outcome?: string; club?: string | null; shotClientId?: string } | null;
+  onDone: (msg: string) => void;
+  onCancel: () => void;
+}) {
   const { state, session, slug } = useT();
   const url = useMemo(() => URL.createObjectURL(blob), [blob]);
   useEffect(() => () => URL.revokeObjectURL(url), [url]);
@@ -24,10 +43,12 @@ export function ClipDetail({ blob, roundId, hole, onDone, onCancel }: { blob: Bl
   const [dur, setDur] = useState(0);
   const [range, setRange] = useState<[number, number]>([0, 0]);
   const [step, setStep] = useState<Step>("trim");
-  const [who, setWho] = useState<string[]>([]);
-  const [shot, setShot] = useState<string | null>(null);
-  const [result, setResult] = useState<string | null>(null);
-  const [club, setClub] = useState<string | null>(null);
+  const info: HoleInfo = holeInfo ?? { par: 4 };
+  const [who, setWho] = useState<string[]>(prefill?.playerId ? [prefill.playerId] : []);
+  const [shot, setShot] = useState<ShotKind | null>((prefill?.kind as ShotKind) ?? null);
+  const [result, setResult] = useState<string | null>(prefill?.outcome ?? null);
+  const [club, setClub] = useState<string | null>(prefill?.club ?? null);
+  const complete = !!(prefill?.playerId && prefill.kind && prefill.outcome);
   const [caption, setCaption] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -54,23 +75,22 @@ export function ClipDetail({ blob, roundId, hole, onDone, onCancel }: { blob: Bl
     const i = ORDER.indexOf(step);
     if (i === 0) return onCancel();
     let prev = ORDER[i - 1];
-    if (prev === "club" && shot === "Putt") prev = "result";
+    if (prev === "club" && shot === "putt") prev = "result";
     setStep(prev);
   };
-
-  // A likely result from the scorecard: a putt on a hole the player made par or better on probably dropped
-  const suggestion = useMemo(() => {
-    if (!state || !roundId || !hole || shot !== "Putt" || who.length !== 1) return null;
-    const round = state.rounds.find((r) => r.id === roundId);
-    const par = round?.holes.find((h) => h.number === hole)?.par;
-    const e = state.entries.filter((x) => x.round_id === roundId && x.hole === hole).map((x) => x.scores[who[0]]).find(Boolean);
-    return par && e?.gross != null && e.gross <= par ? "Holed" : null;
-  }, [state, roundId, hole, shot, who]);
 
   async function post() {
     setBusy(true);
     const names = who.map((id) => state?.players.find((p) => p.id === id)?.name ?? id);
-    const summary = [names.join(" & "), shot?.toLowerCase(), result?.toLowerCase()].filter(Boolean).join(" · ");
+    const summary = [names.join(" & "), shot ? KIND_LABEL[shot].toLowerCase() : null, result?.toLowerCase()].filter(Boolean).join(" · ");
+    // The clip is a shot: link it to the one logged, or log it now (one player, a shot and how it finished)
+    const unchanged = complete && who[0] === prefill!.playerId && shot === prefill!.kind && result === prefill!.outcome;
+    let shotId = unchanged ? prefill!.shotClientId : undefined;
+    if (!shotId && roundId && hole && who.length === 1 && shot && result) {
+      shotId = crypto.randomUUID();
+      saveShot(slug, shotId, { roundId, hole, playerId: who[0], kind: shot, outcome: result, club, distance: null, loggedAt: new Date().toISOString(), author: session?.name ?? "" });
+      flushShots(slug);
+    }
     const ext = /mp4/.test(blob.type) ? "mp4" : /quicktime/.test(blob.type) ? "mov" : "webm";
     const whole = range[0] <= 0.05 && (!dur || range[1] >= dur - 0.05);
     await queueClip({
@@ -83,11 +103,11 @@ export function ClipDetail({ blob, roundId, hole, onDone, onCancel }: { blob: Bl
         roundId,
         hole,
         body: caption.trim() || summary,
-        tags: resultTags(shot ?? undefined, result ?? undefined),
+        tags: shot && result ? tagsFor(shot, result) : [],
         playerIds: who,
         trimIn: whole ? null : Math.round(range[0] * 10) / 10,
         trimOut: whole ? null : Math.round(range[1] * 10) / 10,
-        details: { ...(shot ? { shot } : {}), ...(result ? { result } : {}), ...(club ? { club } : {}) },
+        details: { ...(shot ? { shot: KIND_LABEL[shot] } : {}), ...(result ? { result } : {}), ...(club ? { club } : {}), ...(shotId ? { shotId } : {}) },
       },
     });
     flushClips(slug); // carries on in the background
@@ -178,9 +198,9 @@ export function ClipDetail({ blob, roundId, hole, onDone, onCancel }: { blob: Bl
       {step === "shot" && (
         <div className="cd-body">
           <div className="cd-grid two">
-            {SHOTS.map((s) => (
-              <button key={s} className="cd-tile" onClick={() => (setShot(s), setResult(null), go("result"))}>
-                {s}
+            {kindsFor(info).map((k) => (
+              <button key={k} className="cd-tile" onClick={() => (setShot(k), setResult(null), go("result"))}>
+                {KIND_LABEL[k]}
               </button>
             ))}
           </div>
@@ -190,20 +210,19 @@ export function ClipDetail({ blob, roundId, hole, onDone, onCancel }: { blob: Bl
       {step === "result" && shot && (
         <div className="cd-body">
           <div className="cd-grid two">
-            {RESULTS[shot].map((r) => (
+            {outcomesFor(shot, info).map((r) => (
               <button
                 key={r}
-                className={`cd-tile${r === suggestion ? " likely" : ""}`}
+                className="cd-tile"
                 onClick={() => {
                   setResult(r);
-                  if (shot === "Putt") {
+                  if (shot === "putt") {
                     setClub("Putter");
                     go("done");
                   } else go("club");
                 }}
               >
                 {r}
-                {r === suggestion && <small>From the scorecard</small>}
               </button>
             ))}
           </div>
@@ -213,7 +232,7 @@ export function ClipDetail({ blob, roundId, hole, onDone, onCancel }: { blob: Bl
       {step === "club" && (
         <div className="cd-body">
           <div className="cd-grid three">
-            {CLUBS.filter((c) => c !== "Putter").map((c) => (
+            {CLUB_GROUPS.map((c) => (
               <button key={c} className="cd-tile small" onClick={() => (setClub(c), go("done"))}>
                 {c}
               </button>
@@ -228,7 +247,7 @@ export function ClipDetail({ blob, roundId, hole, onDone, onCancel }: { blob: Bl
       {step === "done" && (
         <div className="cd-body cd-done">
           <p className="cd-summary">
-            {[who.map((id) => state?.players.find((p) => p.id === id)?.name).join(" & "), shot, result, club].filter(Boolean).join(" · ")}
+            {[who.map((id) => state?.players.find((p) => p.id === id)?.name).join(" & "), shot ? KIND_LABEL[shot] : null, result, club].filter(Boolean).join(" · ")}
             {hole ? ` · hole ${hole}` : ""}
           </p>
           <HoldToTalk onText={(t) => setCaption((c) => (c ? `${c} ${t}` : t))} />
@@ -241,7 +260,7 @@ export function ClipDetail({ blob, roundId, hole, onDone, onCancel }: { blob: Bl
 
       <div className="cd-foot">
         {step === "trim" && (
-          <button className="btn block cd-primary" disabled={!dur} onClick={() => go("who")}>
+          <button className="btn block cd-primary" disabled={!dur} onClick={() => go(complete ? "done" : "who")}>
             Next
           </button>
         )}
