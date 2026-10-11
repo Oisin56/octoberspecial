@@ -4,7 +4,8 @@ import Link from "next/link";
 import { useT } from "@/components/Providers";
 import { EmailSignup } from "@/components/EmailAdmin";
 import { cleanBody, cleanTitle } from "@/lib/cleanText";
-import { Board, Feed, GameStatus, Loading, RoundItem, Paras, dateLabel, pts } from "@/components/ui";
+import { Board, GameStatus, Loading, RoundItem, Paras, dateLabel, pts } from "@/components/ui";
+import { SocialFeed } from "@/components/SocialFeed";
 import { formatLabel, toRoundCfg } from "@/lib/types";
 import { courseBySlug } from "@/data/courses";
 import { mediaUrl } from "@/lib/supabase";
@@ -135,7 +136,7 @@ export default function Home() {
               Full feed
             </Link>
           </div>
-          <Feed limit={6} />
+          <SocialFeed limit={5} composer={false} />
         </aside>
       </div>
     </>

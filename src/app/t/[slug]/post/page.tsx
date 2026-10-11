@@ -34,7 +34,7 @@ function uploadWithProgress(signedUrl: string, file: File, onProgress: (p: numbe
 }
 
 function PostInner() {
-  const { state, session, refresh, api, href, slug } = useT();
+  const { state, crew, refresh, api, href, slug } = useT();
   const sp = useSearchParams();
   const router = useRouter();
 
@@ -99,7 +99,7 @@ function PostInner() {
   }, [body]);
 
   if (!state) return <Loading />;
-  if (!session)
+  if (!crew)
     return (
       <p>
         <Link href={href(`/login?next=${encodeURIComponent(href("/post"))}`)}>Log in</Link> to post from the course.
@@ -177,6 +177,7 @@ function PostInner() {
           file={file}
           roundId={roundId || null}
           defaultHole={hole ? Number(hole) : null}
+          filmOnly={reportOnly}
           onCancel={() => (setTrim(false), setFile(null), fromCourse && backToScoring())}
           onDone={(posted, queued) => {
             setTrim(false);
@@ -187,6 +188,7 @@ function PostInner() {
             );
           }}
         />
+        <FilmOnly on={reportOnly} set={setReportOnly} />
         {file.size <= MAX_BYTES && (
           <button className="chip" onClick={() => setTrim(false)}>
             Post the whole video instead
@@ -258,10 +260,7 @@ function PostInner() {
         {warn && <p className="notice">{warn}</p>}
       </div>
 
-      <label className="row display" style={{ fontSize: 17 }}>
-        <input type="checkbox" checked={reportOnly} onChange={(e) => setReportOnly(e.target.checked)} style={{ width: 22, height: 22 }} />
-        Keep off the public feed (use in the report only)
-      </label>
+      {file && <FilmOnly on={reportOnly} set={setReportOnly} />}
 
       {err && <p className="error">{err}</p>}
       {progress != null && (
@@ -276,6 +275,19 @@ function PostInner() {
         Post
       </button>
     </form>
+  );
+}
+
+/** Kept out of the feed; the highlights film (and the writer) can still use it. */
+function FilmOnly({ on, set }: { on: boolean; set: (v: boolean) => void }) {
+  return (
+    <button type="button" className="cd-film-only" role="switch" aria-checked={on} onClick={() => set(!on)}>
+      <span className="box" aria-hidden="true">{on ? "✓" : ""}</span>
+      <span>
+        <strong>Highlights film only</strong>
+        <small>{on ? "Kept out of the feed. The film can still use it." : "Leave unticked to post it to the feed too"}</small>
+      </span>
+    </button>
   );
 }
 

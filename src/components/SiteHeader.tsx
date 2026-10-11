@@ -39,7 +39,9 @@ export function SiteHeader() {
             </span>
           </Link>
           <div className="who">
-            {session ? (
+            {session?.role === "fan" ? (
+              <Link href={href("/login")}>{session.name}</Link>
+            ) : session ? (
               <>
                 {canScore && <Link href={href("/score")}>Score</Link>}
                 {canScore && " · "}

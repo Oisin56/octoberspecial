@@ -249,42 +249,97 @@ function Moderate({ data, onSaved }: { data: AdminData; onSaved: () => void }) {
     await api("/api/admin", { action: "hide", table, id, hidden });
     onSaved();
   }
+  async function block(fanId: string, blocked: boolean) {
+    await api("/api/admin", { action: "blockFan", fanId, blocked });
+    onSaved();
+  }
+  const fans = new Map((data.fans ?? []).map((f) => [f.id, f]));
+  const review = [
+    ...data.state.posts.filter((p) => p.hidden && p.hidden_by_reports).map((p) => ({ table: "posts" as const, id: p.id, who: p.author_name, body: p.body, at: p.created_at, fanId: p.fan_id })),
+    ...data.state.comments.filter((c) => c.hidden && c.hidden_by_reports).map((c) => ({ table: "comments" as const, id: c.id, who: c.author_name, body: c.body, at: c.created_at, fanId: c.fan_id })),
+  ];
+  const FanTools = ({ fanId }: { fanId?: string | null }) => {
+    const f = fanId ? fans.get(fanId) : null;
+    if (!f) return null;
+    return (
+      <button className="chip" onClick={() => block(f.id, !f.blocked)}>
+        {f.blocked ? `Let ${f.name} post again` : `Stop ${f.name} posting`}
+      </button>
+    );
+  };
   return (
-    <div className="grid2">
-      <section className="stack">
-        <h2>Posts</h2>
-        {data.state.posts.length === 0 && <p className="muted">No posts yet.</p>}
-        {data.state.posts.map((p) => (
-          <div key={p.id} className="post">
-            <div className="who display">
-              {p.author_name}, {p.hole ? `hole ${p.hole}, ` : ""}
-              {timeAgo(p.created_at)}
-              {p.visibility === "report" && <span className="report-only">, report only</span>}
-              {p.hidden && <span className="error">, hidden</span>}
+    <div className="stack">
+      {review.length > 0 && (
+        <section className="panel stack" style={{ borderColor: "var(--red)" }}>
+          <h2 style={{ margin: 0 }}>Needs a look</h2>
+          <p className="small muted" style={{ margin: 0 }}>
+            Three people reported these, so they were hidden. Put each one back, or keep it hidden.
+          </p>
+          {review.map((r) => (
+            <div key={r.id} className="post">
+              <div className="who display">
+                {r.who}
+                {r.fanId ? " (fan)" : ""}, {r.table === "comments" ? "comment, " : ""}
+                {timeAgo(r.at)}
+              </div>
+              {r.body && <p style={{ margin: "4px 0" }}>{r.body}</p>}
+              <div className="row">
+                <button className="chip" onClick={() => hide(r.table, r.id, false)}>
+                  Put it back
+                </button>
+                <button className="chip" onClick={() => hide(r.table, r.id, true)}>
+                  Keep hidden
+                </button>
+                <FanTools fanId={r.fanId} />
+              </div>
             </div>
-            {p.body && <p style={{ margin: "4px 0" }}>{p.body}</p>}
-            <button className="chip" onClick={() => hide("posts", p.id, !p.hidden)}>
-              {p.hidden ? "Show" : "Hide"}
-            </button>
-          </div>
-        ))}
-      </section>
-      <section className="stack">
-        <h2>Comments</h2>
-        {data.state.comments.length === 0 && <p className="muted">No comments yet.</p>}
-        {data.state.comments.map((c) => (
-          <div key={c.id} className="post">
-            <div className="who display">
-              {c.author_name}, {timeAgo(c.created_at)}
-              {c.hidden && <span className="error">, hidden</span>}
+          ))}
+        </section>
+      )}
+      <div className="grid2">
+        <section className="stack">
+          <h2>Posts</h2>
+          {data.state.posts.length === 0 && <p className="muted">No posts yet.</p>}
+          {data.state.posts.map((p) => (
+            <div key={p.id} className="post">
+              <div className="who display">
+                {p.author_name}
+                {p.fan_id ? " (fan)" : ""}, {p.hole ? `hole ${p.hole}, ` : ""}
+                {timeAgo(p.created_at)}
+                {p.visibility === "report" && <span className="report-only">, film only</span>}
+                {p.hidden && <span className="error">, hidden</span>}
+              </div>
+              {p.body && <p style={{ margin: "4px 0" }}>{p.body}</p>}
+              <div className="row">
+                <button className="chip" onClick={() => hide("posts", p.id, !p.hidden)}>
+                  {p.hidden ? "Show" : "Hide"}
+                </button>
+                <FanTools fanId={p.fan_id} />
+              </div>
             </div>
-            <p style={{ margin: "4px 0" }}>{c.body}</p>
-            <button className="chip" onClick={() => hide("comments", c.id, !c.hidden)}>
-              {c.hidden ? "Show" : "Hide"}
-            </button>
-          </div>
-        ))}
-      </section>
+          ))}
+        </section>
+        <section className="stack">
+          <h2>Comments</h2>
+          {data.state.comments.length === 0 && <p className="muted">No comments yet.</p>}
+          {data.state.comments.map((c) => (
+            <div key={c.id} className="post">
+              <div className="who display">
+                {c.author_name}
+                {c.fan_id ? " (fan)" : ""}, {timeAgo(c.created_at)}
+                {c.hidden && <span className="error">, hidden</span>}
+              </div>
+              <p style={{ margin: "4px 0" }}>{c.body}</p>
+              <div className="row">
+                <button className="chip" onClick={() => hide("comments", c.id, !c.hidden)}>
+                  {c.hidden ? "Show" : "Hide"}
+                </button>
+                <FanTools fanId={c.fan_id} />
+              </div>
+            </div>
+          ))}
+        </section>
+      </div>
     </div>
   );
 }

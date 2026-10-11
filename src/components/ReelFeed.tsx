@@ -23,7 +23,7 @@ export interface FeedItem {
 export function feedItems(state: TournamentState, roundFilter: string | null): FeedItem[] {
   const num = (id: string | null) => state.rounds.find((r) => r.id === id)?.number ?? 99;
   const isFilm = (p: PostRow) => (p.body ?? "").startsWith("Highlights reel");
-  const vids = state.posts.filter((p) => p.kind === "video" && p.media_path && !p.hidden).filter((p) => !roundFilter || String(num(p.round_id)) === roundFilter);
+  const vids = state.posts.filter((p) => p.kind === "video" && p.media_path && !p.hidden && p.visibility !== "report").filter((p) => !roundFilter || String(num(p.round_id)) === roundFilter);
   const films = vids.filter(isFilm).sort((a, b) => b.created_at.localeCompare(a.created_at));
   const clips = vids.filter((p) => !isFilm(p)).sort((a, b) => num(a.round_id) - num(b.round_id) || (a.hole ?? 0) - (b.hole ?? 0) || a.created_at.localeCompare(b.created_at));
   return [...films, ...clips].map((p) => {

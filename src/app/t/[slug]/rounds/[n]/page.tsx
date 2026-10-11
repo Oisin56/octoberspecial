@@ -3,7 +3,8 @@
 import { use } from "react";
 import Link from "next/link";
 import { useT } from "@/components/Providers";
-import { Article, Comments, Feed, GameStatus, Loading, Scorecard, dateLabel, pts } from "@/components/ui";
+import { Article, GameStatus, Loading, Scorecard, dateLabel, pts } from "@/components/ui";
+import { SocialFeed } from "@/components/SocialFeed";
 import { PLAY_LABEL, SCORING_LABEL, ballName, toRoundCfg } from "@/lib/types";
 import { courseBySlug } from "@/data/courses";
 import { GUIDES } from "@/data/course-guides";
@@ -26,7 +27,7 @@ export default function RoundPage({ params }: { params: Promise<{ n: string }> }
   const preview = pieces.find((p) => p.kind === "preview");
   const report = pieces.find((p) => p.kind === "report");
   const clips = state.posts
-    .filter((p) => p.round_id === round.id && p.kind === "video" && p.media_path)
+    .filter((p) => p.round_id === round.id && p.kind === "video" && p.media_path && p.visibility !== "report")
     .sort((a, b) => (a.hole ?? 0) - (b.hole ?? 0) || a.created_at.localeCompare(b.created_at));
   const par = round.holes.reduce((a, h) => a + h.par, 0);
   const yards = round.holes.reduce((a, h) => a + (h.yards ?? 0), 0);
@@ -150,9 +151,7 @@ export default function RoundPage({ params }: { params: Promise<{ n: string }> }
         </div>
         <div className="stack">
           <h2>From the course</h2>
-          <Feed roundId={round.id} />
-          <h2 style={{ marginTop: 24 }}>Comments</h2>
-          <Comments roundId={round.id} />
+          <SocialFeed roundId={round.id} />
         </div>
       </div>
     </>

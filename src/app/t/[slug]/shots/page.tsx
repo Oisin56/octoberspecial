@@ -36,7 +36,7 @@ function ShotsInner() {
   const h = hole ?? startHole;
 
   if (!state) return <Loading />;
-  if (!session)
+  if (!session || session.role === "fan")
     return (
       <p>
         <Link href={href(`/login?next=${encodeURIComponent(href("/shots"))}`)}>Log in</Link> to log shots.

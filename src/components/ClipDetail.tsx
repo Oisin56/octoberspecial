@@ -26,8 +26,11 @@ export function ClipDetail({
   prefill,
   onDone,
   onCancel,
+  backLabel = "Scorecard",
 }: {
   blob: Blob;
+  /** Where the first Back goes */
+  backLabel?: string;
   roundId: string | null;
   hole: number | null;
   holeInfo?: HoleInfo;
@@ -50,6 +53,8 @@ export function ClipDetail({
   const [club, setClub] = useState<string | null>(prefill?.club ?? null);
   const complete = !!(prefill?.playerId && prefill.kind && prefill.outcome);
   const [caption, setCaption] = useState("");
+  /** For the highlights film only: kept out of the feed */
+  const [filmOnly, setFilmOnly] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const players = useMemo(() => {
@@ -108,10 +113,12 @@ export function ClipDetail({
         trimIn: whole ? null : Math.round(range[0] * 10) / 10,
         trimOut: whole ? null : Math.round(range[1] * 10) / 10,
         details: { ...(shot ? { shot: KIND_LABEL[shot] } : {}), ...(result ? { result } : {}), ...(club ? { club } : {}), ...(shotId ? { shotId } : {}) },
+        ...(filmOnly ? { visibility: "report" } : {}),
       },
     });
     flushClips(slug); // carries on in the background
-    onDone(navigator.onLine ? "Clip saved. It's uploading now." : "Clip saved on this phone. It'll send when there's signal.");
+    const what = filmOnly ? "Saved for the film" : "Clip saved";
+    onDone(navigator.onLine ? `${what}. It's uploading now.` : `${what} on this phone. It'll send when there's signal.`);
   }
 
   const title: Record<Step, string> = {
@@ -128,7 +135,7 @@ export function ClipDetail({
     <div className="cd" role="dialog" aria-label={title[step]}>
       <div className="cd-head">
         <button className="cd-back" onClick={back}>
-          ‹ {n === 0 ? "Scorecard" : "Back"}
+          ‹ {n === 0 ? backLabel : "Back"}
         </button>
         <div className="cd-dots" aria-hidden="true">
           {ORDER.map((s, i) => (
@@ -255,6 +262,13 @@ export function ClipDetail({
             <span>Caption (optional): say it, or type it</span>
             <textarea value={caption} maxLength={200} onChange={(e) => setCaption(e.target.value)} placeholder="Say what happened, if you like" />
           </label>
+          <button type="button" className="cd-film-only" role="switch" aria-checked={filmOnly} onClick={() => setFilmOnly((v) => !v)}>
+            <span className="box" aria-hidden="true">{filmOnly ? "✓" : ""}</span>
+            <span>
+              <strong>Highlights film only</strong>
+              <small>{filmOnly ? "Kept out of the feed. The film can still use it." : "Leave unticked to post it to the feed too"}</small>
+            </span>
+          </button>
         </div>
       )}
 
@@ -266,7 +280,7 @@ export function ClipDetail({
         )}
         {step === "done" && (
           <button className="btn block cd-primary" disabled={busy} onClick={post}>
-            {busy ? "Saving…" : "Post the clip"}
+            {busy ? "Saving…" : filmOnly ? "Save for the film" : "Post the clip"}
           </button>
         )}
         {step !== "trim" && step !== "done" && (

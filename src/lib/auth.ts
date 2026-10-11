@@ -2,12 +2,14 @@ import "server-only";
 import { cookies } from "next/headers";
 import { createHmac, createHash, timingSafeEqual } from "node:crypto";
 
-export type Role = "organiser" | "player" | "contributor";
+export type Role = "organiser" | "player" | "contributor" | "fan";
 
 export interface Session {
   role: Role;
   name: string;
   playerId?: string;
+  /** Fans: followers signed up by email (comments and text posts only) */
+  fanId?: string;
 }
 
 /** One cookie holds a session per tournament (keyed by tournament id),
@@ -99,6 +101,11 @@ export async function setOwner() {
 export function checkOwnerPin(pin: string) {
   const expected = process.env.ORGANISER_PIN ?? "";
   return !!expected && safeEqual(pin.trim(), expected);
+}
+
+/** Players, organisers and contributors: everyone who can score, film and post media (not fans). */
+export function isCrew(s: Session | null): s is Session {
+  return !!s && s.role !== "fan";
 }
 
 export function isOrganiser(s: Session | null) {

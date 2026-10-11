@@ -67,8 +67,10 @@ export async function POST(req: Request) {
     case "state": {
       const state = await loadServerState(t.id);
       const { data: pins } = await db.from("players").select("id,pin_hash").eq("tournament_id", t.id);
+      const fans = await db.from("fans").select("id,name,blocked,created_at").eq("tournament_id", t.id).order("created_at");
       return json({
         state,
+        fans: fans.error ? [] : (fans.data ?? []),
         pinSet: Object.fromEntries((pins ?? []).map((p) => [p.id, !!p.pin_hash])),
         organiserPinSet: !!t.organiser_pin_hash,
         contributorPinSet: !!t.contributor_pin_hash || !!process.env.CONTRIBUTOR_PIN,
@@ -282,6 +284,15 @@ export async function POST(req: Request) {
       const table = ["posts", "comments"].includes(b.table) ? b.table : null;
       if (!table) return bad("Bad table");
       const { error } = await db.from(table).update({ hidden: !!b.hidden }).eq("id", b.id).eq("tournament_id", t.id);
+      if (error) return bad(error.message, 500);
+      // Looked at by the organiser: no longer waiting for review. Put back = the reports are cleared
+      await db.from(table).update({ hidden_by_reports: false }).eq("id", b.id);
+      if (!b.hidden) await db.from("reports").delete().eq(table === "posts" ? "post_id" : "comment_id", b.id);
+      return json({ ok: true });
+    }
+
+    case "blockFan": {
+      const { error } = await db.from("fans").update({ blocked: !!b.blocked }).eq("id", b.fanId).eq("tournament_id", t.id);
       if (error) return bad(error.message, 500);
       return json({ ok: true });
     }

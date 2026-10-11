@@ -1,11 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
 import { useT } from "./Providers";
 import { cleanBody, cleanTitle } from "@/lib/cleanText";
 import { CountUp, CourseImage, Icon } from "./visual";
-import { mediaUrl, clipUrl } from "@/lib/supabase";
 import { ballsOfGame, gameHole, type Game, type GameSummary, type SegmentResult } from "@/lib/engine";
 import { shotsOnHole } from "@/lib/scoring";
 import {
@@ -15,7 +13,6 @@ import {
   sideLabel,
   toRoundCfg,
   type AiPieceRow,
-  type PostRow,
   type RoundRow,
 } from "@/lib/types";
 
@@ -398,74 +395,6 @@ export function Scorecard({ round, gameIndex = 0 }: { round: RoundRow; gameIndex
   );
 }
 
-// ------------------------------------------------------------ feed
-
-type FeedItem = { t: "post"; at: string; post: PostRow } | { t: "piece"; at: string; piece: AiPieceRow };
-
-export function Feed({ roundId, limit }: { roundId?: string; limit?: number }) {
-  const { state } = useT();
-  if (!state) return null;
-  const items: FeedItem[] = [
-    ...state.posts.filter((p) => !roundId || p.round_id === roundId).map((post) => ({ t: "post" as const, at: post.created_at, post })),
-    ...state.pieces
-      .filter((p) => p.kind === "bulletin" && p.status === "published" && (!roundId || p.round_id === roundId))
-      .map((piece) => ({ t: "piece" as const, at: piece.published_at ?? piece.created_at, piece })),
-  ].sort((a, b) => b.at.localeCompare(a.at));
-  const shown = limit ? items.slice(0, limit) : items;
-  if (!shown.length) return <p className="muted">Nothing yet. Notes, photos and live bulletins appear here as the rounds are played.</p>;
-  return (
-    <div className="feed">
-      {shown.map((i) => (i.t === "post" ? <PostCard key={i.post.id} post={i.post} /> : <BulletinCard key={i.piece.id} piece={i.piece} />))}
-    </div>
-  );
-}
-
-export function PostCard({ post }: { post: PostRow }) {
-  const { state } = useT();
-  const round = state?.rounds.find((r) => r.id === post.round_id);
-  const url = mediaUrl(post.media_path);
-  return (
-    <article className="post">
-      <div className="who display">
-        <span className="where">
-          {round ? `R${round.number}` : ""}
-          {post.hole ? ` · Hole ${post.hole}` : ""}
-        </span>{" "}
-        {post.author_name} · {timeAgo(post.created_at)}
-      </div>
-      {post.body && <p style={{ margin: "6px 0 0" }}>{post.body}</p>}
-      {url && post.kind === "photo" && (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={url} alt={post.body ?? `Photo from hole ${post.hole ?? ""}`} loading="lazy" />
-      )}
-      {url && post.kind === "video" && <video src={clipUrl(post) ?? url} controls playsInline preload="metadata" />}
-      {post.tags.length > 0 && (
-        <div className="tags">
-          {post.tags.map((t) => (
-            <span key={t} className="pill">
-              {t}
-            </span>
-          ))}
-        </div>
-      )}
-    </article>
-  );
-}
-
-export function BulletinCard({ piece }: { piece: AiPieceRow }) {
-  const { state } = useT();
-  const round = state?.rounds.find((r) => r.id === piece.round_id);
-  return (
-    <article className="post bulletin">
-      <div className="who display">
-        <span className="where">Live bulletin{round ? ` · R${round.number}` : ""}</span> · {timeAgo(piece.published_at ?? piece.created_at)}
-      </div>
-      {piece.title && <h3 style={{ marginTop: 4 }}>{cleanTitle(piece.title)}</h3>}
-      <Paras text={piece.body} />
-    </article>
-  );
-}
-
 export function Paras({ text }: { text: string }) {
   return (
     <>
@@ -513,64 +442,6 @@ export function Article({ piece, label }: { piece: AiPieceRow; label: string }) 
           <p key={i}>{p}</p>
         ))}
     </article>
-  );
-}
-
-// ------------------------------------------------------------ comments
-
-export function Comments({ roundId }: { roundId?: string }) {
-  const { state, refresh, api } = useT();
-  const [name, setName] = useState(() => {
-    try {
-      return localStorage.getItem("os_name") ?? "";
-    } catch {
-      return "";
-    }
-  });
-  const [body, setBody] = useState("");
-  const [err, setErr] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const list = (state?.comments ?? []).filter((c) => !roundId || c.round_id === roundId).slice(0, 40);
-
-  async function send(e: React.FormEvent) {
-    e.preventDefault();
-    setBusy(true);
-    setErr(null);
-    try {
-      localStorage.setItem("os_name", name);
-    } catch {}
-    const r = await api("/api/comments", { name, body, roundId });
-    setBusy(false);
-    if (!r.ok) return setErr(String(r.j.error ?? "Comment didn't send. Try again."));
-    setBody("");
-    refresh();
-  }
-
-  return (
-    <div className="stack">
-      <form onSubmit={send} className="stack">
-        <div className="field">
-          <label htmlFor="c-name">Your name</label>
-          <input id="c-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={40} required />
-        </div>
-        <div className="field">
-          <label htmlFor="c-body">Comment</label>
-          <textarea id="c-body" value={body} onChange={(e) => setBody(e.target.value)} maxLength={500} required style={{ minHeight: 60 }} />
-        </div>
-        {err && <p className="error">{err}</p>}
-        <button className="btn" disabled={busy}>
-          Post comment
-        </button>
-      </form>
-      {list.map((c) => (
-        <div key={c.id} className="post">
-          <div className="who display">
-            {c.author_name} · {timeAgo(c.created_at)}
-          </div>
-          <p style={{ margin: "4px 0 0" }}>{c.body}</p>
-        </div>
-      ))}
-    </div>
   );
 }
 

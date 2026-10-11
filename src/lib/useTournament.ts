@@ -20,6 +20,7 @@ async function loadAll(slug: string): Promise<TournamentState | null> {
     db.from("votes").select("*").eq("tournament_id", tid),
   ]);
   const roundIds = (rounds.data ?? []).map((r) => r.id);
+  const likes = await db.from("likes").select("*").eq("tournament_id", tid);
   const [entries, attestations, shots] = roundIds.length
     ? await Promise.all([
         db.from("hole_entries").select("*").in("round_id", roundIds),
@@ -40,6 +41,7 @@ async function loadAll(slug: string): Promise<TournamentState | null> {
     pieces: pieces.data ?? [],
     votes: votes.data ?? [],
     shots: shots.error ? [] : (shots.data ?? []),
+    likes: likes.error ? [] : (likes.data ?? []),
   };
 }
 
@@ -96,7 +98,7 @@ export function useTournament(slug: string): LiveTournament {
 
   useEffect(() => {
     const db = publicClient();
-    const tables = ["rounds", "hole_entries", "attestations", "posts", "comments", "ai_pieces", "votes", "shots"];
+    const tables = ["rounds", "hole_entries", "attestations", "posts", "comments", "ai_pieces", "votes", "shots", "likes"];
     const channel = db.channel(`t-${slug}`);
     for (const t of tables) {
       channel.on("postgres_changes", { event: "*", schema: "public", table: t }, () => {

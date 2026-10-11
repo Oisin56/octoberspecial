@@ -33,7 +33,7 @@ function LoginInner() {
     await reloadSession();
   }
 
-  if (session)
+  if (session && session.role !== "fan")
     return (
       <div className="panel" style={{ maxWidth: 460 }}>
         <h1>Logged in</h1>
@@ -48,6 +48,16 @@ function LoginInner() {
 
   return (
     <form className="panel stack" style={{ maxWidth: 460 }} onSubmit={submit}>
+      {session?.role === "fan" && (
+        <div className="notice row" style={{ justifyContent: "space-between" }}>
+          <span>
+            You&apos;re in the conversation as <strong>{session.name}</strong>.
+          </span>
+          <button type="button" className="chip" onClick={logout}>
+            Sign out
+          </button>
+        </div>
+      )}
       <h1>Log in</h1>
       <p className="muted small" style={{ margin: 0 }}>
         Following from home? You don&apos;t need to log in. This is for players and anyone walking the course with them.

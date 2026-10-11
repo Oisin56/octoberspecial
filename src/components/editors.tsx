@@ -28,6 +28,8 @@ export interface AdminData {
   organiserPinSet: boolean;
   contributorPinSet: boolean;
   env: { ai: boolean; courses: boolean; mail?: boolean };
+  /** Followers who joined the conversation */
+  fans?: { id: string; name: string; blocked: boolean; created_at: string }[];
 }
 
 export function useAdmin() {

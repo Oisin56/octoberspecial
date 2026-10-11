@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useT } from "@/components/Providers";
 import { Loading } from "@/components/ui";
 import { ClipDetail } from "@/components/ClipDetail";
-import { setPendingClip } from "@/lib/pendingClip";
+import { setPendingClip, takePendingClip } from "@/lib/pendingClip";
 import { mergeShots } from "@/lib/shotQueue";
 
 const MAX_SECONDS = 60;
@@ -55,6 +55,9 @@ function RecordInner() {
   const [phase, setPhase] = useState<"starting" | "ready" | "recording" | "failed">("starting");
   const [secs, setSecs] = useState(0);
   const [clip, setClip] = useState<Blob | null>(null);
+  // Picked in the feed: the clip is handed over, so the camera stays off
+  const fromFeed = sp.get("from") === "feed";
+  const [waitPending, setWaitPending] = useState(sp.get("clip") === "1");
 
   const stopCamera = useCallback(() => {
     stream.current?.getTracks().forEach((t) => t.stop());
@@ -81,10 +84,20 @@ function RecordInner() {
   }, []);
 
   useEffect(() => {
-    if (clip) return;
+    if (!waitPending) return;
+    const f = takePendingClip();
+    window.setTimeout(() => {
+      if (f) picked(f as File);
+      setWaitPending(false);
+    }, 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (clip || waitPending) return;
     startCamera();
     return () => stopCamera();
-  }, [clip, startCamera, stopCamera]);
+  }, [clip, waitPending, startCamera, stopCamera]);
 
   // Stop automatically at the limit
   useEffect(() => {
@@ -119,7 +132,7 @@ function RecordInner() {
 
   const toScorecard = (msg?: string) => {
     if (msg) sessionStorage.setItem("mgs_flash", msg);
-    router.push(href("/score"));
+    router.push(href(fromFeed ? "/feed" : "/score"));
   };
 
   function picked(f: File | undefined) {
@@ -127,14 +140,14 @@ function RecordInner() {
     // Very big files from the camera roll still go through the cutter
     if (f.size > MAX_BYTES) {
       setPendingClip(f);
-      router.push(href(`/post?round=${round?.number ?? ""}${hole ? `&hole=${hole}` : ""}&clip=1&from=course`));
+      router.push(href(`/post?round=${round?.number ?? ""}${hole ? `&hole=${hole}` : ""}&clip=1${fromFeed ? "" : "&from=course"}`));
       return;
     }
     stopCamera();
     setClip(f);
   }
 
-  if (!state) return <Loading />;
+  if (!state || waitPending) return <Loading />;
 
   if (clip)
     return (
@@ -144,9 +157,12 @@ function RecordInner() {
         hole={hole}
         holeInfo={holeInfo}
         prefill={prefill}
+        backLabel={fromFeed ? "Feed" : "Scorecard"}
         onDone={(msg) => toScorecard(msg)}
         onCancel={() => {
-          if (confirm("Throw this clip away?")) setClip(null);
+          if (!confirm("Throw this clip away?")) return;
+          if (fromFeed) return toScorecard();
+          setClip(null);
         }}
       />
     );

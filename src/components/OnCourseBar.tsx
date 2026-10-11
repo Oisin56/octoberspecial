@@ -11,12 +11,12 @@ import { currentHole } from "@/lib/scorePos";
  * Score, Record and Note. Record opens the camera in one tap. The screen is kept awake.
  */
 export function OnCourseBar() {
-  const { state, session, href, slug } = useT();
+  const { state, crew, href, slug } = useT();
   const path = usePathname();
   const [, bump] = useState(0);
 
   const live = useMemo(() => state?.rounds.find((r) => r.status === "live") ?? null, [state]);
-  const show = !!(live && session);
+  const show = !!(live && crew);
 
   // Follow the scorer's hole (it's saved as they move)
   useEffect(() => {

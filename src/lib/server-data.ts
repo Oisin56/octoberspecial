@@ -43,6 +43,7 @@ export async function loadServerState(tournamentId: string): Promise<TournamentS
     db.from("votes").select("*").eq("tournament_id", tid),
   ]);
   const roundIds = (rounds.data ?? []).map((r: RoundRow) => r.id);
+  const likes = await db.from("likes").select("*").eq("tournament_id", tid);
   const [entries, attestations, shots] = roundIds.length
     ? await Promise.all([
         db.from("hole_entries").select("*").in("round_id", roundIds),
@@ -62,6 +63,7 @@ export async function loadServerState(tournamentId: string): Promise<TournamentS
     pieces: pieces.data ?? [],
     votes: votes.data ?? [],
     shots: shots.error ? [] : (shots.data ?? []),
+    likes: likes.error ? [] : (likes.data ?? []),
   };
 }
 

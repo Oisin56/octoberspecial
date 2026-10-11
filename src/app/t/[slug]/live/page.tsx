@@ -3,12 +3,13 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useT } from "@/components/Providers";
-import { Board, Comments, Feed, GameStatus, Loading, Scorecard, gameLine } from "@/components/ui";
+import { Board, GameStatus, Loading, Scorecard, gameLine } from "@/components/ui";
+import { SocialFeed } from "@/components/SocialFeed";
 import { formatLabel, sideLabel, toRoundCfg } from "@/lib/types";
 import { RoundBanner } from "@/components/visual";
 
 export default function Live() {
-  const { state, summary, session, href } = useT();
+  const { state, summary, session, crew, href } = useT();
   const [gi, setGi] = useState(0);
   if (!state || !summary) return <Loading />;
   if (!state.rounds.length) return <p>No rounds yet.</p>;
@@ -37,7 +38,7 @@ export default function Live() {
             Enter scores
           </Link>
         )}
-        {session && (
+        {crew && (
           <Link className="btn ghost" href={href(`/post?round=${round.number}`)}>
             Add a post
           </Link>
@@ -79,9 +80,7 @@ export default function Live() {
         </div>
         <div className="stack">
           <h2>Bulletins and posts</h2>
-          <Feed roundId={round.id} />
-          <h2 style={{ marginTop: 24 }}>Say something</h2>
-          <Comments roundId={round.id} />
+          <SocialFeed roundId={round.id} />
         </div>
       </div>
     </>

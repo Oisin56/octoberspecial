@@ -28,8 +28,11 @@ export function ClipTrimmer({
   defaultHole,
   onDone,
   onCancel,
+  filmOnly,
 }: {
   file: File;
+  /** For the highlights film only: kept out of the feed */
+  filmOnly?: boolean;
   roundId: string | null;
   defaultHole: number | null;
   onDone: (posted: number, queued: number) => void;
@@ -165,6 +168,7 @@ export function ClipTrimmer({
           playerIds: c.playerIds,
           clipStart: Math.round(c.start * 10) / 10,
           clipEnd: Math.round(c.end * 10) / 10,
+          ...(filmOnly ? { visibility: "report" } : {}),
         };
         update(c.id, { status: "uploading", progress: 0 });
         try {

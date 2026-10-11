@@ -151,12 +151,17 @@ export interface PostRow {
   trim_out?: number | null;
   /** What's in the clip, from the on-course cards */
   details?: ClipDetails | null;
+  /** Posted by a fan (text only) */
+  fan_id?: string | null;
+  hidden_by_reports?: boolean;
 }
 
 export interface ClipDetails {
   shot?: string;
   result?: string;
   club?: string;
+  /** The logged shot this clip shows */
+  shotId?: string;
 }
 
 export interface CommentRow {
@@ -166,6 +171,18 @@ export interface CommentRow {
   author_name: string;
   body: string;
   hidden?: boolean;
+  created_at: string;
+  /** On a feed post (none: a general comment from before the feed had comments) */
+  post_id?: string | null;
+  fan_id?: string | null;
+  author_player_id?: string | null;
+  hidden_by_reports?: boolean;
+}
+
+export interface LikeRow {
+  post_id: string;
+  tournament_id: string;
+  liker: string;
   created_at: string;
 }
 
@@ -207,6 +224,7 @@ export interface TournamentState {
   votes: VoteRow[];
   /** Shots logged on the course (absent until the database has the table) */
   shots?: ShotRow[];
+  likes?: LikeRow[];
 }
 
 export interface ShotRow {

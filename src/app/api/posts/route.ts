@@ -1,5 +1,7 @@
 import { adminClient } from "@/lib/admin";
 import { bad, context, json } from "@/lib/server-data";
+import { isOrganiser } from "@/lib/auth";
+import { fanAllowed, tooFast } from "@/lib/social";
 
 const TAGS = new Set([
   "birdie", "eagle", "chip-in", "long putt", "3-putt", "water", "bunker", "OB", "lip-out",
@@ -12,6 +14,35 @@ export async function POST(req: Request) {
   const { t, session } = await context(req, b);
   if (!t) return bad("Tournament not found", 404);
   if (!session) return bad("Log in to post", 401);
+
+  // Delete your own post (the organiser can delete any)
+  if (b.action === "delete") {
+    const id = String(b.id ?? "");
+    const { data: p } = await adminClient().from("posts").select("id,fan_id,author_player_id,author_name").eq("id", id).eq("tournament_id", t.id).maybeSingle();
+    if (!p) return json({ ok: true });
+    const mine =
+      (session.fanId && p.fan_id === session.fanId) ||
+      (!session.fanId && !p.fan_id && (session.playerId ? p.author_player_id === session.playerId : p.author_name === session.name)) ||
+      isOrganiser(session);
+    if (!mine) return bad("You can only delete your own posts", 403);
+    await adminClient().from("posts").delete().eq("id", id);
+    return json({ ok: true });
+  }
+
+  // Followers post text only, to the public feed
+  if (session.fanId) {
+    const text = String(b.body ?? "").trim().slice(0, 500);
+    if (!text) return bad("Write something first");
+    if (!(await fanAllowed(t.id, session.fanId))) return bad("You can't post here any more", 403);
+    if (tooFast(`fanpost:${session.fanId}`, 3, 60e3)) return bad("Give it a minute before posting again", 429);
+    const { data, error } = await adminClient()
+      .from("posts")
+      .insert({ tournament_id: t.id, author_name: session.name, fan_id: session.fanId, kind: "note", body: text, visibility: "public" })
+      .select()
+      .single();
+    if (error) return bad(/fan_id/.test(error.message) ? "Posting needs the latest database update" : error.message, 500);
+    return json({ post: data });
+  }
   const kind = ["note", "photo", "video"].includes(b.kind) ? b.kind : "note";
   const body = String(b.body ?? "").trim().slice(0, 2000);
   const mediaPath = b.mediaPath ? String(b.mediaPath) : null;

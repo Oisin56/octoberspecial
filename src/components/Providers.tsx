@@ -4,13 +4,16 @@ import { createContext, useCallback, useContext, useEffect, useState } from "rea
 import { useTournament, type LiveTournament } from "@/lib/useTournament";
 
 export interface ClientSession {
-  role: "organiser" | "player" | "contributor";
+  role: "organiser" | "player" | "contributor" | "fan";
   name: string;
   playerId?: string;
+  fanId?: string;
 }
 
 interface Ctx extends LiveTournament {
   session: ClientSession | null;
+  /** Logged in as a player, organiser or someone walking with them (not a fan) */
+  crew: boolean;
   reloadSession: () => Promise<void>;
   /** Build a link inside this tournament */
   href: (path: string) => string;
@@ -53,7 +56,7 @@ export function Providers({ slug, children }: { slug: string; children: React.Re
   );
 
   return (
-    <TournamentContext.Provider value={{ ...live, session, reloadSession, href, api }}>{children}</TournamentContext.Provider>
+    <TournamentContext.Provider value={{ ...live, session, crew: !!session && session.role !== "fan", reloadSession, href, api }}>{children}</TournamentContext.Provider>
   );
 }
 

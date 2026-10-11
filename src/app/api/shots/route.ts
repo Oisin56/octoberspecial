@@ -1,3 +1,4 @@
+import { isCrew } from "@/lib/auth";
 import { adminClient } from "@/lib/admin";
 import { bad, context, json } from "@/lib/server-data";
 import { CLUB_GROUPS, DISTANCES, KIND_LABEL } from "@/lib/shots";
@@ -9,7 +10,7 @@ export async function POST(req: Request) {
   const b = await req.json().catch(() => ({}));
   const { t, session } = await context(req, b);
   if (!t) return bad("Tournament not found", 404);
-  if (!session) return bad("Log in to log shots", 401);
+  if (!isCrew(session)) return bad("Log in to log shots", 401);
   const clientId = String(b.clientId ?? "");
   if (!/^[\w-]{8,64}$/.test(clientId)) return bad("Bad shot id");
   const db = adminClient();

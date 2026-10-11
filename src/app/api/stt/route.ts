@@ -1,3 +1,4 @@
+import { isCrew } from "@/lib/auth";
 import Anthropic from "@anthropic-ai/sdk";
 import { adminClient } from "@/lib/admin";
 import { bad, context, json } from "@/lib/server-data";
@@ -15,7 +16,7 @@ export async function POST(req: Request) {
   if (!form) return bad("Bad request");
   const { t, session } = await context(req, { t: String(form.get("t") ?? "") });
   if (!t) return bad("Tournament not found", 404);
-  if (!session) return bad("Log in to use voice notes", 401);
+  if (!isCrew(session)) return bad("Log in to use voice notes", 401);
   if (!process.env.ELEVENLABS_API_KEY) return bad("Voice notes aren't set up (no ElevenLabs key)", 500);
   const audio = form.get("file");
   if (!(audio instanceof Blob) || audio.size < 1000) return bad("Nothing was recorded. Hold the button while you speak.");

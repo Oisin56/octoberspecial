@@ -159,6 +159,49 @@ create table if not exists comments (
   created_at timestamptz not null default now()
 );
 
+-- Fans: followers who signed up (their own name and email, 16+, agreed) to comment and post text
+create table if not exists fans (
+  id uuid primary key default gen_random_uuid(),
+  tournament_id uuid not null references tournaments(id) on delete cascade,
+  name text not null check (char_length(name) between 1 and 40),
+  email text not null,
+  token text,                       -- the sign-in link, until used
+  token_expires timestamptz,
+  verified_at timestamptz,
+  consent_at timestamptz not null default now(),
+  blocked boolean not null default false,
+  created_at timestamptz not null default now()
+);
+create unique index if not exists fans_email_uniq on fans (tournament_id, lower(email));
+alter table fans enable row level security;  -- server only
+
+alter table posts add column if not exists fan_id uuid references fans(id) on delete set null;
+alter table comments add column if not exists post_id uuid references posts(id) on delete cascade;
+alter table comments add column if not exists fan_id uuid references fans(id) on delete set null;
+alter table comments add column if not exists author_player_id text;
+
+-- Likes: one per post per phone (or fan); counted in the feed
+create table if not exists likes (
+  post_id uuid not null references posts(id) on delete cascade,
+  tournament_id uuid not null references tournaments(id) on delete cascade,
+  liker text not null,
+  created_at timestamptz not null default now(),
+  primary key (post_id, liker)
+);
+
+-- Reports: three from different people hide a post or comment until the organiser looks
+create table if not exists reports (
+  id uuid primary key default gen_random_uuid(),
+  tournament_id uuid not null references tournaments(id) on delete cascade,
+  post_id uuid references posts(id) on delete cascade,
+  comment_id uuid references comments(id) on delete cascade,
+  reporter text not null,
+  created_at timestamptz not null default now()
+);
+create unique index if not exists reports_once on reports (coalesce(post_id, comment_id), reporter);
+alter table posts add column if not exists hidden_by_reports boolean not null default false;
+alter table comments add column if not exists hidden_by_reports boolean not null default false;
+
 create table if not exists ai_pieces (
   id uuid primary key default gen_random_uuid(),
   tournament_id uuid not null references tournaments(id) on delete cascade,
@@ -205,6 +248,8 @@ alter table comments enable row level security;
 alter table ai_pieces enable row level security;
 alter table votes enable row level security;
 alter table shots enable row level security;
+alter table likes enable row level security;
+alter table reports enable row level security;
 
 drop policy if exists read_all on rounds;
 create policy read_all on rounds for select using (true);
@@ -212,6 +257,8 @@ drop policy if exists read_all on hole_entries;
 create policy read_all on hole_entries for select using (true);
 drop policy if exists read_all on attestations;
 create policy read_all on attestations for select using (true);
+drop policy if exists read_all on likes;
+create policy read_all on likes for select using (true);
 drop policy if exists read_all on shots;
 create policy read_all on shots for select using (true);
 drop policy if exists read_public on posts;
@@ -253,6 +300,7 @@ begin
   begin alter publication supabase_realtime add table attestations; exception when others then null; end;
   begin alter publication supabase_realtime add table votes; exception when others then null; end;
   begin alter publication supabase_realtime add table shots; exception when others then null; end;
+  begin alter publication supabase_realtime add table likes; exception when others then null; end;
 end $$;
 
 -- ------------------------------------------------------------ storage
@@ -304,10 +352,12 @@ alter table ai_pieces add column if not exists prev_body text;
 grant usage on schema public to anon, authenticated, service_role;
 grant all on all tables in schema public to service_role;
 grant all on all sequences in schema public to service_role;
-grant select on rounds, hole_entries, attestations, posts, comments, ai_pieces, votes, shots to anon, authenticated;
+grant select on rounds, hole_entries, attestations, posts, comments, ai_pieces, votes, shots, likes to anon, authenticated;
 grant select on public_tournaments, public_players to anon, authenticated;
 revoke all on reels from anon, authenticated;
 revoke all on subscribers from anon, authenticated;
+revoke all on fans from anon, authenticated;
+revoke all on reports from anon, authenticated;
 
 -- Tell the API about the new tables straight away
 notify pgrst, 'reload schema';
