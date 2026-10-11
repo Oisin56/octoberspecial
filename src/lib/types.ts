@@ -36,6 +36,9 @@ export interface TournamentRow {
   video_enabled: boolean;
   /** Cards must be signed by every player in the match before they're final */
   require_attestation?: boolean;
+  /** Broadcast clips: on, and the monthly limit on what they cost (cents) */
+  broadcast_on?: boolean;
+  broadcast_cap_cents?: number;
   organiser_player_id: string | null;
   published: boolean;
   reel_music_path?: string | null;
@@ -160,12 +163,21 @@ export interface PostRow {
   /** Posted by a fan (text only) */
   fan_id?: string | null;
   hidden_by_reports?: boolean;
+  /** The broadcast version (TV graphics, replay, end card): rendering, done, failed, capped (monthly limit) */
+  broadcast_status?: "rendering" | "done" | "failed" | "capped" | null;
+  broadcast_path?: string | null;
+  broadcast_render?: string | null;
+  broadcast_at?: string | null;
+  broadcast_seconds?: number | null;
 }
 
 export interface ClipDetails {
   shot?: string;
   result?: string;
   club?: string;
+  /** The recording's shape and length (for the broadcast version) */
+  shape?: "portrait" | "landscape";
+  dur?: string;
   /** The logged shot this clip shows */
   shotId?: string;
 }

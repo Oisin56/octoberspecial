@@ -1,6 +1,7 @@
 import { after } from "next/server";
 import { adminClient } from "@/lib/admin";
-import { bad, context, json } from "@/lib/server-data";
+import { bad, context, json, siteOrigin } from "@/lib/server-data";
+import { sweep } from "@/lib/broadcast";
 import { ballsOfGame, type BallHole } from "@/lib/engine";
 import { toRoundCfg, type PlayerRow, type RoundRow } from "@/lib/types";
 import { maybeBulletin } from "@/lib/ai";
@@ -95,11 +96,18 @@ export async function POST(req: Request) {
 
   // Scores are saved as they're tapped in; news of the hole waits until the scorer has finished with it
   if (body.final === false) return json({ ok: true });
+  const origin = siteOrigin(req);
   after(async () => {
     try {
       await maybeBulletin(t.id, roundId, gameId, hole);
     } catch (e) {
       console.error("bulletin failed", e);
+    }
+    // Clips of this hole can now get their broadcast version (the score is known)
+    try {
+      await sweep(t.id, origin, true);
+    } catch (e) {
+      console.error("[broadcast] sweep after score", e);
     }
   });
 

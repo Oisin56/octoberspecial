@@ -961,7 +961,7 @@ export function buildTimeline(
       // New hole: the player-and-hole strap first, then the shot caption; same hole: just the caption
       let capFrom = textAt;
       const who = (s.playerIds ?? []).map((id) => opts.names?.[id]).filter(Boolean).join(" & ");
-      if (swiped && s.hole != null && who) {
+      if ((swiped || first) && s.hole != null && who) {
         const strapLen = Math.min(3.6, shown - textAt - 0.3);
         const info = bug ? [`Par ${bug.before.par}`, bug.before.yards ? `${bug.before.yards} yds` : ""].filter(Boolean).join(" · ") : `${ord(s.hole)} hole`;
         if (strapLen > 1.2) {

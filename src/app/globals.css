@@ -1169,3 +1169,6 @@ table.card.compact .shotdot { display: none; }
 .trimbar .used { position: absolute; top: 0; bottom: 0; background: repeating-linear-gradient(135deg, rgba(0,0,0,0.28) 0 6px, rgba(0,0,0,0.12) 6px 12px); border-radius: 6px; pointer-events: none; }
 .cd-another { justify-content: center; gap: 14px; }
 .cd-another .cd-note { font-size: 18px; text-align: center; }
+.bc-spend { display: grid; gap: 8px; }
+.bc-bar { height: 10px; border-radius: 999px; background: var(--mist); overflow: hidden; }
+.bc-bar span { display: block; height: 100%; background: linear-gradient(90deg, var(--board), var(--bracken)); border-radius: 999px; }

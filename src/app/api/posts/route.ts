@@ -1,7 +1,11 @@
 import { adminClient } from "@/lib/admin";
-import { bad, context, json } from "@/lib/server-data";
+import { after } from "next/server";
+import { bad, context, json, siteOrigin } from "@/lib/server-data";
+import { sweep } from "@/lib/broadcast";
 import { isOrganiser } from "@/lib/auth";
 import { fanAllowed, tooFast } from "@/lib/social";
+
+export const maxDuration = 60;
 
 const TAGS = new Set([
   "birdie", "eagle", "chip-in", "long putt", "3-putt", "water", "bunker", "OB", "lip-out",
@@ -71,6 +75,9 @@ export async function POST(req: Request) {
   );
   // the logged shot this clip shows
   if (typeof d.shotId === "string" && /^[\w-]{8,64}$/.test(d.shotId)) details.shotId = d.shotId;
+  // the recording's shape and length (for the broadcast version)
+  if (d.shape === "portrait" || d.shape === "landscape") details.shape = d.shape;
+  if (d.dur != null && Number(d.dur) > 0 && Number(d.dur) < 600) details.dur = String(Math.round(Number(d.dur) * 10) / 10);
   const row = {
     tournament_id: t.id,
     round_id: roundId,
@@ -98,5 +105,16 @@ export async function POST(req: Request) {
     ({ data, error } = await adminClient().from("posts").insert(row).select().single());
   }
   if (error) return bad(error.message, 500);
+  // A clip: its broadcast version is made once the hole is finished (or in a minute, with no hole)
+  if (kind === "video") {
+    const origin = siteOrigin(req);
+    after(async () => {
+      try {
+        await sweep(t.id, origin, true);
+      } catch (e) {
+        console.error("[broadcast] sweep after post", e);
+      }
+    });
+  }
   return json({ post: data });
 }

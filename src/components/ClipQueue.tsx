@@ -37,6 +37,26 @@ export function ClipQueue() {
     };
   }, [slug, refresh]);
 
+  // Broadcast clips are made when their hole is finished: while any are due or rendering, an open page nudges
+  // the server now and then (no timers needed on the server)
+  const { state, api } = useT();
+  const posts = state?.posts;
+  useEffect(() => {
+    const need = () =>
+      (posts ?? []).some(
+        (p) => p.kind === "video" && p.visibility === "public" && (p.broadcast_status === "rendering" || (p.broadcast_status == null && Date.now() - new Date(p.created_at).getTime() < 6 * 3600e3)),
+      );
+    const tick = () => {
+      if (document.visibilityState === "visible" && need()) api("/api/broadcast", { action: "sweep" }).catch(() => {});
+    };
+    const first = setTimeout(tick, 5000);
+    const t = setInterval(tick, 30000);
+    return () => {
+      clearTimeout(first);
+      clearInterval(t);
+    };
+  }, [posts, api]);
+
   if (!waiting && !err) return null;
   return (
     <div className="queue-banner" role="status">

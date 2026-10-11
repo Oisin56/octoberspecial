@@ -168,6 +168,7 @@ export function ClipTrimmer({
           playerIds: c.playerIds,
           clipStart: Math.round(c.start * 10) / 10,
           clipEnd: Math.round(c.end * 10) / 10,
+          details: { dur: Math.round((c.end - c.start) * 10) / 10 },
           ...(filmOnly ? { visibility: "report" } : {}),
         };
         update(c.id, { status: "uploading", progress: 0 });

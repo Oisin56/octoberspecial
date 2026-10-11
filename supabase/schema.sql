@@ -33,6 +33,9 @@ alter table tournaments add column if not exists published boolean not null defa
 alter table tournaments add column if not exists reel_music_path text;
 -- Cards must be signed by every player in the match before they're final (organiser can change any time)
 alter table tournaments add column if not exists require_attestation boolean not null default false;
+-- Broadcast clips: each clip turned into a TV-style video; on/off and a monthly limit on the cost (cents)
+alter table tournaments add column if not exists broadcast_on boolean not null default true;
+alter table tournaments add column if not exists broadcast_cap_cents int not null default 1000;
 
 create table if not exists players (
   id text primary key,
@@ -204,6 +207,11 @@ create table if not exists reports (
 );
 create unique index if not exists reports_once on reports (coalesce(post_id, comment_id), reporter);
 alter table posts add column if not exists hidden_by_reports boolean not null default false;
+alter table posts add column if not exists broadcast_status text;
+alter table posts add column if not exists broadcast_path text;
+alter table posts add column if not exists broadcast_render text;
+alter table posts add column if not exists broadcast_at timestamptz;
+alter table posts add column if not exists broadcast_seconds numeric;
 alter table comments add column if not exists hidden_by_reports boolean not null default false;
 
 create table if not exists ai_pieces (
@@ -324,7 +332,7 @@ drop view if exists public_tournaments;
 create view public_tournaments with (security_invoker = false) as
   select id, slug, name, subtitle, start_date, end_date, theme, custom_colors, logo_path, hero_path, tone,
          side_games, side_games_by, teams, auto_bulletins, video_enabled, organiser_player_id, published, created_at, reel_music_path,
-         require_attestation
+         require_attestation, broadcast_on, broadcast_cap_cents
   from tournaments;
 grant select on public_tournaments to anon, authenticated;
 

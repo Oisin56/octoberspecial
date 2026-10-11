@@ -10,6 +10,7 @@ import { cleanBody, cleanTitle } from "@/lib/cleanText";
 import { clipUrl, mediaUrl } from "@/lib/supabase";
 import { deviceId, myLikerKey, readIds, writeIds } from "@/lib/device";
 import { setPendingClip } from "@/lib/pendingClip";
+import { clipFile, prefetchClip } from "@/lib/shareFile";
 import { currentHole } from "@/lib/scorePos";
 import type { AiPieceRow, CommentRow, PostRow, TournamentState } from "@/lib/types";
 
@@ -336,6 +337,18 @@ function PostCard({
   function share() {
     const url = `${window.location.origin}${href(post.kind === "video" ? `/highlights?v=${post.id}` : `/feed#p-${post.id}`)}`;
     const text = film ? `${name}: ${body}` : `${post.author_name}${post.body ? `: ${post.body}` : ""}`;
+    // A clip: send the video itself (ready from when it was on screen), with the caption copied to paste in
+    const file = post.kind === "video" ? clipFile(post) : null;
+    if (file) {
+      // the clip's own words (the person who filmed it isn't the story)
+      const caption = `${((film ? body : post.body) || text).slice(0, 180)}\n${state.tournament.name}\n${url}`;
+      navigator.clipboard?.writeText(caption).catch(() => {});
+      navigator
+        .share({ files: [file], title: state.tournament.name, text: caption })
+        .then(() => say("Shared. The caption is copied too: paste it into your post"))
+        .catch(() => {});
+      return;
+    }
     shareLink(url, text.slice(0, 200), state.tournament.name, say);
   }
 
@@ -343,7 +356,7 @@ function PostCard({
     <article className={`sf-card${film ? " film" : ""}`} id={`p-${post.id}`}>
       <Head name={name} who={who} at={post.created_at} place={film ? "" : where(state, post.round_id, post.hole)} onMenu={onMenu} logo={film ? mediaUrl(state.tournament.logo_path) : null} />
       {body && <p className={`sf-text${film ? " film-title" : ""}${post.kind === "note" && body.length < 90 ? " big" : ""}`}>{body}</p>}
-      {post.kind === "video" && <FeedVideo post={post} onOpen={open} />}
+      {post.kind === "video" && <FeedVideo post={post} onOpen={open} shareName={`${state.tournament.name} ${post.hole ? `hole ${post.hole}` : "clip"}`} />}
       {photo && <FeedPhoto src={photo} alt={post.body ?? `Photo${post.hole ? ` from hole ${post.hole}` : ""}`} onOpen={() => onPhoto(photo, post.body ?? "Photo")} />}
       <div className="sf-actions">
         <button className={`sf-act like${liked ? " on" : ""}`} onClick={onLike} aria-pressed={liked} aria-label={liked ? "Unlike" : "Like"}>
@@ -383,21 +396,31 @@ function FeedPhoto({ src, alt, onOpen }: { src: string; alt: string; onOpen: () 
 }
 
 /** A clip in the feed: plays muted while on screen (only the trimmed part); a tap opens it full screen with sound. */
-function FeedVideo({ post, onOpen }: { post: PostRow; onOpen: () => void }) {
+function FeedVideo({ post, onOpen, shareName }: { post: PostRow; onOpen: () => void; shareName: string }) {
   const ref = useRef<HTMLVideoElement>(null);
   const [ratio, setRatio] = useState<number | null>(null);
-  const tIn = post.trim_in != null ? Number(post.trim_in) : 0;
-  const tOut = post.trim_out != null ? Number(post.trim_out) : null;
-  const path = post.media_path!;
+  // The broadcast version (TV graphics, replay) once it's made; until then the clip itself
+  const bc = post.broadcast_status === "done" && post.broadcast_path ? post.broadcast_path : null;
+  const tIn = bc ? 0 : post.trim_in != null ? Number(post.trim_in) : 0;
+  const tOut = bc ? null : post.trim_out != null ? Number(post.trim_out) : null;
+  const path = bc ?? post.media_path!;
   const poster = path.startsWith("http") ? undefined : (mediaUrl(`${path}.jpg`) ?? undefined);
+  const src = bc ? mediaUrl(bc) : clipUrl(post);
 
   useEffect(() => {
     const v = ref.current;
     if (!v) return;
+    let soon: ReturnType<typeof setTimeout> | null = null;
     const io = new IntersectionObserver(
       ([e]) => {
-        if (e.intersectionRatio >= 0.6) v.play().catch(() => {});
-        else v.pause();
+        if (e.intersectionRatio >= 0.6) {
+          v.play().catch(() => {});
+          // On screen for a moment: get the file ready, so Share is instant
+          soon = setTimeout(() => prefetchClip(post, shareName), 1500);
+        } else {
+          v.pause();
+          if (soon) clearTimeout(soon);
+        }
       },
       { threshold: [0, 0.6, 1] },
     );
@@ -414,17 +437,18 @@ function FeedVideo({ post, onOpen }: { post: PostRow; onOpen: () => void }) {
     v.addEventListener("ended", ended);
     return () => {
       io.disconnect();
+      if (soon) clearTimeout(soon);
       v.removeEventListener("timeupdate", tick);
       v.removeEventListener("ended", ended);
     };
-  }, [tIn, tOut]);
+  }, [tIn, tOut, post, shareName]);
 
   const shape = ratio ? Math.max(0.8, Math.min(16 / 9, ratio)) : 0.8;
   return (
     <button className="sf-media video" onClick={onOpen} aria-label="Play full screen with sound" style={{ aspectRatio: String(shape) }}>
       <video
         ref={ref}
-        src={clipUrl(post) ?? undefined}
+        src={src ?? undefined}
         poster={poster}
         muted
         playsInline

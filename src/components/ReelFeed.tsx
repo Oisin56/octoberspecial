@@ -29,7 +29,9 @@ export function feedItems(state: TournamentState, roundFilter: string | null): F
   return [...films, ...clips].map((p) => {
     const r = state.rounds.find((x) => x.id === p.round_id);
     const film = isFilm(p);
-    const path = p.media_path!;
+    // A clip's broadcast version (TV graphics, replay) once it's made
+    const bc = !film && p.broadcast_status === "done" && p.broadcast_path ? p.broadcast_path : null;
+    const path = bc ?? p.media_path!;
     return {
       post: p,
       src: mediaUrl(path)!,
@@ -38,8 +40,8 @@ export function feedItems(state: TournamentState, roundFilter: string | null): F
       title: film ? (p.body ?? "").replace(/^Highlights reel:\s*/, "") || "Highlights" : p.hole ? `Hole ${p.hole}` : "From the course",
       where: film ? (r ? `Round ${r.number} highlights` : "Tournament highlights") : r ? `Round ${r.number}, ${r.course_name}` : "",
       caption: film ? "" : [p.author_name, p.body].filter(Boolean).join(": "),
-      trimIn: p.trim_in != null ? Number(p.trim_in) : null,
-      trimOut: p.trim_out != null ? Number(p.trim_out) : null,
+      trimIn: !bc && p.trim_in != null ? Number(p.trim_in) : null,
+      trimOut: !bc && p.trim_out != null ? Number(p.trim_out) : null,
     };
   });
 }

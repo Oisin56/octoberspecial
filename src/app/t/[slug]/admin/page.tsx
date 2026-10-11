@@ -23,6 +23,7 @@ import { useCountdown } from "@/components/visual";
 import { THEMES, TONE_LABEL, toRoundCfg } from "@/lib/types";
 import { cardInfo } from "@/lib/scorecards";
 import { CardsAdmin } from "@/components/CardsAdmin";
+import { BroadcastSettings } from "@/components/BroadcastSettings";
 
 const SECTIONS = {
   rounds: "Rounds and courses",
@@ -93,6 +94,7 @@ export default function Admin() {
       {s === "email" && <EmailTab />}
       {s === "film" && (
         <>
+          <BroadcastSettings />
           <DirectorPanel />
           <ReelBuilder />
         </>

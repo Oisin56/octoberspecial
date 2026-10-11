@@ -46,6 +46,7 @@ export function ClipDetail({
   useEffect(() => () => URL.revokeObjectURL(url), [url]);
   const video = useRef<HTMLVideoElement>(null);
   const [dur, setDur] = useState(0);
+  const [shape, setShape] = useState<"portrait" | "landscape" | null>(null);
   const [range, setRange] = useState<[number, number]>([0, 0]);
   const [step, setStep] = useState<Step>("trim");
   const info: HoleInfo = holeInfo ?? { par: 4 };
@@ -122,7 +123,14 @@ export function ClipDetail({
         playerIds: who,
         trimIn: whole ? null : Math.round(range[0] * 10) / 10,
         trimOut: whole ? null : Math.round(range[1] * 10) / 10,
-        details: { ...(shot ? { shot: KIND_LABEL[shot] } : {}), ...(result ? { result } : {}), ...(club ? { club } : {}), ...(shotId ? { shotId } : {}) },
+        details: {
+          ...(shot ? { shot: KIND_LABEL[shot] } : {}),
+          ...(result ? { result } : {}),
+          ...(club ? { club } : {}),
+          ...(shotId ? { shotId } : {}),
+          ...(shape ? { shape } : {}),
+          ...(dur ? { dur: Math.round(dur * 10) / 10 } : {}),
+        },
         ...(filmOnly ? { visibility: "report" } : {}),
       },
     });
@@ -199,6 +207,9 @@ export function ClipDetail({
                 return;
               }
               const d = (e.target as HTMLVideoElement).duration;
+              const vw = (e.target as HTMLVideoElement).videoWidth;
+              const vh = (e.target as HTMLVideoElement).videoHeight;
+              if (vw && vh) setShape(vh > vw ? "portrait" : "landscape");
               // Safari reports Infinity for fresh recordings until it has read the whole file
               if (Number.isFinite(d)) {
                 setDur(d);
