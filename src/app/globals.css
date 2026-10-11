@@ -1166,3 +1166,6 @@ table.card.compact .shotdot { display: none; }
 .ol-v { font-size: 19px; font-weight: 700; }
 .ol-proj { font-size: 16px; color: var(--ink-soft); }
 .ol-link { margin-left: auto; font-size: 16px; font-weight: 600; color: var(--board); }
+.trimbar .used { position: absolute; top: 0; bottom: 0; background: repeating-linear-gradient(135deg, rgba(0,0,0,0.28) 0 6px, rgba(0,0,0,0.12) 6px 12px); border-radius: 6px; pointer-events: none; }
+.cd-another { justify-content: center; gap: 14px; }
+.cd-another .cd-note { font-size: 18px; text-align: center; }

@@ -123,7 +123,10 @@ export async function cutClip(file: File, start: number, end: number): Promise<B
 export interface PendingClip {
   id: string;
   slug: string;
+  /** The recording. Empty for a second (third…) shot cut from a recording queued already: see `shared` */
   blob: Blob;
+  /** Several shots cut from one recording: the file is uploaded once and every post points at it */
+  shared?: string;
   filename: string;
   meta: Record<string, unknown>; // post fields: roundId, hole, body, tags, playerIds, clipStart, clipEnd
   at: number;
@@ -171,6 +174,15 @@ async function removeClip(id: string) {
 }
 
 /** Upload one clip and create its post. Throws "offline" when there's no connection. */
+const sharedKey = (k: string) => `mgs_shared_upload_${k}`;
+function sharedPath(k: string): string | null {
+  try {
+    return localStorage.getItem(sharedKey(k));
+  } catch {
+    return null;
+  }
+}
+
 export async function sendClip(c: Omit<PendingClip, "id" | "at">, onProgress?: (p: number) => void) {
   const post = async (path: string, body: Record<string, unknown>) => {
     const r = await fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ t: c.slug, ...body }) });
@@ -178,6 +190,10 @@ export async function sendClip(c: Omit<PendingClip, "id" | "at">, onProgress?: (
     if (!r.ok) throw Object.assign(new Error(j.error ?? `Failed (${r.status})`), { status: r.status });
     return j;
   };
+  // Another shot from a recording that's already uploaded: just the post
+  const already = c.shared ? sharedPath(c.shared) : null;
+  if (already) return post("/api/posts", { ...c.meta, kind: "video", mediaPath: already });
+  if (!c.blob.size) throw Object.assign(new Error("waiting"), { waiting: true });
   const up = await post("/api/upload-url", { filename: c.filename, contentType: c.blob.type?.split(";")[0] || "video/mp4" });
   await new Promise<void>((ok, fail) => {
     const xhr = new XMLHttpRequest();
@@ -192,6 +208,11 @@ export async function sendClip(c: Omit<PendingClip, "id" | "at">, onProgress?: (
     fd.append("", c.blob, c.filename);
     xhr.send(fd);
   });
+  if (c.shared) {
+    try {
+      localStorage.setItem(sharedKey(c.shared), up.path);
+    } catch {}
+  }
   await uploadPoster(c.slug, up.path, c.blob, typeof c.meta.trimIn === "number" ? c.meta.trimIn : undefined);
   return post("/api/posts", { ...c.meta, kind: "video", mediaPath: up.path });
 }
@@ -267,6 +288,15 @@ export async function flushClips(slug: string): Promise<{ left: number; error?: 
         await removeClip(c.id);
       } catch (e) {
         const status = (e as { status?: number }).status;
+        // A later shot from a recording whose upload hasn't happened yet: the next pass sends it
+        if ((e as { waiting?: boolean }).waiting) {
+          const all = await pendingClips(slug);
+          if (!all.some((x) => x.shared === c.shared && x.blob.size)) {
+            error = "A shot from a recording that didn't upload couldn't be sent.";
+            await removeClip(c.id);
+          }
+          continue;
+        }
         if (status === 401 || status === 403) {
           error = "Log in again to send the clips waiting on this phone.";
           break; // keep them: logging in fixes it

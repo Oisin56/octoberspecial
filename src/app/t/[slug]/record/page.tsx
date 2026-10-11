@@ -8,7 +8,8 @@ import { ClipDetail } from "@/components/ClipDetail";
 import { setPendingClip, takePendingClip } from "@/lib/pendingClip";
 import { mergeShots } from "@/lib/shotQueue";
 
-const MAX_SECONDS = 60;
+/** In-app recordings up to 3 minutes (several shots can be cut from one) */
+const MAX_SECONDS = 180;
 const MAX_BYTES = 50 * 1024 * 1024;
 
 /** Best format this phone can record: mp4 where it can (iPhone), else webm. */
@@ -115,7 +116,7 @@ function RecordInner() {
     if (phase === "recording") return rec.current?.stop();
     if (!stream.current) return;
     const type = pickType() || undefined;
-    const r = new MediaRecorder(stream.current, { ...(type ? { mimeType: type } : {}), videoBitsPerSecond: 2_500_000, audioBitsPerSecond: 96_000 });
+    const r = new MediaRecorder(stream.current, { ...(type ? { mimeType: type } : {}), videoBitsPerSecond: 1_800_000, audioBitsPerSecond: 96_000 });
     chunks.current = [];
     r.ondataavailable = (e) => e.data.size && chunks.current.push(e.data);
     r.onstop = () => {
