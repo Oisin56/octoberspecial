@@ -13,6 +13,7 @@ export const maxDuration = 60;
 const TOURNAMENT_FIELDS = [
   "name", "subtitle", "start_date", "end_date", "theme", "custom_colors", "logo_path", "hero_path", "tone",
   "side_games", "side_games_by", "teams", "auto_bulletins", "video_enabled", "organiser_player_id", "published",
+  "require_attestation",
 ];
 const PLAYER_FIELDS = [
   "name", "nickname", "handicap", "home_club", "bio", "best_club", "worst_club", "weakness", "quote", "photo_path", "team_id", "sort",
@@ -289,6 +290,11 @@ export async function POST(req: Request) {
       await db.from(table).update({ hidden_by_reports: false }).eq("id", b.id);
       if (!b.hidden) await db.from("reports").delete().eq(table === "posts" ? "post_id" : "comment_id", b.id);
       return json({ ok: true });
+    }
+
+    case "scoreChanges": {
+      const { data, error } = await db.from("score_changes").select("*").eq("tournament_id", t.id).order("at", { ascending: false }).limit(200);
+      return json({ changes: error ? [] : (data ?? []) });
     }
 
     case "blockFan": {

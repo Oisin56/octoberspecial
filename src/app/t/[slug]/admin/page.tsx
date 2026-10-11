@@ -20,10 +20,13 @@ import { DirectorPanel } from "@/components/DirectorPanel";
 import { EmailTab, useSubscribers } from "@/components/EmailAdmin";
 import { Writer, WRITE_TYPES, type WriteType } from "@/components/Writer";
 import { useCountdown } from "@/components/visual";
-import { THEMES, TONE_LABEL } from "@/lib/types";
+import { THEMES, TONE_LABEL, toRoundCfg } from "@/lib/types";
+import { cardInfo } from "@/lib/scorecards";
+import { CardsAdmin } from "@/components/CardsAdmin";
 
 const SECTIONS = {
   rounds: "Rounds and courses",
+  cards: "Scorecards",
   players: "Players and PINs",
   write: "Write and publish",
   email: "Email list",
@@ -84,6 +87,7 @@ export default function Admin() {
       </button>
       <h1>{SECTIONS[s]}</h1>
       {s === "rounds" && <RoundsEditor data={data} onSaved={reload} />}
+      {s === "cards" && <CardsAdmin data={data} onSaved={reload} />}
       {s === "players" && <PlayersEditor data={data} onSaved={reload} />}
       {s === "write" && <Writer key={`${route.type}-${route.roundId}`} data={data} onSaved={reload} start={{ type: route.type, roundId: route.roundId }} />}
       {s === "email" && <EmailTab />}
@@ -136,11 +140,17 @@ function OrganiserHome({ data }: { data: AdminData }) {
   const published = pieces.filter((p) => p.status === "published");
   const noPin = st.players.filter((p) => !data.pinSet[p.id]);
   const complete = rounds.filter((r) => r.status === "complete");
+  const cardStates = rounds
+    .filter((r) => r.status !== "upcoming")
+    .flatMap((r) => toRoundCfg(r, st.players).games.map((g) => ({ round: r, info: cardInfo(st, r.id, g.id) })));
+  const waiting = cardStates.filter((c) => c.info.stage === "finished" || c.info.stage === "submitted");
+  const flagged = cardStates.filter((c) => c.info.flag && c.info.stage === "submitted");
 
   // What needs doing, most urgent first. Only the top two are shown.
   const todo: { text: string; action: string; to: string; external?: boolean }[] = [];
   if (rounds.length === 0) todo.push({ text: "Add the courses you're playing.", action: "Add a round", to: "#rounds" });
   if (st.players.length < 2) todo.push({ text: "Add the players.", action: "Add players", to: "#players" });
+  if (flagged.length) todo.push({ text: `${flagged[0].info.flag!.by} says something's not right on a round ${flagged[0].round.number} card.`, action: "Check the cards", to: "#cards" });
   if (live) todo.push({ text: `Round ${live.number} at ${live.course_name} is under way.`, action: "Enter scores", to: href(`/score?round=${live.number}`), external: true });
   const lastDone = complete[complete.length - 1];
   if (lastDone && !pieces.some((p) => p.kind === "report" && p.round_id === lastDone.id && p.status === "published")) {
@@ -166,6 +176,7 @@ function OrganiserHome({ data }: { data: AdminData }) {
 
   const tiles: [Section, string][] = [
     ["rounds", rounds.length ? `${rounds.length} round${rounds.length === 1 ? "" : "s"}${next ? `, next at ${short(next.course_name)}` : ""}` : "None yet"],
+    ["cards", waiting.length ? `${waiting.length} card${waiting.length === 1 ? "" : "s"} not final yet` : cardStates.length ? "All final" : st.tournament.require_attestation ? "Players sign their cards" : "Final when submitted"],
     ["players", st.players.length ? `${st.players.length} players${noPin.length ? `, ${noPin.length} without a PIN` : ", all with PINs"}` : "None yet"],
     ["write", drafts.length ? `${drafts.length} draft${drafts.length === 1 ? "" : "s"} waiting` : published.length ? `${published.length} published` : "Previews and reports"],
     ["email", !subs.list ? "" : !subs.configured ? "Not switched on yet" : `${subs.active} ${subs.active === 1 ? "person" : "people"} signed up`],

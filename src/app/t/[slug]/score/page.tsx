@@ -11,7 +11,9 @@ import { ShotCard } from "@/components/ShotCard";
 import { matchMoment, scorePrompt, type HoleInfo, type Prompt } from "@/lib/shots";
 import { groupPlayers } from "@/lib/courseCards";
 import { useSwipe } from "@/lib/useSwipe";
-import { ballsOfGame, gameHole, gameShots, ONE_BALL, type BallHole } from "@/lib/engine";
+import { ballsOfGame, ballsOfSide, gameHole, gameShots, ONE_BALL, type BallHole } from "@/lib/engine";
+import { CardPanel } from "@/components/CardPanel";
+import { cardInfo, gameComplete } from "@/lib/scorecards";
 import { shotsOnHole } from "@/lib/scoring";
 import { ballName, sideLabel, toRoundCfg } from "@/lib/types";
 
@@ -26,12 +28,16 @@ function ScoreInner() {
   const [draft, setDraft] = useState<Draft>({});
   const [ctp, setCtp] = useState<string | null>(null);
   const [ld, setLd] = useState<string | null>(null);
+  /** Match play: the side that conceded this hole */
+  const [conceded, setConceded] = useState<string | null>(null);
+  /** Checking the card at the end (submit, sign) */
+  const [review, setReview] = useState(false);
   const [waiting, setWaiting] = useState(0);
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   // Every tap is saved at once; the hole is "finished" (and news of it goes out) when the scorer moves on,
   // or after two quiet minutes
-  const latest = useRef<{ draft: Draft; ctp: string | null; ld: string | null }>({ draft: {}, ctp: null, ld: null });
+  const latest = useRef<{ draft: Draft; ctp: string | null; ld: string | null; conceded: string | null }>({ draft: {}, ctp: null, ld: null, conceded: null });
   const unfinished = useRef<number | null>(null);
   const sendTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -108,16 +114,18 @@ function ScoreInner() {
     if (!round || hole == null || !game) return;
     const h = round.holes.find((x) => x.number === hole)!;
     // A save still waiting on this phone beats what the server last told us
-    const pend = pendingHole(slug, round.id, game.id, hole)?.payload as { scores?: Draft; ctpWinner?: string | null; ldWinner?: string | null } | undefined;
+    const pend = pendingHole(slug, round.id, game.id, hole)?.payload as { scores?: Draft; ctpWinner?: string | null; ldWinner?: string | null; conceded?: string | null } | undefined;
     const e = entries.find((x) => x.hole === hole);
     const d: Draft = {};
     for (const b of balls) d[b] = pend?.scores?.[b] ?? e?.scores[b] ?? { gross: h.par, gir: false, pickedUp: false };
     const c = pend ? (pend.ctpWinner ?? null) : (e?.ctp_winner ?? null);
     const l = pend ? (pend.ldWinner ?? null) : (e?.ld_winner ?? null);
-    latest.current = { draft: d, ctp: c, ld: l };
+    const k = pend ? (pend.conceded ?? null) : (e?.conceded ?? null);
+    latest.current = { draft: d, ctp: c, ld: l, conceded: k };
     setDraft(d);
     setCtp(c);
     setLd(l);
+    setConceded(k);
     setErr(null);
     // a hole that already has scores is finished again when the scorer leaves it (news is only sent once)
     unfinished.current = pend || e ? hole : null;
@@ -194,7 +202,12 @@ function ScoreInner() {
   const gi = rcfg.games.indexOf(game);
   const h = round.holes.find((x) => x.number === hole)!;
   const shots = gameShots(rcfg, game, tcfg.players);
-  const preview = gameHole(rcfg, game, shots, { game: game.id, hole, scores: draft });
+  const preview = gameHole(rcfg, game, shots, { game: game.id, hole, scores: draft, conceded });
+  const card = cardInfo(state, round.id, game.id);
+  const isOrg = session.role === "organiser";
+  // Match play, one ball per side: a side concedes the hole instead of "picking up"
+  const concedes = rcfg.scoring === "match" && game.sides.length === 2 && rcfg.play !== "fourball";
+  const sideOfBall = (b: string) => game.sides.find((sd) => ballsOfSide(sd, rcfg.play).includes(b))?.id ?? null;
   const done = new Set(entries.map((e) => e.hole));
   const canPickUp = rcfg.scoring !== "stroke" || rcfg.play === "fourball";
   const oneBall = ONE_BALL.includes(rcfg.play);
@@ -203,8 +216,8 @@ function ScoreInner() {
   function commit(holeNo: number, final: boolean) {
     if (!round || !game) return;
     const hh = round.holes.find((x) => x.number === holeNo)!;
-    const { draft: d, ctp: c, ld: l } = latest.current;
-    const payload = { scores: d, ctpWinner: hh.par === 3 ? c : null, ldWinner: hh.par === 5 ? l : null, final };
+    const { draft: d, ctp: c, ld: l, conceded: k } = latest.current;
+    const payload = { scores: d, ctpWinner: hh.par === 3 ? c : null, ldWinner: hh.par === 5 ? l : null, conceded: k, final };
     patch((st) => ({
       ...st,
       entries: [
@@ -217,6 +230,7 @@ function ScoreInner() {
           scores: d,
           ctp_winner: payload.ctpWinner,
           ld_winner: payload.ldWinner,
+          conceded: k,
           updated_by: session?.name ?? null,
           updated_at: new Date().toISOString(),
         },
@@ -271,6 +285,22 @@ function ScoreInner() {
   function pickCtp(v: string | null) {
     setCtp(v);
     latest.current = { ...latest.current, ctp: v };
+    changed();
+  }
+  /** One side concedes the hole (tap again to undo): their ball is marked as not holed out. */
+  function concede(sideId: string) {
+    const hh = round!.holes.find((x) => x.number === hole)!;
+    const next = latest.current.conceded === sideId ? null : sideId;
+    const d = { ...latest.current.draft };
+    for (const sd of game!.sides) {
+      for (const b of ballsOfSide(sd, rcfg!.play)) {
+        if (sd.id === next) d[b] = { ...d[b], gross: null, pickedUp: true };
+        else if (d[b]?.pickedUp) d[b] = { ...d[b], gross: hh.par, pickedUp: false };
+      }
+    }
+    latest.current = { ...latest.current, draft: d, conceded: next };
+    setDraft(d);
+    setConceded(next);
     changed();
   }
   function pickLd(v: string | null) {
@@ -332,8 +362,16 @@ function ScoreInner() {
     const was = moments ?? hole!;
     setMoments(null);
     setSlide("fwd");
-    if (was < 18) setHole(was + 1);
-    else router.push(href("/live"));
+    // The match is over (all in, or decided early): check and submit the card
+    if (state && round && game && gameComplete(state, round.id, game) && cardInfo(state, round.id, game.id).stage !== "final") return setReview(true);
+    if (was < 18) return setHole(was + 1);
+    const missing = round!.holes.find((x) => !entries.some((e) => e.hole === x.number));
+    if (missing) {
+      setMsg(`Hole ${missing.number} hasn't been entered yet.`);
+      setTimeout(() => setMsg(null), 4000);
+      return setHole(missing.number);
+    }
+    router.push(href("/live"));
   }
 
   const sideChoices = [...balls.map((b) => ({ id: b as string | null, label: ballName(b, game, state.players) })), { id: null, label: "Nobody" }];
@@ -341,8 +379,24 @@ function ScoreInner() {
     preview.complete && rcfg.scoring === "match" && preview.winner
       ? preview.winner === "halved"
         ? "Hole halved"
-        : `${sideLabel(preview.winner, game, state.players)} win${game.sides.find((s) => s.id === preview.winner)!.playerIds.length > 1 ? "" : "s"} the hole`
+        : `${conceded ? `${sideLabel(conceded, game, state.players)} ${game.sides.find((s) => s.id === conceded)!.playerIds.length > 1 ? "concede" : "concedes"}. ` : ""}${sideLabel(preview.winner, game, state.players)} win${game.sides.find((s) => s.id === preview.winner)!.playerIds.length > 1 ? "" : "s"} the hole`
       : null;
+
+  // The card: checking and submitting at the end, signing, or a final card (read-only except for the organiser)
+  if (review || card.stage === "submitted" || (card.stage === "final" && !isOrg)) {
+    const early = card.stage === "finished" && entries.length < round.holes.length;
+    return (
+      <div className="scorer">
+        <CardPanel
+          roundId={round.id}
+          gameId={game.id}
+          onBack={card.stage === "final" ? undefined : () => setReview(false)}
+          backLabel={early ? "Keep scoring for the side games" : "Back to the holes"}
+          onDone={() => router.push(href("/live"))}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className={`scorer scorecard${slide ? ` slide-${slide}` : ""}`} key={hole} {...swipe}>
@@ -351,6 +405,12 @@ function ScoreInner() {
           R{round.number} · {round.course_name}
         </span>
         <span className="status">{gameLine(round, game, summary.rounds[ri].games[gi], state.players)}</span>
+        {card.stage !== "open" && (
+          <button className="chip" onClick={() => setReview(true)}>
+            The card
+          </button>
+        )}
+        {card.stage === "final" && isOrg && <span className="saved-line final-note">Final card: your changes are logged and it&apos;s marked as amended.</span>}
         {rcfg.games.length > 1 && (
           <button className="chip" onClick={() => { setGameId(null); setHole(null); }}>
             {game.name ?? `Match ${gi + 1}`} ▾
@@ -387,7 +447,7 @@ function ScoreInner() {
             players={groupPlayers(state, round.id, game.id)}
             prompts={q.prompts}
             headline={q.headline}
-            nextLabel={moments < 18 ? `On to hole ${moments + 1}` : "Finish the round"}
+            nextLabel={card.stage === "finished" ? (entries.length < round.holes.length ? "The match is over: check the card" : "Check the card") : moments < 18 ? `On to hole ${moments + 1}` : "Finish the round"}
             backLabel={`back to hole ${moments}`}
             onContinue={onward}
             onBack={() => (setMoments(null), setSlide("back"))}
@@ -423,7 +483,10 @@ function ScoreInner() {
         const sc = draft[b] ?? { gross: h.par };
         const st = shotsOnHole(shots[b] ?? 0, h.si);
         const toPar = sc.gross != null ? sc.gross - h.par : 0;
-        const word = sc.pickedUp
+        const gaveUp = !!conceded && sideOfBall(b) === conceded;
+        const word = gaveUp
+          ? "Conceded"
+          : sc.pickedUp
           ? "Picked up"
           : toPar <= -3 ? "Albatross" : toPar === -2 ? "Eagle" : toPar === -1 ? "Birdie" : toPar === 0 ? "Par" : toPar === 1 ? "Bogey" : toPar === 2 ? "Double" : `+${toPar}`;
         const ptsHere = rcfg.scoring === "stableford" && !sc.pickedUp && sc.gross != null ? Math.max(0, 2 + h.par - (sc.gross - st)) : null;
@@ -437,7 +500,7 @@ function ScoreInner() {
                 </span>
                 <span className="shots">{st > 0 ? `${st} shot${st > 1 ? "s" : ""} here` : ""}</span>
               </span>
-              <button aria-label={`${label} one less`} onClick={() => setB(b, { gross: Math.max(1, (sc.gross ?? h.par) - 1), pickedUp: false })}>
+              <button aria-label={`${label} one less`} disabled={gaveUp} onClick={() => setB(b, { gross: Math.max(1, (sc.gross ?? h.par) - 1), pickedUp: false })}>
                 −
               </button>
               <div className="val" aria-live="polite">
@@ -447,7 +510,7 @@ function ScoreInner() {
                   {ptsHere != null ? ` · ${ptsHere} pts` : ""}
                 </small>
               </div>
-              <button aria-label={`${label} one more`} onClick={() => setB(b, { gross: Math.min(15, (sc.gross ?? h.par) + 1), pickedUp: false })}>
+              <button aria-label={`${label} one more`} disabled={gaveUp} onClick={() => setB(b, { gross: Math.min(15, (sc.gross ?? h.par) + 1), pickedUp: false })}>
                 +
               </button>
             </div>
@@ -455,14 +518,20 @@ function ScoreInner() {
               <button className="toggle" aria-pressed={!!sc.gir} onClick={() => setB(b, { gir: !sc.gir })}>
                 Green in reg
               </button>
-              {canPickUp && (
-                <button
-                  className="toggle"
-                  aria-pressed={!!sc.pickedUp}
-                  onClick={() => setB(b, sc.pickedUp ? { pickedUp: false, gross: h.par } : { pickedUp: true, gross: null })}
-                >
-                  Picked up
+              {concedes ? (
+                <button className="toggle" aria-pressed={gaveUp} onClick={() => sideOfBall(b) && concede(sideOfBall(b)!)}>
+                  Concedes the hole
                 </button>
+              ) : (
+                canPickUp && (
+                  <button
+                    className="toggle"
+                    aria-pressed={!!sc.pickedUp}
+                    onClick={() => setB(b, sc.pickedUp ? { pickedUp: false, gross: h.par } : { pickedUp: true, gross: null })}
+                  >
+                    Picked up
+                  </button>
+                )
               )}
             </div>
           </section>
@@ -503,7 +572,7 @@ function ScoreInner() {
 
       <div className="sticky-save">
         <button className="btn block next-hole" onClick={next}>
-          {hole < 18 ? `Next: hole ${hole + 1}` : "Finish the round"}
+          {hole < 18 ? `Next: hole ${hole + 1}` : "Finish: check the card"}
           <small className={`saved-line${saved === "phone" ? " phone" : ""}`} aria-live="polite">
             {msg ?? (saved === "saving" ? "Saving…" : saved === "saved" ? "✓ Saved for everyone" : saved === "phone" ? "Saved on this phone. Sends when there's signal" : "Every tap is saved as you go")}
           </small>
@@ -520,54 +589,7 @@ function ScoreInner() {
         )}
       </div>
 
-      <Attest roundId={round.id} />
     </div>
-  );
-}
-
-function Attest({ roundId }: { roundId: string }) {
-  const { state, session, summary, refresh, names, api } = useT();
-  const [busy, setBusy] = useState(false);
-  if (!state || !summary || !session?.playerId) return null;
-  const ri = state.rounds.findIndex((r) => r.id === roundId);
-  const rs = summary.rounds[ri];
-  const round = state.rounds[ri];
-  const cfg = toRoundCfg(round, state.players);
-  const myGame = cfg.games.findIndex((g) => g.sides.some((s) => s.playerIds.includes(session.playerId!)));
-  if (myGame < 0) return null;
-  const gs = rs.games[myGame];
-  const segs = (["front", "back"] as const).filter((s) => gs[s].complete);
-  if (!segs.length) return null;
-  const inGame = new Set(cfg.games[myGame].sides.flatMap((s) => s.playerIds));
-  const att = state.attestations.filter((a) => a.round_id === roundId && inGame.has(a.player_id));
-
-  async function attest(segment: "front" | "back") {
-    setBusy(true);
-    await api("/api/attest", { roundId, segment });
-    setBusy(false);
-    refresh();
-  }
-
-  return (
-    <section className="section panel">
-      <h3>Sign the card</h3>
-      {segs.map((s) => {
-        const signed = att.filter((a) => a.segment === s).map((a) => names[a.player_id]);
-        const mine = att.some((a) => a.segment === s && a.player_id === session.playerId);
-        return (
-          <div key={s} className="row" style={{ justifyContent: "space-between", marginTop: 8 }}>
-            <span className="display">
-              {s === "front" ? "Front nine" : "Back nine"}: {signed.length ? `signed by ${signed.join(" & ")}` : "not signed"}
-            </span>
-            {!mine && (
-              <button className="btn secondary" disabled={busy} onClick={() => attest(s)}>
-                I agree with this card
-              </button>
-            )}
-          </div>
-        );
-      })}
-    </section>
   );
 }
 

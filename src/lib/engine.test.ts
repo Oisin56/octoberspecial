@@ -6,6 +6,7 @@ import {
   gameShots,
   oneBallHandicap,
   gameSummary,
+  gameHole,
   type RoundCfg,
   type TournamentCfg,
   type HoleEntry,
@@ -57,7 +58,9 @@ describe("regression: new engine == October Special engine", () => {
       const newEntries: Record<string, HoleEntry[]> = {};
       for (const rc of oldCfg.rounds) {
         // Some rounds unplayed, some partial, most complete
-        const played = r() < 0.15 ? 0 : r() < 0.25 ? Math.floor(r() * 18) : 18;
+        // (match rounds are only compared unplayed or complete: the new engine settles a match as soon as it's decided, e.g. 4&3)
+        let played = r() < 0.15 ? 0 : r() < 0.25 ? Math.floor(r() * 18) : 18;
+        if (rc.format === "match" && played > 0 && played < 18) played = 18;
         const es: old.HoleEntry[] = [];
         for (let h = 1; h <= played; h++) {
           const par = PARS[h - 1];
@@ -388,5 +391,52 @@ describe("review fixes", () => {
     expect(closed.complete).toBe(true);
     expect(closed.pointsRemaining).toBe(0);
     expect(closed.playerTotal.a).toBe(40 + 10 + 10); // R1 + R2 front nine + CTP
+  });
+});
+
+describe("match play: conceded holes and early finishes", () => {
+  const P = ["a", "b"];
+  const cfg = (): RoundCfg => ({
+    id: "r1",
+    number: 1,
+    name: "R1",
+    holes,
+    play: "singles",
+    scoring: "match",
+    games: [{ id: "main", sides: P.map((p) => ({ id: p, playerIds: [p] })) }],
+    points: { front: 10, back: 10, full: 20 },
+    handicap: { mode: "manual", shots: { a: 0, b: 0 } },
+  });
+  const game = () => cfg().games[0];
+  const e = (hole: number, a: number | null, b: number | null, conceded?: string): HoleEntry => ({
+    game: "main",
+    hole,
+    scores: { a: { gross: a }, b: { gross: b } },
+    ...(conceded ? { conceded } : {}),
+  });
+
+  it("a conceded hole goes to the other side with no scores needed", () => {
+    const res = gameHole(cfg(), game(), { a: 0, b: 0 }, { game: "main", hole: 1, scores: {}, conceded: "b" });
+    expect(res.complete).toBe(true);
+    expect(res.winner).toBe("a");
+  });
+
+  it("conceding beats whatever scores are on the card", () => {
+    const res = gameHole(cfg(), game(), { a: 0, b: 0 }, e(1, 7, 3, "b"));
+    expect(res.winner).toBe("a");
+  });
+
+  it("a concession only counts in match play", () => {
+    const stroke = { ...cfg(), scoring: "stroke" as const };
+    const res = gameHole(stroke, stroke.games[0], { a: 0, b: 0 }, e(1, 4, 5, "a"));
+    expect(res.winner).toBe("a"); // lower net, concession ignored
+  });
+
+  it("a match won 4&3 is complete and its points are paid without the last three holes", () => {
+    const entries = Array.from({ length: 15 }, (_, i) => e(i + 1, i < 4 ? 3 : 4, 4));
+    const gs = gameSummary(cfg(), game(), P.map((id) => ({ id, name: id })), entries);
+    expect(gs.full.matchLabel).toBe("a won 4&3");
+    expect(gs.full.complete).toBe(true);
+    expect(gs.points.a).toBe(30); // front nine (4 up) + the match
   });
 });

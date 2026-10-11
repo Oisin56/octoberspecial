@@ -115,6 +115,8 @@ export interface HoleEntry {
   scores: Record<string, BallHole>; // ball id -> score
   ctpWinner?: string | null; // ball id
   ldWinner?: string | null; // ball id
+  /** Match play: the side that conceded the hole (the other side wins it; no scores needed) */
+  conceded?: string | null;
 }
 
 // ---------------------------------------------------------------- balls + shots
@@ -216,6 +218,17 @@ export function gameHole(
   const h = round.holes.find((x) => x.number === entry?.hole);
   const res: GameHole = { hole: entry?.hole ?? -1, complete: false, sides: {}, winner: null };
   if (!h || !entry) return res;
+  // Conceded: the other side wins the hole, whatever (if anything) is on the card
+  const gave = round.scoring === "match" && game.sides.length === 2 && entry.conceded ? game.sides.find((s) => s.id === entry.conceded) : undefined;
+  if (gave) {
+    for (const side of game.sides) {
+      const nets = side.id === gave.id ? [] : ballsOfSide(side, round.play).map((b) => ballNet(entry.scores[b], shotsOnHole(shots[b] ?? 0, h.si))).filter((n): n is number => n != null);
+      res.sides[side.id] = { complete: true, net: nets.length ? Math.min(...nets) : null, pts: 0 };
+    }
+    res.complete = true;
+    res.winner = game.sides.find((s) => s.id !== gave.id)!.id;
+    return res;
+  }
   for (const side of game.sides) {
     const balls = ballsOfSide(side, round.play);
     const complete = balls.every((b) => ballDone(entry.scores[b], round.scoring, round.play));
@@ -331,7 +344,8 @@ export function segmentResult(
     }
   }
 
-  const complete = played === holes.length;
+  // A match is over once it's decided (e.g. won 4&3): the last holes aren't needed
+  const complete = played === holes.length || !!decided;
   const lowerBetter = round.scoring === "stroke";
   const ranking = played > 0 ? rank(value, lowerBetter) : [];
   const leaders = ranking.filter((r) => r.pos === 1).map((r) => r.sideId);

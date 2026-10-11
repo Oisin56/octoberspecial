@@ -1,10 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useT, type ClientSession } from "./Providers";
+import { Sheet } from "./Sheet";
 import { Paras, timeAgo } from "./ui";
 import { cleanBody, cleanTitle } from "@/lib/cleanText";
 import { clipUrl, mediaUrl } from "@/lib/supabase";
@@ -604,36 +604,6 @@ function Composer({ roundId, onJoin, say }: { roundId?: string; onJoin: () => vo
 }
 
 // ------------------------------------------------------------ sheets
-
-function Sheet({ label, onClose, children, dark, tall }: { label: string; onClose: () => void; children: React.ReactNode; dark?: boolean; tall?: boolean }) {
-  useEffect(() => {
-    const html = document.documentElement;
-    const was = html.style.overflow;
-    html.style.overflow = "hidden";
-    const key = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", key);
-    return () => {
-      html.style.overflow = was;
-      window.removeEventListener("keydown", key);
-    };
-  }, [onClose]);
-  const host = document.querySelector(".theme-root") ?? document.body;
-  return createPortal(
-    <div className={`sf-sheet-wrap${dark ? " dark" : ""}`}>
-      <button className="sf-backdrop" aria-hidden="true" tabIndex={-1} onClick={onClose} />
-      <div className={`sf-sheet${tall ? " tall" : ""}`} role="dialog" aria-modal="true" aria-label={label}>
-        <div className="sf-sheet-head">
-          <h2>{label}</h2>
-          <button className="sf-close" onClick={onClose}>
-            Close
-          </button>
-        </div>
-        {children}
-      </div>
-    </div>,
-    host,
-  );
-}
 
 function CommentSheet({ post, onClose, onJoin, onMenu, say }: { post: PostRow; onClose: () => void; onJoin: () => void; onMenu: (c: CommentRow) => void; say: (m: string) => void }) {
   const { state, session, api, refresh } = useT();

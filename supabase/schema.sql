@@ -31,6 +31,8 @@ alter table tournaments add column if not exists organiser_player_id text;
 alter table tournaments add column if not exists contributor_pin_hash text;
 alter table tournaments add column if not exists published boolean not null default true;
 alter table tournaments add column if not exists reel_music_path text;
+-- Cards must be signed by every player in the match before they're final (organiser can change any time)
+alter table tournaments add column if not exists require_attestation boolean not null default false;
 
 create table if not exists players (
   id text primary key,
@@ -95,6 +97,8 @@ create table if not exists hole_entries (
   updated_at timestamptz not null default now()
 );
 alter table hole_entries add column if not exists game text not null default 'main';
+-- Match play: the side that conceded the hole (the other side wins it)
+alter table hole_entries add column if not exists conceded text;
 alter table hole_entries drop constraint if exists hole_entries_round_id_hole_key;
 do $$ begin
   alter table hole_entries add constraint hole_entries_round_game_hole_key unique (round_id, game, hole);
@@ -229,6 +233,42 @@ create index if not exists posts_t_idx on posts (tournament_id, created_at desc)
 create index if not exists comments_t_idx on comments (tournament_id, created_at desc);
 create index if not exists ai_t_idx on ai_pieces (tournament_id, created_at desc);
 create index if not exists hole_entries_round_idx on hole_entries (round_id);
+
+-- Cards: each match's scorer submits the card; it's final once signed (when signing is required)
+create table if not exists cards (
+  round_id uuid not null references rounds(id) on delete cascade,
+  game text not null default 'main',
+  status text not null check (status in ('submitted','final')),
+  submitted_by text,
+  submitted_at timestamptz,
+  final_at timestamptz,
+  finalised_by text,
+  amended boolean not null default false,
+  flag_by text,
+  flag_note text,
+  flag_at timestamptz,
+  primary key (round_id, game)
+);
+create table if not exists card_signatures (
+  round_id uuid not null references rounds(id) on delete cascade,
+  game text not null default 'main',
+  player_id text not null references players(id) on delete cascade,
+  at timestamptz not null default now(),
+  primary key (round_id, game, player_id)
+);
+-- Every change to a final card: who, when, before and after (organiser only)
+create table if not exists score_changes (
+  id uuid primary key default gen_random_uuid(),
+  tournament_id uuid not null references tournaments(id) on delete cascade,
+  round_id uuid not null references rounds(id) on delete cascade,
+  game text not null,
+  hole int,
+  action text not null,
+  before jsonb,
+  after jsonb,
+  by_name text,
+  at timestamptz not null default now()
+);
 create index if not exists votes_t_idx on votes (tournament_id);
 -- One automatic bulletin per moment, even if saves arrive at the same time
 create unique index if not exists ai_auto_trigger_uniq on ai_pieces (round_id, kind, trigger)
@@ -249,6 +289,9 @@ alter table ai_pieces enable row level security;
 alter table votes enable row level security;
 alter table shots enable row level security;
 alter table likes enable row level security;
+alter table cards enable row level security;
+alter table card_signatures enable row level security;
+alter table score_changes enable row level security;
 alter table reports enable row level security;
 
 drop policy if exists read_all on rounds;
@@ -257,6 +300,10 @@ drop policy if exists read_all on hole_entries;
 create policy read_all on hole_entries for select using (true);
 drop policy if exists read_all on attestations;
 create policy read_all on attestations for select using (true);
+drop policy if exists read_all on cards;
+create policy read_all on cards for select using (true);
+drop policy if exists read_all on card_signatures;
+create policy read_all on card_signatures for select using (true);
 drop policy if exists read_all on likes;
 create policy read_all on likes for select using (true);
 drop policy if exists read_all on shots;
@@ -276,7 +323,8 @@ revoke select on tournaments from anon, authenticated;
 drop view if exists public_tournaments;
 create view public_tournaments with (security_invoker = false) as
   select id, slug, name, subtitle, start_date, end_date, theme, custom_colors, logo_path, hero_path, tone,
-         side_games, side_games_by, teams, auto_bulletins, video_enabled, organiser_player_id, published, created_at, reel_music_path
+         side_games, side_games_by, teams, auto_bulletins, video_enabled, organiser_player_id, published, created_at, reel_music_path,
+         require_attestation
   from tournaments;
 grant select on public_tournaments to anon, authenticated;
 
@@ -285,7 +333,8 @@ revoke select on players from anon, authenticated;
 drop view if exists public_players;
 create view public_players with (security_invoker = false) as
   select id, tournament_id, name, nickname, handicap, home_club, bio, best_club,
-         worst_club, weakness, quote, photo_path, sort, team_id
+         worst_club, weakness, quote, photo_path, sort, team_id,
+         (pin_hash is not null) as has_pin
   from players;
 grant select on public_players to anon, authenticated;
 
@@ -301,6 +350,8 @@ begin
   begin alter publication supabase_realtime add table votes; exception when others then null; end;
   begin alter publication supabase_realtime add table shots; exception when others then null; end;
   begin alter publication supabase_realtime add table likes; exception when others then null; end;
+  begin alter publication supabase_realtime add table cards; exception when others then null; end;
+  begin alter publication supabase_realtime add table card_signatures; exception when others then null; end;
 end $$;
 
 -- ------------------------------------------------------------ storage
@@ -352,12 +403,13 @@ alter table ai_pieces add column if not exists prev_body text;
 grant usage on schema public to anon, authenticated, service_role;
 grant all on all tables in schema public to service_role;
 grant all on all sequences in schema public to service_role;
-grant select on rounds, hole_entries, attestations, posts, comments, ai_pieces, votes, shots, likes to anon, authenticated;
+grant select on rounds, hole_entries, attestations, posts, comments, ai_pieces, votes, shots, likes, cards, card_signatures to anon, authenticated;
 grant select on public_tournaments, public_players to anon, authenticated;
 revoke all on reels from anon, authenticated;
 revoke all on subscribers from anon, authenticated;
 revoke all on fans from anon, authenticated;
 revoke all on reports from anon, authenticated;
+revoke all on score_changes from anon, authenticated;
 
 -- Tell the API about the new tables straight away
 notify pgrst, 'reload schema';

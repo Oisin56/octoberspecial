@@ -1049,3 +1049,47 @@ html.has-oncourse.on-score main { padding-bottom: 0; }
   .sf-page .sf-all, .sf-page .sf-empty { margin: 0 16px; }
 }
 .sf-compose:focus-within { box-shadow: 0 0 0 3px color-mix(in srgb, var(--bracken) 45%, transparent), var(--shadow-sm); }
+
+/* ------------------------------------------------ the card at the end of a match */
+.cp { display: flex; flex-direction: column; gap: 12px; padding-bottom: 8px; }
+.cp-head { display: grid; gap: 2px; }
+.cp-where { margin: 0; font-family: var(--font-display); font-size: 16px; color: var(--ink-soft); }
+.cp-title { margin: 0; font-size: 26px; line-height: 1.1; }
+.cp-result { margin: 2px 0 0; font-family: var(--font-display); font-size: 22px; font-weight: 700; color: var(--board); }
+.cp-stage, .card-stage { justify-self: start; display: inline-block; margin: 6px 0 0; font-family: var(--font-display); font-size: 16px; font-weight: 600; padding: 4px 12px; border-radius: 999px; background: var(--mist); color: var(--ink-soft); }
+.cp-stage.finished, .card-stage.finished { background: color-mix(in srgb, var(--bracken) 16%, var(--paper)); color: color-mix(in srgb, var(--bracken) 75%, black); }
+.cp-stage.submitted, .card-stage.submitted { background: color-mix(in srgb, var(--blue) 12%, var(--paper)); color: var(--blue); }
+.cp-stage.final, .card-stage.final { background: var(--board); color: var(--tile); }
+.card-stage { margin: 0 0 4px; }
+.cp-card { background: var(--paper); border-radius: 14px; padding: 8px; border: 1px solid var(--rule); }
+.cp-card .card-scroll { margin: 0; }
+.cp-flag { display: grid; gap: 4px; padding: 12px 14px; border-radius: 14px; background: color-mix(in srgb, var(--red) 9%, var(--paper)); border: 1.5px solid color-mix(in srgb, var(--red) 40%, transparent); font-size: 17px; }
+.cp-flag strong { font-family: var(--font-display); font-size: 19px; color: var(--red); }
+.cp-signers { display: grid; gap: 8px; }
+.cp-signer { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 64px; padding: 8px 10px 8px 16px; border-radius: 14px; background: var(--paper); border: 1.5px solid var(--rule); }
+.cp-signer.done { border-color: color-mix(in srgb, var(--ok) 45%, var(--rule)); }
+.cp-signer-name { font-family: var(--font-display); font-size: 22px; font-weight: 700; }
+.cp-signer .btn { min-height: 52px; padding: 0 26px; font-size: 19px; }
+.cp-signed { font-family: var(--font-display); font-size: 18px; font-weight: 700; color: var(--ok); padding-right: 8px; }
+.cp-foot { display: grid; gap: 10px; }
+.cp-foot .btn { min-height: 58px; font-size: 19px; }
+.btn.cp-main { min-height: 64px; font-size: 21px; }
+.cp-err { margin: 0; }
+.cp-pin { display: grid; gap: 6px; font-family: var(--font-display); font-size: 18px; font-weight: 600; }
+.cp-pin input { min-height: 64px; font-size: 32px; letter-spacing: 0.4em; text-align: center; border-radius: 14px; font-family: var(--font-display); }
+.cp-sign p { font-size: 17px; }
+.final-note { flex-basis: 100%; color: var(--bracken) !important; }
+.sign-prompt { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 12px; padding-top: 12px; padding-bottom: 12px; background: color-mix(in srgb, var(--blue) 10%, var(--paper)); border: 1.5px solid color-mix(in srgb, var(--blue) 35%, transparent); border-radius: 14px; font-family: var(--font-display); font-size: 18px; font-weight: 600; }
+.sign-prompt .btn { min-height: 50px; }
+.ca-card { display: grid; gap: 8px; padding: 12px 0; border-top: 1px solid var(--rule); }
+.ca-card:first-of-type { border-top: 0; }
+.ca-what { display: grid; gap: 4px; }
+.ca-what strong { font-family: var(--font-display); font-size: 19px; }
+.ca-change { display: grid; gap: 2px; padding: 8px 0; border-top: 1px solid var(--rule); }
+.scorecard .stepper button:disabled { opacity: 0.35; }
+table.card.compact { font-size: 15px; }
+table.card.compact th, table.card.compact td { padding: 3px 1px; min-width: 0; vertical-align: middle; }
+table.card.compact td.label { padding: 3px 6px; max-width: 64px; overflow: hidden; text-overflow: ellipsis; }
+table.card.compact .sc { width: 23px; height: 23px; }
+table.card.compact .shotdot { display: none; }
+.cp-card { padding: 6px; }

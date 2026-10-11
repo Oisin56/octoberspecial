@@ -103,7 +103,8 @@ describe("score bug", () => {
     const full1 = Array.from({ length: 18 }, (_, i) => entry("r1", i + 1, PAR[i] - 1, PAR[i] + 1)); // Oisin wins all 3 segments: 40-0
     const front2 = Array.from({ length: 9 }, (_, i) => entry("r2", i + 1, PAR[i] + 1, PAR[i])); // Neil wins front 9 of R2
     const s = { tournament, players, rounds: [r1, r2], entries: [...full1, ...front2] };
-    expect(scoreBug(s, { round: 2, hole: 9 })!.footer).toBe("Oisin 40 · Neil 0");
+    // Neil won the front nine on the 5th (5 up with 4 to play): banked from then on
+    expect(scoreBug(s, { round: 2, hole: 9 })!.footer).toBe("Oisin 40 · Neil 10");
     expect(scoreBug(s, { round: 2, hole: 9, after: true })!.footer).toBe("Oisin 40 · Neil 10");
     // Clip from round 1 doesn't see round 2
     expect(scoreBug(s, { round: 1, hole: 18 })!.footer).toBe("Oisin 10 · Neil 0") // front nine already banked;

@@ -529,6 +529,15 @@ async function writeClaimed(
   }
 }
 
+/** Every card in the round is final: mark it complete and draft the report (for the organiser to publish). */
+export async function roundFinal(tid: string, roundId: string) {
+  await adminClient().from("rounds").update({ status: "complete" }).eq("id", roundId);
+  const s = await loadServerState(tid);
+  if (!process.env.ANTHROPIC_API_KEY || s.tournament.auto_bulletins === false) return;
+  if (s.pieces.some((p) => p.round_id === roundId && p.trigger === "auto-report")) return;
+  await writeClaimed(tid, roundId, "report", "auto-report", { publish: false });
+}
+
 /**
  * Called after each saved hole. Marks finished rounds complete, writes a live
  * bulletin at key moments, and drafts the report when the round is over.
@@ -542,8 +551,12 @@ export async function maybeBulletin(tid: string, roundId: string, gameId: string
   const entries = toEntries(s.entries)[roundId] ?? [];
   const rs = roundSummary(cfg, players, s.tournament.teams, entries);
 
+  // Every score in: the round is finished (provisional). It's final once every card is submitted
+  // (and signed, if the tournament asks for it). A database without cards keeps the old rule.
+  let legacy = false;
   if (rs.complete && round.status !== "complete") {
-    await adminClient().from("rounds").update({ status: "complete" }).eq("id", roundId);
+    legacy = !!(await adminClient().from("cards").select("round_id").limit(1)).error;
+    if (legacy) await adminClient().from("rounds").update({ status: "complete" }).eq("id", roundId);
   }
   const aiOn = !!process.env.ANTHROPIC_API_KEY && s.tournament.auto_bulletins !== false;
   if (!aiOn) return;
@@ -552,10 +565,10 @@ export async function maybeBulletin(tid: string, roundId: string, gameId: string
   if (rs.complete) {
     if (!existing.has("round-complete"))
       await writeClaimed(tid, roundId, "bulletin", "round-complete", {
-        reason: "the round has just finished — give the final results",
+        reason: "the round has just finished — give the results (provisional until the cards are in)",
         publish: true,
       });
-    if (!existing.has("auto-report")) await writeClaimed(tid, roundId, "report", "auto-report", { publish: false });
+    if (legacy && !existing.has("auto-report")) await writeClaimed(tid, roundId, "report", "auto-report", { publish: false });
     return;
   }
 

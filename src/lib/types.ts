@@ -34,6 +34,8 @@ export interface TournamentRow {
   teams: Team[];
   auto_bulletins: boolean;
   video_enabled: boolean;
+  /** Cards must be signed by every player in the match before they're final */
+  require_attestation?: boolean;
   organiser_player_id: string | null;
   published: boolean;
   reel_music_path?: string | null;
@@ -54,6 +56,8 @@ export interface PlayerRow {
   photo_path: string | null;
   sort: number;
   team_id: string | null;
+  /** A PIN is set (players sign cards with it on the scorer's phone) */
+  has_pin?: boolean;
 }
 
 /** Background on the course for the AI writer: overview, signature holes, notes per hole. */
@@ -118,6 +122,8 @@ export interface HoleEntryRow {
   scores: Record<string, BallHole>;
   ctp_winner: string | null;
   ld_winner: string | null;
+  /** Match play: the side that conceded the hole */
+  conceded?: string | null;
   updated_by: string | null;
   updated_at: string;
 }
@@ -225,6 +231,30 @@ export interface TournamentState {
   /** Shots logged on the course (absent until the database has the table) */
   shots?: ShotRow[];
   likes?: LikeRow[];
+  /** Submitted and final cards, and who signed them (absent until the database has the tables) */
+  cards?: CardRow[];
+  signatures?: CardSignatureRow[];
+}
+
+export interface CardRow {
+  round_id: string;
+  game: string;
+  status: "submitted" | "final";
+  submitted_by: string | null;
+  submitted_at: string | null;
+  final_at: string | null;
+  finalised_by: string | null;
+  amended: boolean;
+  flag_by: string | null;
+  flag_note: string | null;
+  flag_at: string | null;
+}
+
+export interface CardSignatureRow {
+  round_id: string;
+  game: string;
+  player_id: string;
+  at: string;
 }
 
 export interface ShotRow {
@@ -291,6 +321,7 @@ export function toEntries(rows: HoleEntryRow[]): Record<string, HoleEntry[]> {
       scores: r.scores ?? {},
       ctpWinner: r.ctp_winner,
       ldWinner: r.ld_winner,
+      conceded: r.conceded ?? null,
     });
   }
   return out;

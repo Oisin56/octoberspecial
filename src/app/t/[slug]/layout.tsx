@@ -4,6 +4,7 @@ import { Providers } from "@/components/Providers";
 import { SiteHeader } from "@/components/SiteHeader";
 import { ThemeRoot } from "@/components/ThemeRoot";
 import { ClipQueue } from "@/components/ClipQueue";
+import { SignPrompt } from "@/components/SignPrompt";
 import { OnCourseBar } from "@/components/OnCourseBar";
 import type { Metadata, Viewport } from "next";
 import { tournamentBySlug } from "@/lib/server-data";
@@ -33,6 +34,7 @@ export default async function TournamentLayout({ children, params }: LayoutProps
       <ThemeRoot>
         <SiteHeader />
         <ClipQueue />
+        <SignPrompt />
         <main className="wrap">{children}</main>
         <OnCourseBar />
         <footer className="made-with">

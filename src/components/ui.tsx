@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useT } from "./Providers";
 import { cleanBody, cleanTitle } from "@/lib/cleanText";
+import { cardInfo, cardLabel } from "@/lib/scorecards";
 import { CountUp, CourseImage, Icon } from "./visual";
 import { ballsOfGame, gameHole, type Game, type GameSummary, type SegmentResult } from "@/lib/engine";
 import { shotsOnHole } from "@/lib/scoring";
@@ -276,7 +277,8 @@ export function gameLine(round: RoundRow, game: Game, gs: GameSummary, players: 
 
 // ------------------------------------------------------------ scorecard
 
-function ScoreMark({ gross, par, pickedUp }: { gross: number | null; par: number; pickedUp?: boolean }) {
+function ScoreMark({ gross, par, pickedUp, conceded }: { gross: number | null; par: number; pickedUp?: boolean; conceded?: boolean }) {
+  if (conceded) return <span className="sc" title="Conceded the hole">C</span>;
   if (pickedUp) return <span className="sc">P</span>;
   if (gross == null) return <span className="sc"> </span>;
   const d = gross - par;
@@ -284,8 +286,8 @@ function ScoreMark({ gross, par, pickedUp }: { gross: number | null; par: number
   return <span className={`sc ${cls}`}>{gross}</span>;
 }
 
-export function Scorecard({ round, gameIndex = 0 }: { round: RoundRow; gameIndex?: number }) {
-  const { state, summary } = useT();
+export function Scorecard({ round, gameIndex = 0, badge = true, compact = false }: { round: RoundRow; gameIndex?: number; badge?: boolean; compact?: boolean }) {
+  const { state, summary, names } = useT();
   if (!state || !summary) return null;
   const cfg = toRoundCfg(round, state.players);
   const game = cfg.games[gameIndex];
@@ -301,11 +303,13 @@ export function Scorecard({ round, gameIndex = 0 }: { round: RoundRow; gameIndex
     return n.length > 12 ? n.split(" & ").map((x) => x.slice(0, 3)).join("/") : n;
   };
 
+  const card = cardInfo(state, round.id, game.id);
   return (
     <div className="stack">
+      {badge && card.stage !== "open" && <p className={`card-stage ${card.stage}`}>{cardLabel(card, names)}</p>}
       {halves.map((holes, hi) => (
         <div className="card-scroll" key={hi}>
-          <table className="card">
+          <table className={`card${compact ? " compact" : ""}`}>
             <thead>
               <tr>
                 <th>{hi === 0 ? "Out" : "In"}</th>
@@ -323,6 +327,7 @@ export function Scorecard({ round, gameIndex = 0 }: { round: RoundRow; gameIndex
                 ))}
                 <td className="sum">{holes.reduce((a, h) => a + h.par, 0)}</td>
               </tr>
+              {!compact && (
               <tr>
                 <td className="label">SI</td>
                 {holes.map((h) => (
@@ -332,6 +337,7 @@ export function Scorecard({ round, gameIndex = 0 }: { round: RoundRow; gameIndex
                 ))}
                 <td className="sum"></td>
               </tr>
+              )}
               {balls.map((b) => {
                 let tot = 0;
                 return (
@@ -349,7 +355,7 @@ export function Scorecard({ round, gameIndex = 0 }: { round: RoundRow; gameIndex
                       const dots = shotsOnHole(gs.shots[b] ?? 0, h.si);
                       return (
                         <td key={h.number} className={won ? "won" : ""} title={dots ? `${dots} shot${dots > 1 ? "s" : ""}` : undefined}>
-                          <ScoreMark gross={sc?.gross ?? null} par={h.par} pickedUp={sc?.pickedUp} />
+                          <ScoreMark gross={sc?.gross ?? null} par={h.par} pickedUp={sc?.pickedUp} conceded={!!e?.conceded && e.conceded === sideOf(b)} />
                           {dots > 0 && <span className="shotdot" aria-hidden>{"•".repeat(dots)}</span>}
                         </td>
                       );
@@ -358,6 +364,8 @@ export function Scorecard({ round, gameIndex = 0 }: { round: RoundRow; gameIndex
                   </tr>
                 );
               })}
+              {!compact && (
+              <>
               <tr>
                 <td className="label muted">GIR</td>
                 {holes.map((h) => {
@@ -384,12 +392,14 @@ export function Scorecard({ round, gameIndex = 0 }: { round: RoundRow; gameIndex
                 })}
                 <td className="sum"></td>
               </tr>
+              </>
+              )}
             </tbody>
           </table>
         </div>
       ))}
-      <p className="small muted">
-        Circle = birdie, double circle = eagle, square = bogey, dots = shots received. Shaded = hole won (match play). P = picked up.
+      <p className="small muted" hidden={compact}>
+        Circle = birdie, double circle = eagle, square = bogey, dots = shots received. Shaded = hole won (match play). P = picked up. C = conceded the hole.
       </p>
     </div>
   );

@@ -49,21 +49,47 @@ export async function POST(req: Request) {
   const pick = (w: unknown) => (typeof w === "string" && balls.includes(w) ? w : null);
   const ctp = h.par === 3 ? pick(body.ctpWinner) : null;
   const ld = h.par === 5 ? pick(body.ldWinner) : null;
+  // Match play: one side concedes the hole
+  const conceded =
+    cfg.scoring === "match" && game.sides.length === 2 && typeof body.conceded === "string" && game.sides.some((sd) => sd.id === body.conceded) ? (body.conceded as string) : null;
 
-  const { error } = await db.from("hole_entries").upsert(
-    {
-      round_id: roundId,
-      game: gameId,
-      hole,
-      scores,
-      ctp_winner: ctp,
-      ld_winner: ld,
-      updated_by: session.name,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: "round_id,game,hole" },
-  );
+  // A submitted card is taken back by any change (signatures cleared); a final one only the organiser can change, and it's logged
+  const cardKey = { round_id: roundId, game: gameId };
+  const { data: card, error: cardErr } = await db.from("cards").select("status").match(cardKey).maybeSingle();
+  const final = card?.status === "final" || (!card && !cardErr && round.status === "complete");
+  if (final && session.role !== "organiser") return bad("This card is final. Only the organiser can change it now.", 409);
+  const { data: before } = await db.from("hole_entries").select("scores,ctp_winner,ld_winner,conceded").match({ ...cardKey, hole }).maybeSingle();
+
+  const row = {
+    round_id: roundId,
+    game: gameId,
+    hole,
+    scores,
+    ctp_winner: ctp,
+    ld_winner: ld,
+    conceded,
+    updated_by: session.name,
+    updated_at: new Date().toISOString(),
+  };
+  let { error } = await db.from("hole_entries").upsert(row, { onConflict: "round_id,game,hole" });
+  // Database not updated yet (schema.sql not re-run): save the scores without the concession
+  if (error && /conceded/.test(error.message)) {
+    const { conceded: _c, ...rest } = row;
+    void _c;
+    ({ error } = await db.from("hole_entries").upsert(rest, { onConflict: "round_id,game,hole" }));
+  }
   if (error) return bad(error.message, 500);
+
+  const after_ = { scores, ctp_winner: ctp, ld_winner: ld, conceded };
+  const changed = JSON.stringify(before ?? null) !== JSON.stringify(after_);
+  if (final && changed) {
+    await db.from("score_changes").insert({ tournament_id: t.id, ...cardKey, hole, action: "score changed on a final card", before: before ?? null, after: after_, by_name: session.name });
+    if (card) await db.from("cards").update({ amended: true }).match(cardKey);
+    else await db.from("cards").upsert({ ...cardKey, status: "final", final_at: new Date().toISOString(), finalised_by: "Closed round", amended: true }, { onConflict: "round_id,game" });
+  } else if (card?.status === "submitted" && changed) {
+    await db.from("card_signatures").delete().match(cardKey);
+    await db.from("cards").delete().match(cardKey);
+  }
 
   if (round.status === "upcoming") await db.from("rounds").update({ status: "live" }).eq("id", roundId);
 
