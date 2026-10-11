@@ -9,6 +9,7 @@ import { enqueue, flush, pendingHole, queued } from "@/lib/offlineQueue";
 import { readScorePos, writeScorePos } from "@/lib/scorePos";
 import { HoleMoments } from "@/components/HoleMoments";
 import { groupPlayers } from "@/lib/courseCards";
+import { useSwipe } from "@/lib/useSwipe";
 import { ballsOfGame, gameHole, gameShots, ONE_BALL, type BallHole } from "@/lib/engine";
 import { shotsOnHole } from "@/lib/scoring";
 import { ballName, formatLabel, sideLabel, toRoundCfg } from "@/lib/types";
@@ -37,6 +38,8 @@ function ScoreInner() {
   const [picking, setPicking] = useState(false);
   /** The hole just finished, while the "anything the card won't show?" card is up */
   const [moments, setMoments] = useState<number | null>(null);
+  /** Which way the last move went, for the slide-in */
+  const [slide, setSlide] = useState<"fwd" | "back" | null>(null);
 
   const round = useMemo(() => {
     if (!state) return null;
@@ -56,6 +59,12 @@ function ScoreInner() {
     () => (state && round && game ? state.entries.filter((e) => e.round_id === round.id && (e.game ?? "main") === game.id) : []),
     [state, round, game],
   );
+
+  // Swipe left = Next (this hole is done), right = the previous hole
+  const swipe = useSwipe({
+    onLeft: () => moments == null && hole != null && next(),
+    onRight: () => moments == null && hole != null && hole > 1 && (setSlide("back"), goTo(hole - 1)),
+  });
 
   // Back from the camera: say the clip is saved
   useEffect(() => {
@@ -285,6 +294,7 @@ function ScoreInner() {
   function onward() {
     const was = moments ?? hole!;
     setMoments(null);
+    setSlide("fwd");
     if (was < 18) setHole(was + 1);
     else router.push(href("/live"));
   }
@@ -298,7 +308,7 @@ function ScoreInner() {
       : null;
 
   return (
-    <div className="scorer scorecard">
+    <div className={`scorer scorecard${slide ? ` slide-${slide}` : ""}`} key={hole} {...swipe}>
       <div className="score-top">
         <span className="where">
           R{round.number} · {round.course_name}
@@ -336,6 +346,7 @@ function ScoreInner() {
           players={groupPlayers(state, round.id, game.id)}
           nextLabel={moments < 18 ? `On to hole ${moments + 1}` : "Finish the round"}
           onContinue={onward}
+          onBack={() => (setMoments(null), setSlide("back"))}
           onLeave={() => moments < 18 && writeScorePos(slug, round.id, { game: game.id, hole: moments + 1 })}
         />
       )}

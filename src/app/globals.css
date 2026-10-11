@@ -850,3 +850,37 @@ html.has-oncourse.on-score main { padding-bottom: 0; }
 @keyframes mo-count { from { transform: scaleX(1); } to { transform: scaleX(0); } }
 @media (prefers-reduced-motion: reduce) { .mo-next.counting::after { animation: none; } }
 .mo-tile.who { background: color-mix(in srgb, var(--board) 9%, var(--paper)); border-color: color-mix(in srgb, var(--board) 30%, var(--rule)); }
+.scorecard { touch-action: pan-y; }
+.scorecard.slide-fwd { animation: slide-fwd 0.22s ease-out; }
+.scorecard.slide-back { animation: slide-back 0.22s ease-out; }
+@keyframes slide-fwd { from { transform: translateX(40px); opacity: 0.4; } to { transform: none; opacity: 1; } }
+@keyframes slide-back { from { transform: translateX(-40px); opacity: 0.4; } to { transform: none; opacity: 1; } }
+.moments { touch-action: pan-y; animation: slide-fwd 0.22s ease-out; }
+.mo-next { display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.05; }
+.mo-next small { font-size: 13px; font-weight: 500; opacity: 0.8; margin-top: 3px; }
+@media (prefers-reduced-motion: reduce) { .scorecard.slide-fwd, .scorecard.slide-back, .moments { animation: none; } }
+
+/* ---- Hold to talk */
+.talk { display: flex; flex-direction: column; gap: 6px; }
+.talk-btn { min-height: 64px; width: 100%; border-radius: 16px; border: 0; background: var(--board); color: var(--tile); font-family: var(--font-display); font-size: 21px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 10px; cursor: pointer; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; touch-action: none; }
+.talk-btn svg { width: 26px; height: 26px; }
+.talk-btn.listening { background: #c8102e; animation: talk-pulse 1.2s ease-in-out infinite; }
+.talk-btn.writing { opacity: 0.75; }
+@keyframes talk-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(200, 16, 46, 0.45); } 50% { box-shadow: 0 0 0 10px rgba(200, 16, 46, 0); } }
+@media (prefers-reduced-motion: reduce) { .talk-btn.listening { animation: none; } }
+.talk-tip { margin: 0; font-size: 15px; color: var(--ink-soft); text-align: center; }
+.talk-err { margin: 0; font-size: 15px; color: var(--red, #c8102e); text-align: center; }
+.talk.compact .talk-btn { min-height: 58px; font-size: 19px; border-radius: 14px; }
+.talk.compact .talk-tip, .talk.compact .talk-err { position: absolute; left: 14px; right: 14px; margin-top: 64px; background: var(--paper); border-radius: 10px; padding: 6px 8px; z-index: 2; box-shadow: 0 4px 14px rgba(0,0,0,.15); }
+.mo-row { position: relative; }
+.mo-said { display: flex; align-items: center; gap: 10px; background: var(--paper); border: 1.5px solid var(--board); border-radius: 14px; padding: 8px 10px; }
+.mo-said p { margin: 0; flex: 1; font-size: 18px; line-height: 1.3; max-height: 4.2em; overflow: auto; }
+.mo-clear { min-height: 48px; padding: 0 12px; border-radius: 10px; border: 1.5px solid var(--rule); background: transparent; font-family: var(--font-display); font-size: 16px; font-weight: 700; color: var(--ink); cursor: pointer; }
+.mo-tile.who[aria-pressed="true"] { background: var(--board); color: var(--tile); border-color: var(--board); }
+.btn.block.mo-next { display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.moments { overflow-y: auto; }
+.mo-grid { grid-auto-rows: minmax(48px, 1fr); }
+.moments { gap: 8px; }
+.moments h2 { font-size: 24px; }
+.moments h2 span { display: inline; font-size: inherit; font-weight: 700; color: var(--ink-soft); margin: 0; }
+.mo-grid .mo-tile { min-height: 0; }

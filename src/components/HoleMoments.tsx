@@ -1,17 +1,17 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
+import { useSwipe } from "@/lib/useSwipe";
+import { HoldToTalk } from "./HoldToTalk";
 import Link from "next/link";
 import { useT } from "./Providers";
 import { MOMENTS } from "@/lib/courseCards";
 import { flushPosts, queuePost } from "@/lib/postQueue";
 import type { PlayerRow } from "@/lib/types";
 
-const AUTO_SECONDS = 6;
-
 /**
  * Between holes: what the scorecard won't show. Who (the group only) and a few big moments; a clip or a note.
- * Untouched, it moves on by itself after a few seconds, so it never costs a tap.
+ * Swipe on (or tap the big button) to the next hole; swipe back to the hole just played.
  */
 export function HoleMoments({
   roundId,
@@ -20,6 +20,7 @@ export function HoleMoments({
   players,
   nextLabel,
   onContinue,
+  onBack,
   onLeave,
 }: {
   roundId: string;
@@ -28,52 +29,43 @@ export function HoleMoments({
   players: PlayerRow[];
   nextLabel: string;
   onContinue: () => void;
+  /** Swipe back: the hole just played */
+  onBack: () => void;
   /** Leaving for the camera or a note: move the scorecard on first, so it's ready when they're back */
   onLeave: () => void;
 }) {
   const { slug, href } = useT();
   const [who, setWho] = useState<string[]>([]);
   const [picked, setPicked] = useState<string[]>([]);
-  const [touched, setTouched] = useState(false);
+  const [said, setSaid] = useState("");
   const done = useRef(false);
+  const swipe = useSwipe({ onLeft: () => finish(), onRight: () => onBack() });
 
-  const finish = () => {
+  /** Post what was picked or said (if anything), once. */
+  const save = () => {
     if (done.current) return;
     done.current = true;
-    if (picked.length) {
-      const names = who.map((id) => players.find((p) => p.id === id)?.name).filter(Boolean).join(" & ");
-      const labels = MOMENTS.filter((m) => picked.includes(m.tag)).map((m) => m.label.toLowerCase());
-      const text = labels.join(", ");
-      queuePost(slug, {
-        roundId,
-        hole,
-        kind: "note",
-        body: names ? `${names}: ${text}` : text.charAt(0).toUpperCase() + text.slice(1),
-        tags: picked.slice(0, 5),
-        playerIds: who,
-      });
-      flushPosts(slug);
-    }
+    if (!picked.length && !said.trim()) return;
+    const names = who.map((id) => players.find((p) => p.id === id)?.name).filter(Boolean).join(" & ");
+    const labels = MOMENTS.filter((m) => picked.includes(m.tag)).map((m) => m.label.toLowerCase()).join(", ");
+    const head = labels ? (names ? `${names}: ${labels}` : labels.charAt(0).toUpperCase() + labels.slice(1)) : names ? `${names}:` : "";
+    const body = [head, said.trim()].filter(Boolean).join(labels ? ". " : " ");
+    queuePost(slug, { roundId, hole, kind: "note", body, tags: picked.slice(0, 5), playerIds: who });
+    flushPosts(slug);
+  };
+  const finish = () => {
+    save();
     onContinue();
   };
 
-  // Nothing to add? It moves on by itself
-  useEffect(() => {
-    if (touched) return;
-    const t = setTimeout(finish, AUTO_SECONDS * 1000);
-    return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [touched]);
-
   const toggle = (list: string[], set: (v: string[]) => void, v: string) => {
-    setTouched(true);
     set(list.includes(v) ? list.filter((x) => x !== v) : [...list, v]);
   };
 
   return (
-    <div className="moments" role="dialog" aria-label={`Hole ${hole}: anything the card won't show?`} onPointerDown={() => setTouched(true)}>
+    <div className="moments" role="dialog" aria-label={`Hole ${hole}: anything the card won't show?`} {...swipe}>
       <h2>
-        Hole {hole} done. <span>Anything the card won&apos;t show?</span>
+        Hole {hole}: <span>anything the card won&apos;t show?</span>
       </h2>
       {players.length > 0 && (
         <div className="mo-who" style={{ gridTemplateColumns: `repeat(${Math.min(players.length, 4)}, 1fr)` }}>
@@ -92,27 +84,24 @@ export function HoleMoments({
         ))}
       </div>
       <div className="mo-row">
-        <Link className="mo-tile mo-act" href={href(`/record?round=${roundNumber}&hole=${hole}`)} onClick={() => (finishQuietly(), onLeave())}>
+        <Link className="mo-tile mo-act" href={href(`/record?round=${roundNumber}&hole=${hole}`)} onClick={() => (save(), onLeave())}>
           <span className="dot" aria-hidden="true" /> Record a clip
         </Link>
-        <Link className="mo-tile mo-act" href={href(`/post?round=${roundNumber}&hole=${hole}&from=course`)} onClick={() => (finishQuietly(), onLeave())}>
-          Write a note
-        </Link>
+        <HoldToTalk compact onText={(t) => setSaid((x) => (x ? `${x} ${t}` : t))} />
       </div>
-      <button className={`btn block mo-next${touched ? "" : " counting"}`} onClick={finish} style={{ ["--auto" as string]: `${AUTO_SECONDS}s` }}>
-        {picked.length ? `Save, ${nextLabel.charAt(0).toLowerCase()}${nextLabel.slice(1)}` : nextLabel}
+      {said && (
+        <div className="mo-said">
+          <p>&ldquo;{said}&rdquo;</p>
+          <button className="mo-clear" onClick={() => setSaid("")} aria-label="Remove what you said">
+            Remove
+          </button>
+        </div>
+      )}
+      <button className="btn block mo-next" onClick={finish}>
+        {picked.length || said ? `Save, ${nextLabel.charAt(0).toLowerCase()}${nextLabel.slice(1)}` : nextLabel} ›
+        <small>or swipe</small>
       </button>
     </div>
   );
 
-  /** Leaving for a clip or note: keep any moments picked, without moving the page on twice. */
-  function finishQuietly() {
-    if (done.current) return;
-    done.current = true;
-    if (!picked.length) return;
-    const names = who.map((id) => players.find((p) => p.id === id)?.name).filter(Boolean).join(" & ");
-    const text = MOMENTS.filter((m) => picked.includes(m.tag)).map((m) => m.label.toLowerCase()).join(", ");
-    queuePost(slug, { roundId, hole, kind: "note", body: names ? `${names}: ${text}` : text, tags: picked.slice(0, 5), playerIds: who });
-    flushPosts(slug);
-  }
 }

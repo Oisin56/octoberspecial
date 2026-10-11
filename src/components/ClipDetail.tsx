@@ -5,6 +5,7 @@ import { useT } from "./Providers";
 import { CLUBS, RESULTS, SHOTS, groupPlayers, resultTags } from "@/lib/courseCards";
 import { flushClips, queueClip } from "@/lib/trimmer";
 import { readScorePos } from "@/lib/scorePos";
+import { HoldToTalk } from "./HoldToTalk";
 
 type Step = "trim" | "who" | "shot" | "result" | "club" | "done";
 const ORDER: Step[] = ["trim", "who", "shot", "result", "club", "done"];
@@ -230,8 +231,9 @@ export function ClipDetail({ blob, roundId, hole, onDone, onCancel }: { blob: Bl
             {[who.map((id) => state?.players.find((p) => p.id === id)?.name).join(" & "), shot, result, club].filter(Boolean).join(" · ")}
             {hole ? ` · hole ${hole}` : ""}
           </p>
+          <HoldToTalk onText={(t) => setCaption((c) => (c ? `${c} ${t}` : t))} />
           <label className="cd-cap">
-            <span>Caption (optional)</span>
+            <span>Caption (optional): say it, or type it</span>
             <textarea value={caption} maxLength={200} onChange={(e) => setCaption(e.target.value)} placeholder="Say what happened, if you like" />
           </label>
         </div>

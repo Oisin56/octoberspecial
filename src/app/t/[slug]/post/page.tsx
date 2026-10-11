@@ -9,6 +9,7 @@ import { ClipTrimmer } from "@/components/ClipTrimmer";
 import { TrimmerReady } from "@/components/TrimmerReady";
 import { uploadPoster } from "@/lib/trimmer";
 import { takePendingClip } from "@/lib/pendingClip";
+import { HoldToTalk } from "@/components/HoldToTalk";
 
 const TAGS = [
   "birdie", "eagle", "chip-in", "long putt", "3-putt", "water", "bunker", "OB",
@@ -225,13 +226,14 @@ function PostInner() {
         </div>
       </div>
 
+      <HoldToTalk onText={(t) => setBody((b) => (b ? `${b} ${t}` : t))} />
       <div className="field">
         <label htmlFor="bd">What happened?</label>
         <textarea
           id="bd"
           value={body}
           onChange={(e) => setBody(e.target.value)}
-          placeholder="Tap the microphone on your keyboard to talk instead of typing"
+          placeholder="Hold the button above and say it, or type here"
           maxLength={2000}
         />
       </div>
