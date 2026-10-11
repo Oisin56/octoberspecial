@@ -3,6 +3,8 @@
 import { useT } from "@/components/Providers";
 import { Board, Loading, pts } from "@/components/ui";
 import { SIDE_GAME_LABEL, formatLabel } from "@/lib/types";
+import { standings } from "@/lib/live";
+import { roundStage } from "@/lib/scorecards";
 
 const SERIES = ["var(--board)", "var(--red)", "var(--bracken)", "#1d4f91", "#6b4c9a", "#2e7d4f", "#b0582b", "#4a5560"];
 
@@ -12,10 +14,11 @@ export default function Leaderboard() {
   const teamMode = cfg.teams.length >= 2;
   const fin = summary.complete;
 
+  const st = standings(state, summary, teamMode);
   const entities = teamMode
-    ? cfg.teams.map((t) => ({ id: t.id, name: t.name, perRound: summary.rounds.map((r) => r.teamPoints[t.id] ?? 0), total: fin ? summary.teamTotal[t.id] : summary.teamProjected[t.id] }))
-    : cfg.players.map((p) => ({ id: p.id, name: p.name, perRound: summary.rounds.map((r) => r.playerPoints[p.id] ?? 0), total: fin ? summary.playerTotal[p.id] : summary.playerProjected[p.id] }));
-  entities.sort((a, b) => b.total - a.total);
+    ? cfg.teams.map((t) => ({ id: t.id, name: t.name, perRound: summary.rounds.map((r) => r.teamPoints[t.id] ?? 0), total: st.banked[t.id] ?? 0, proj: st.projected[t.id] ?? 0 }))
+    : cfg.players.map((p) => ({ id: p.id, name: p.name, perRound: summary.rounds.map((r) => r.playerPoints[p.id] ?? 0), total: st.banked[p.id] ?? 0, proj: st.projected[p.id] ?? 0 }));
+  entities.sort((a, b) => b.total - a.total || b.proj - a.proj);
   const awardsFor = summary.awards.filter((a) => (cfg.sideGames.find((g) => g.kind === a.kind)?.points ?? 0) > 0 && (cfg.sideGamesBy === "team") === teamMode);
   const tallies = summary.awards.filter((a) => !awardsFor.includes(a));
   const played = summary.rounds.filter((r) => r.games.some((g) => g.holesPlayed > 0)).length;
@@ -33,6 +36,7 @@ export default function Leaderboard() {
               <tr>
                 <th>{teamMode ? "Team" : "Player"}</th>
                 <th>Total</th>
+                {st.moving && <th title="If everything finished as it stands now">Projected</th>}
                 {state.rounds.map((r) => (
                   <th key={r.id} title={`${r.course_name}: ${formatLabel(r)}`}>
                     R{r.number}
@@ -52,8 +56,9 @@ export default function Leaderboard() {
                   <td className="num" style={{ fontWeight: 700 }}>
                     {pts(e.total)}
                   </td>
+                  {st.moving && <td className="num muted">{pts(e.proj)}</td>}
                   {e.perRound.map((v, i) => (
-                    <td key={i} className="num">
+                    <td key={i} className={`num${roundStage(state, state.rounds[i].id) === "final" ? "" : " muted"}`} title={roundStage(state, state.rounds[i].id) === "final" ? undefined : "Not final yet"}>
                       {summary.rounds[i].games.some((g) => g.holesPlayed) ? pts(v) : ""}
                     </td>
                   ))}
@@ -68,7 +73,8 @@ export default function Leaderboard() {
           </table>
         </div>
         <p className="small muted">
-          {pts(summary.pointsAvailable)} points available. {awardsFor.length > 0 && !fin && "Bracketed side-game points show who would win them if it ended now. "}
+          {pts(summary.pointsAvailable)} points available. {st.moving && "Total counts final cards only. Projected is where everyone would finish if every match ended as it stands now. "}
+          {awardsFor.length > 0 && !fin && "Bracketed side-game points show who would win them if it ended now. "}
           {awardsFor.map((a) => `${a.kind.toUpperCase()} = ${SIDE_GAME_LABEL[a.kind].toLowerCase()}`).join(", ")}
         </p>
       </section>

@@ -285,7 +285,7 @@ function rank(values: Record<string, number>, lowerBetter: boolean) {
 }
 
 /** Share position points between tied sides: e.g. two tied 1st share 1st+2nd. */
-function positionPoints(ranking: SegmentResult["ranking"], table: number[]) {
+export function positionPoints(ranking: SegmentResult["ranking"], table: number[]) {
   const out: Record<string, number> = {};
   let i = 0;
   while (i < ranking.length) {

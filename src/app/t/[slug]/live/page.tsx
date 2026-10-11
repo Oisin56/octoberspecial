@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useT } from "@/components/Providers";
-import { Board, GameStatus, Loading, Scorecard, gameLine } from "@/components/ui";
+import { GameStatus, Loading, Scorecard, gameLine } from "@/components/ui";
+import { OverallLine, TodayBoard } from "@/components/TodayBoard";
+import { roundBoard } from "@/lib/live";
 import { SocialFeed } from "@/components/SocialFeed";
 import { formatLabel, sideLabel, toRoundCfg } from "@/lib/types";
 import { RoundBanner } from "@/components/visual";
@@ -22,6 +24,7 @@ export default function Live() {
   const cfg = toRoundCfg(round, state.players);
   const isLive = round.status === "live";
   const game = cfg.games[Math.min(gi, cfg.games.length - 1)];
+  const board = roundBoard(state, summary, round);
   const canScoreAny = session && (session.role === "organiser" || cfg.games.some((g) => g.scorerId === session.playerId));
 
   return (
@@ -31,7 +34,7 @@ export default function Live() {
         round={round}
         kicker={isLive ? <span className="live-badge">Live</span> : <span className="hero-chip">{round.status === "complete" ? "Last round" : "Next round"}</span>}
         title={`R${round.number} ${round.course_name}`}
-        meta={`${formatLabel(round)} · ${cfg.games.length > 1 ? `${cfg.games.length} matches` : rs.holesPlayed ? `thru ${rs.games[0].holesPlayed}` : "not started"}`}
+        meta={formatLabel(round)}
       >
         {session && canScoreAny && (
           <Link className="btn" href={href(`/score?round=${round.number}`)}>
@@ -45,7 +48,11 @@ export default function Live() {
         )}
       </RoundBanner>
 
-      {cfg.games.length > 1 && (
+      <div className="section-tight" style={{ marginBottom: 18 }}>
+        <TodayBoard board={board} selected={game.id} onSelect={(id) => setGi(Math.max(0, cfg.games.findIndex((g) => g.id === id)))} />
+      </div>
+
+      {cfg.games.length > 1 && board.kind === "field" && (
         <div className="round-list" style={{ marginBottom: 14 }}>
           {cfg.games.map((g, i) => (
             <button
@@ -75,8 +82,7 @@ export default function Live() {
           <div className="panel">
             <Scorecard round={round} gameIndex={cfg.games.indexOf(game)} />
           </div>
-          <h2 style={{ marginTop: 24 }}>Overall</h2>
-          <Board />
+          <OverallLine />
         </div>
         <div className="stack">
           <h2>Bulletins and posts</h2>

@@ -14,6 +14,7 @@ import { useSwipe } from "@/lib/useSwipe";
 import { ballsOfGame, ballsOfSide, gameHole, gameShots, ONE_BALL, type BallHole } from "@/lib/engine";
 import { CardPanel } from "@/components/CardPanel";
 import { cardInfo, gameComplete } from "@/lib/scorecards";
+import { fieldPosition, roundBoard } from "@/lib/live";
 import { shotsOnHole } from "@/lib/scoring";
 import { ballName, sideLabel, toRoundCfg } from "@/lib/types";
 
@@ -404,7 +405,9 @@ function ScoreInner() {
         <span className="where">
           R{round.number} · {round.course_name}
         </span>
-        <span className="status">{gameLine(round, game, summary.rounds[ri].games[gi], state.players)}</span>
+        <span className="status">
+          {(session.playerId && fieldPosition(roundBoard(state, summary, round), session.playerId)) || gameLine(round, game, summary.rounds[ri].games[gi], state.players)}
+        </span>
         {card.stage !== "open" && (
           <button className="chip" onClick={() => setReview(true)}>
             The card

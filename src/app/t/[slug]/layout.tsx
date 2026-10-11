@@ -5,6 +5,7 @@ import { SiteHeader } from "@/components/SiteHeader";
 import { ThemeRoot } from "@/components/ThemeRoot";
 import { ClipQueue } from "@/components/ClipQueue";
 import { SignPrompt } from "@/components/SignPrompt";
+import { LiveStrip } from "@/components/LiveStrip";
 import { OnCourseBar } from "@/components/OnCourseBar";
 import type { Metadata, Viewport } from "next";
 import { tournamentBySlug } from "@/lib/server-data";
@@ -33,6 +34,7 @@ export default async function TournamentLayout({ children, params }: LayoutProps
     <Providers slug={slug}>
       <ThemeRoot>
         <SiteHeader />
+        <LiveStrip />
         <ClipQueue />
         <SignPrompt />
         <main className="wrap">{children}</main>

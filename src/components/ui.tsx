@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useT } from "./Providers";
 import { cleanBody, cleanTitle } from "@/lib/cleanText";
 import { cardInfo, cardLabel } from "@/lib/scorecards";
+import { liveLine, roundBoard, standings } from "@/lib/live";
 import { CountUp, CourseImage, Icon } from "./visual";
 import { ballsOfGame, gameHole, type Game, type GameSummary, type SegmentResult } from "@/lib/engine";
 import { shotsOnHole } from "@/lib/scoring";
@@ -61,18 +62,20 @@ export function Board() {
   const { state, summary, cfg } = useT();
   if (!state || !summary || !cfg) return null;
   const teamMode = cfg.teams.length >= 2;
-  const useProjected = !summary.complete;
+  // Big tiles: banked (final cards). Underneath, Ryder Cup style: projected if everything finished as it stands
+  const st = standings(state, summary, teamMode);
 
   const rows = teamMode
     ? cfg.teams.map((tm, i) => ({
         id: tm.id,
         name: tm.name,
-        value: useProjected ? summary.teamProjected[tm.id] : summary.teamTotal[tm.id],
+        value: st.banked[tm.id] ?? 0,
+        proj: st.projected[tm.id] ?? 0,
         color: `var(--team-${i})`,
       }))
     : cfg.players
-        .map((p) => ({ id: p.id, name: p.name, value: useProjected ? summary.playerProjected[p.id] : summary.playerTotal[p.id], color: "" }))
-        .sort((a, b) => b.value - a.value);
+        .map((p) => ({ id: p.id, name: p.name, value: st.banked[p.id] ?? 0, proj: st.projected[p.id] ?? 0, color: "" }))
+        .sort((a, b) => b.value - a.value || b.proj - a.proj);
   const best = Math.max(0, ...rows.map((r) => r.value));
   const leaders = rows.filter((r) => r.value === best);
   const second = Math.max(0, ...rows.filter((r) => r.value < best).map((r) => r.value));
@@ -80,14 +83,8 @@ export function Board() {
   const small = shown.length > 3;
 
   const live = state.rounds.find((r) => r.status === "live");
-  const liveIdx = live ? state.rounds.indexOf(live) : -1;
-  const liveRs = liveIdx >= 0 ? summary.rounds[liveIdx] : null;
-  const liveLabel =
-    liveRs && live
-      ? liveRs.games.length === 1
-        ? liveRs.games[0].full.matchLabel ?? `thru ${liveRs.games[0].holesPlayed}`
-        : `${liveRs.games.filter((g) => g.complete).length} of ${liveRs.games.length} matches finished`
-      : null;
+  const liveBoard = live ? roundBoard(state, summary, live) : null;
+  const liveLabel = liveBoard ? `${liveLine(liveBoard)}${liveBoard.stage === "finished" ? " (provisional)" : ""}` : null;
   const hasSidePoints = cfg.sideGames.some((g) => g.enabled && g.points > 0);
 
   // Head-to-head: a tug-of-war bar over the whole pot
@@ -99,7 +96,7 @@ export function Board() {
   return (
     <section className="board" aria-label="Overall standings">
       <div className="board-top">
-        <div className="board-title">{summary.complete ? "Final standings" : teamMode ? "Team points" : "Overall points"}</div>
+        <div className="board-title">{summary.complete && !st.moving ? "Final standings" : teamMode ? "Team points" : "Overall points"}</div>
         {live && <span className="live-badge">Live</span>}
       </div>
       <div className="board-rows">
@@ -120,9 +117,24 @@ export function Board() {
         {leaders.length > 1 && best > 0 && <div className="lead-tag tie">All square at the top</div>}
       </div>
 
+      {st.moving && (
+        <div className="board-proj" aria-label="Projected points if everything finished as it stands">
+          <span className="board-proj-k">Projected</span>
+          {[...rows]
+            .sort((a, b) => b.proj - a.proj)
+            .map((r) => (
+              <span key={r.id} className="board-proj-v">
+                {r.name} <b className="num">{pts(r.proj)}</b>
+              </span>
+            ))}
+        </div>
+      )}
+
       {duel && (
         <div className="tug" aria-label={`${pts(toWin + 0.5)} points wins it`}>
           <div className="tug-bar">
+            {st.moving && <span className="tug-a proj" style={{ width: `${(duel[0].proj / total) * 100}%` }} />}
+            {st.moving && <span className="tug-b proj" style={{ width: `${(duel[1].proj / total) * 100}%` }} />}
             <span className="tug-a" style={{ width: `${(duel[0].value / total) * 100}%`, background: duel[0].color || undefined }} />
             <span className="tug-b" style={{ width: `${(duel[1].value / total) * 100}%`, background: duel[1].color || undefined }} />
             <span className="tug-mid" />
