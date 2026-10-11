@@ -24,7 +24,7 @@ export interface CardSpec {
 }
 
 /** Bump whenever the card design changes. */
-export const CARD_DESIGN = 4;
+export const CARD_DESIGN = 5;
 
 export function signCard(d: string) {
   return createHmac("sha256", process.env.SESSION_SECRET ?? "dev").update(`card:${d}`).digest("base64url").slice(0, 24);

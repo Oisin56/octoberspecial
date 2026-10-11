@@ -10,6 +10,7 @@ import { cleanBody, cleanTitle } from "./cleanText";
 import { readPlanJson } from "./planJson";
 import { shotLine } from "./shots";
 import { scoreBug, type ScoreBug } from "./scorebug";
+import { standings } from "./live";
 import {
   ballName,
   formatLabel,
@@ -159,6 +160,19 @@ function resultRows(s: TournamentState, roundIndex: number): [string, string][] 
     .map(([n, v]) => [n, fmt(v)]);
 }
 
+/** Points banked before a round starts, for its chapter card. */
+function standingsBefore(s: TournamentState, r: TournamentState["rounds"][number]): [string, string][] | undefined {
+  const earlier = s.rounds.filter((x) => x.number < r.number);
+  if (!earlier.length) return undefined;
+  const then = { ...s, rounds: earlier, entries: s.entries.filter((e) => earlier.some((x) => x.id === e.round_id)) } as TournamentState;
+  const cfg = toTournamentCfg(then);
+  const team = cfg.teams.length >= 2;
+  const st = standings(then, tournamentSummary(cfg, toEntries(then.entries)), team);
+  const list = team ? cfg.teams.map((t) => [t.name, st.banked[t.id] ?? 0] as const) : cfg.players.map((p) => [p.name, st.banked[p.id] ?? 0] as const);
+  if (list.every(([, v]) => !v)) return undefined;
+  return [...list].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([n, v]) => [n, fmt(v)]);
+}
+
 function standingsRows(s: TournamentState): [string, string][] {
   const cfg = toTournamentCfg(s);
   const t = tournamentSummary(cfg, toEntries(s.entries));
@@ -200,7 +214,9 @@ export function clipBugs(s: TournamentState, plan: Plan): Record<string, { befor
   const out: Record<string, { before: ScoreBug; after: ScoreBug | null }> = {};
   for (const seg of plan.segments) {
     if (seg.kind !== "clip" || seg.bug === false || seg.round == null || seg.hole == null) continue;
-    const o = { round: seg.round, hole: seg.hole, playerIds: seg.playerIds ?? [] };
+    // Other groups' scores as they stood when the clip was posted
+    const at = s.posts.find((x) => x.id === seg.postId)?.created_at;
+    const o = { round: seg.round, hole: seg.hole, playerIds: seg.playerIds ?? [], at };
     const before = scoreBug(s, o);
     if (!before) continue;
     const after = seg.finishes ? scoreBug(s, { ...o, after: true }) : null;
@@ -396,6 +412,8 @@ export async function writePlan(tournamentId: string, brief: Brief, probes: Clip
         eyebrow: r.play_date ? new Date(r.play_date + "T12:00:00").toLocaleDateString("en-IE", { weekday: "long", day: "numeric", month: "long" }) : undefined,
         heading: `Round ${r.number}`,
         sub: `${r.course_name} · ${formatLabel(r)}`,
+        // The overall standings going into the round (they're off the clips' score panels)
+        rows: r.number > 1 ? standingsBefore(s, r) : undefined,
         seconds: 3,
         voice: ch?.intro?.slice(0, 200),
       });

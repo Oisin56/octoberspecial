@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { paletteFor } from "@/lib/themes";
 import { signCard, type CardSpec } from "@/lib/cards";
+import { zones, type ZoneName } from "@/lib/broadcastLayout";
 
 /**
  * Renders the film's on-screen graphics as PNGs, styled like a TV golf broadcast:
@@ -85,6 +86,17 @@ export async function GET(req: Request) {
 
 type CardProps = { spec: CardSpec; p: P; W: number; H: number; u: number; portrait: boolean };
 
+/** A graphic placed in its own zone of the frame (see broadcastLayout): nothing else is ever drawn there. */
+function InZone({ W, H, name, v, h, children }: { W: number; H: number; name: ZoneName; v: "start" | "end" | "center"; h: "start" | "end" | "center"; children: React.ReactNode }) {
+  const z = zones(W, H)[name];
+  const flex = (x: "start" | "end" | "center") => (x === "start" ? "flex-start" : x === "end" ? "flex-end" : "center");
+  return (
+    <div style={{ width: W, height: H, display: "flex", position: "relative" }}>
+      <div style={{ position: "absolute", left: z.x, top: z.y, width: z.w, height: z.h, display: "flex", flexDirection: "column", justifyContent: flex(v), alignItems: flex(h) }}>{children}</div>
+    </div>
+  );
+}
+
 /** Title, chapter, result and standings: centred on a glass wash over blurred footage. */
 function FullCard({ spec, p, W, H, u, portrait }: CardProps) {
   const rows = spec.l ?? [];
@@ -151,6 +163,9 @@ function FullCard({ spec, p, W, H, u, portrait }: CardProps) {
             boxShadow: `0 ${24 * u}px ${60 * u}px rgba(0,0,0,0.35)`,
           }}
         >
+          {k === "chapter" && (
+            <div style={{ display: "flex", justifyContent: "center", ...S, fontWeight: 600, fontSize: 24 * u, letterSpacing: 4 * u, color: p.gold, padding: `${14 * u}px 0 ${4 * u}px` }}>OVERALL GOING IN</div>
+          )}
           {rows.slice(0, 8).map(([label, value], i) => {
             const lead = i === 0;
             return (
@@ -194,19 +209,8 @@ function FullCard({ spec, p, W, H, u, portrait }: CardProps) {
 /** Lower third over a clip: name and shot, on glass with an accent stripe. */
 function Caption({ spec, p, W, H, u, portrait }: CardProps) {
   return (
-    <div
-      style={{
-        width: W,
-        height: H,
-        display: "flex",
-        flexDirection: "column",
-        justifyContent: "flex-end",
-        alignItems: portrait ? "center" : "flex-start",
-        // portrait: above where phone apps put their own buttons and text
-        padding: portrait ? `0 ${60 * u}px ${420 * u}px` : `0 ${80 * u}px ${80 * u}px`,
-      }}
-    >
-      <div style={{ display: "flex", maxWidth: portrait ? W * 0.9 : W * 0.62, borderRadius: 20 * u, overflow: "hidden", boxShadow: `0 ${14 * u}px ${40 * u}px rgba(0,0,0,0.4)` }}>
+    <InZone W={W} H={H} name="caption" v="end" h={portrait ? "center" : "start"}>
+      <div style={{ display: "flex", maxWidth: zones(W, H).caption.w, borderRadius: 20 * u, overflow: "hidden", boxShadow: `0 ${14 * u}px ${40 * u}px rgba(0,0,0,0.4)` }}>
         <div style={{ display: "flex", width: 12 * u, backgroundImage: `linear-gradient(180deg, ${p.gold}, ${p.red})` }} />
         <div
           style={{
@@ -216,29 +220,19 @@ function Caption({ spec, p, W, H, u, portrait }: CardProps) {
             backgroundImage: `linear-gradient(90deg, ${rgba(p.glass, 0.9)}, ${rgba(p.glass, 0.68)})`,
           }}
         >
-          <div style={{ display: "flex", ...D, fontSize: 64 * u, lineHeight: 1.02, color: "#ffffff" }}>{spec.h}</div>
+          <div style={{ display: "flex", maxWidth: zones(W, H).caption.w - 80 * u, ...D, fontSize: (spec.h.length > 60 ? 50 : 64) * u, lineHeight: 1.02, color: "#ffffff" }}>{spec.h}</div>
           {spec.s && <div style={{ display: "flex", ...S, fontSize: 34 * u, marginTop: 6 * u, color: "rgba(255,255,255,0.84)" }}>{spec.s}</div>}
         </div>
       </div>
-    </div>
+    </InZone>
   );
 }
 
 /** Player and hole, sliding in when the film moves to a new hole: hole number block, name, then the detail. */
 function Strap({ spec, p, W, H, u, portrait }: CardProps) {
   return (
-    <div
-      style={{
-        width: W,
-        height: H,
-        display: "flex",
-        flexDirection: "column",
-        justifyContent: "flex-end",
-        alignItems: portrait ? "center" : "flex-start",
-        padding: portrait ? `0 ${60 * u}px ${420 * u}px` : `0 ${80 * u}px ${80 * u}px`,
-      }}
-    >
-      <div style={{ display: "flex", flexDirection: "column", maxWidth: portrait ? W * 0.92 : W * 0.66, boxShadow: `0 ${16 * u}px ${44 * u}px rgba(0,0,0,0.45)`, borderRadius: 18 * u, overflow: "hidden" }}>
+    <InZone W={W} H={H} name="strap" v="end" h={portrait ? "center" : "start"}>
+      <div style={{ display: "flex", flexDirection: "column", maxWidth: zones(W, H).strap.w, boxShadow: `0 ${16 * u}px ${44 * u}px rgba(0,0,0,0.45)`, borderRadius: 18 * u, overflow: "hidden" }}>
         <div style={{ display: "flex", height: 7 * u, backgroundImage: `linear-gradient(90deg, ${p.red}, ${p.gold})` }} />
         <div style={{ display: "flex", alignItems: "stretch" }}>
           {spec.e && (
@@ -271,24 +265,14 @@ function Strap({ spec, p, W, H, u, portrait }: CardProps) {
           </div>
         </div>
       </div>
-    </div>
+    </InZone>
   );
 }
 
 /** The REPLAY tag over a slow-motion replay. */
-function ReplayTag({ p, W, H, u, portrait }: CardProps) {
+function ReplayTag({ p, W, H, u }: CardProps) {
   return (
-    <div
-      style={{
-        width: W,
-        height: H,
-        display: "flex",
-        flexDirection: "column",
-        alignItems: portrait ? "center" : "flex-end",
-        justifyContent: portrait ? "flex-end" : "flex-start",
-        padding: portrait ? `0 0 ${640 * u}px` : `${64 * u}px ${72 * u}px 0 0`,
-      }}
-    >
+    <InZone W={W} H={H} name="replay" v="start" h="start">
       <div style={{ display: "flex", alignItems: "center", borderRadius: 999, overflow: "hidden", boxShadow: `0 ${10 * u}px ${30 * u}px rgba(0,0,0,0.45)` }}>
         <div style={{ display: "flex", width: 10 * u, alignSelf: "stretch", background: p.gold }} />
         <div
@@ -305,7 +289,7 @@ function ReplayTag({ p, W, H, u, portrait }: CardProps) {
           REPLAY
         </div>
       </div>
-    </div>
+    </InZone>
   );
 }
 
@@ -373,81 +357,128 @@ function StingLayer({ spec, p, W, H, u }: CardProps) {
 /** TV-style score panel: top-left (landscape) or top-centre (portrait), transparent elsewhere. */
 function Bug({ spec, p, W, H, u, portrait }: CardProps) {
   const b = spec.b!;
-  const PW = (portrait ? 660 : 580) * u;
-  return (
-    <div style={{ width: W, height: H, display: "flex", flexDirection: "column", alignItems: portrait ? "center" : "flex-start", padding: portrait ? `${170 * u}px 0 0` : `${50 * u}px ${56 * u}px` }}>
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          width: PW,
-          borderRadius: 22 * u,
-          overflow: "hidden",
-          background: rgba(p.glass, 0.82),
-          border: `${1.5 * u}px solid rgba(255,255,255,0.14)`,
-          boxShadow: `0 ${16 * u}px ${44 * u}px rgba(0,0,0,0.4)`,
-          color: "#ffffff",
-        }}
-      >
-        {spec.wt && (
-          <div style={{ display: "flex", ...S, fontWeight: 600, fontSize: 24 * u, color: p.gold, padding: `${10 * u}px ${22 * u}px 0` }}>{`Round ${b.round} · ${b.course}`}</div>
-        )}
-        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", padding: `${10 * u}px ${22 * u}px ${12 * u}px`, ...(spec.wt ? {} : { backgroundImage: `linear-gradient(90deg, ${rgba(p.board, 0.9)}, ${rgba(p.board, 0.4)})` }) }}>
-          <div style={{ display: "flex", ...D, fontSize: 54 * u, lineHeight: 1 }}>{`Hole ${b.hole}`}</div>
-          <div style={{ display: "flex", ...S, fontWeight: 600, fontSize: 26 * u, color: "rgba(255,255,255,0.8)" }}>{`Par ${b.par}${b.yards ? ` · ${b.yards} yds` : ""}`}</div>
+  const z = zones(W, H);
+  const glass = {
+    display: "flex",
+    flexDirection: "column" as const,
+    width: z.score.w,
+    borderRadius: 22 * u,
+    overflow: "hidden",
+    background: rgba(p.glass, 0.84),
+    border: `${1.5 * u}px solid rgba(255,255,255,0.14)`,
+    boxShadow: `0 ${16 * u}px ${44 * u}px rgba(0,0,0,0.42)`,
+    color: "#ffffff",
+  };
+  const head = (
+    <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", padding: `${10 * u}px ${22 * u}px ${10 * u}px`, backgroundImage: `linear-gradient(90deg, ${rgba(p.board, 0.95)}, ${rgba(p.board, 0.55)})` }}>
+      <div style={{ display: "flex", alignItems: "baseline" }}>
+        <div style={{ display: "flex", ...D, fontSize: 44 * u, lineHeight: 1 }}>{`Hole ${b.hole}`}</div>
+        <div style={{ display: "flex", ...S, fontWeight: 600, fontSize: 22 * u, color: "rgba(255,255,255,0.8)", marginLeft: 14 * u }}>{`Par ${b.par}${b.yards ? ` · ${b.yards} yds` : ""}`}</div>
+      </div>
+      <div style={{ display: "flex", ...S, fontWeight: 600, fontSize: 20 * u, letterSpacing: 2 * u, color: p.gold }}>{spec.wt ? `ROUND ${b.round}` : b.mode === "field" ? "LEADERBOARD" : ""}</div>
+    </div>
+  );
+  const dotsOf = (n: number) =>
+    Array.from({ length: Math.min(n, 3) }, (_, k) => <div key={k} style={{ display: "flex", width: 11 * u, height: 11 * u, borderRadius: 99, background: p.gold, marginLeft: (k ? 5 : 10) * u }} />);
+
+  let panel: React.ReactElement;
+  if (b.mode === "match" && b.match) {
+    const m = b.match;
+    const side = (x: (typeof m.sides)[number], right: boolean) => (
+      <div style={{ display: "flex", flex: 1, flexDirection: right ? "row-reverse" : "row", alignItems: "center", minWidth: 0 }}>
+        <div style={{ display: "flex", width: 8 * u, height: 54 * u, borderRadius: 4 * u, background: x.color ?? (x.lead ? p.red : "rgba(255,255,255,0.25)") }} />
+        <div style={{ display: "flex", flexDirection: "column", alignItems: right ? "flex-end" : "flex-start", margin: `0 ${12 * u}px` }}>
+          <div style={{ display: "flex", ...D, fontSize: (x.name.length > 12 ? 30 : 38) * u, lineHeight: 1.05, color: x.lead ? "#ffffff" : "rgba(255,255,255,0.68)" }}>{x.name}</div>
+          {x.dots > 0 && <div style={{ display: "flex", marginTop: 4 * u }}>{dotsOf(x.dots)}</div>}
         </div>
-        {b.rows.map((r, i) => (
-          <div key={i} style={{ display: "flex", alignItems: "center", padding: `${8 * u}px ${14 * u}px ${8 * u}px ${22 * u}px`, borderTop: `${1.5 * u}px solid rgba(255,255,255,0.08)` }}>
-            <div style={{ display: "flex", flex: 1, alignItems: "center", ...D, fontSize: 42 * u }}>
-              {r.name}
-              {Array.from({ length: Math.min(r.dots, 3) }, (_, k) => (
-                <div key={k} style={{ display: "flex", width: 12 * u, height: 12 * u, borderRadius: 99, background: p.gold, marginLeft: (k ? 6 : 14) * u }} />
-              ))}
-            </div>
-            {r.value ? (
+      </div>
+    );
+    const up = m.sides.some((x) => x.lead);
+    const leadColor = m.sides.find((x) => x.lead)?.color;
+    panel = (
+      <div style={glass}>
+        {head}
+        <div style={{ display: "flex", alignItems: "center", padding: `${14 * u}px ${14 * u}px` }}>
+          {side(m.sides[0], false)}
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              minWidth: 150 * u,
+              padding: `${8 * u}px ${14 * u}px`,
+              borderRadius: 14 * u,
+              ...(up ? { backgroundImage: `linear-gradient(135deg, ${leadColor ?? p.red}, ${mix(leadColor ?? p.red, "#000000", 0.35)})` } : { background: "rgba(255,255,255,0.14)" }),
+            }}
+          >
+            <div style={{ display: "flex", ...D, fontSize: 48 * u, lineHeight: 1 }}>{m.big}</div>
+            <div style={{ display: "flex", ...S, fontWeight: 600, fontSize: 19 * u, marginTop: 2 * u, color: "rgba(255,255,255,0.86)" }}>{m.small}</div>
+          </div>
+          {side(m.sides[1], true)}
+        </div>
+        {b.status && b.status !== "ALL SQUARE" && (
+          <div style={{ display: "flex", justifyContent: "center", ...S, fontWeight: 800, fontSize: 20 * u, letterSpacing: 3 * u, color: "#1b1408", padding: `${6 * u}px`, backgroundImage: `linear-gradient(90deg, ${p.gold}, ${p.bracken})` }}>{b.status}</div>
+        )}
+      </div>
+    );
+  } else if (b.mode === "field") {
+    panel = (
+      <div style={glass}>
+        {head}
+        <div style={{ display: "flex", flexDirection: "column", padding: `${6 * u}px 0 ${8 * u}px` }}>
+          {b.rows.map((r, i) => (
+            <div key={i} style={{ display: "flex", flexDirection: "column" }}>
+              {r.gap && <div style={{ display: "flex", justifyContent: "center", ...S, fontSize: 20 * u, lineHeight: 1, color: "rgba(255,255,255,0.45)", padding: `${2 * u}px 0` }}>• • •</div>}
               <div
                 style={{
                   display: "flex",
-                  justifyContent: "center",
-                  minWidth: 120 * u,
-                  ...D,
-                  fontSize: 40 * u,
-                  padding: `${6 * u}px ${14 * u}px`,
+                  alignItems: "center",
+                  height: 54 * u,
+                  margin: `${2 * u}px ${10 * u}px`,
+                  padding: `0 ${12 * u}px`,
                   borderRadius: 12 * u,
-                  ...(r.lead ? { backgroundImage: `linear-gradient(90deg, ${p.red}, ${mix(p.red, "#ff7a45", 0.35)})` } : { background: "rgba(255,255,255,0.12)" }),
+                  ...(r.onCamera ? { backgroundImage: `linear-gradient(90deg, ${p.red}, ${mix(p.red, "#000000", 0.35)})` } : {}),
                 }}
               >
-                {r.value}
+                <div style={{ display: "flex", width: 58 * u, ...D, fontSize: 30 * u, color: r.onCamera ? "#ffffff" : p.gold }}>{r.pos}</div>
+                <div style={{ display: "flex", flex: 1, alignItems: "center", ...D, fontSize: 34 * u, color: "#ffffff" }}>
+                  {r.name}
+                  {r.onCamera && r.dots > 0 ? dotsOf(r.dots) : null}
+                </div>
+                <div style={{ display: "flex", justifyContent: "flex-end", minWidth: 120 * u, ...D, fontSize: 36 * u, color: r.lead && !r.onCamera ? mix(p.red, "#ffffff", 0.45) : "#ffffff" }}>{r.value}</div>
+                <div style={{ display: "flex", justifyContent: "flex-end", width: 62 * u, ...S, fontWeight: 600, fontSize: 21 * u, color: "rgba(255,255,255,0.7)" }}>{r.thru >= 18 ? "F" : String(r.thru)}</div>
               </div>
-            ) : null}
-          </div>
-        ))}
-        {b.mode !== "none" && (
-          <div style={{ display: "flex", justifyContent: "space-between", ...S, fontWeight: 600, fontSize: 24 * u, color: "rgba(255,255,255,0.78)", padding: `${8 * u}px ${22 * u}px`, borderTop: `${1.5 * u}px solid rgba(255,255,255,0.08)` }}>
-            <div style={{ display: "flex" }}>{b.status ?? ""}</div>
-            <div style={{ display: "flex" }}>{b.thru > 0 ? `Thru ${b.thru}` : "Starting"}</div>
-          </div>
-        )}
-        {b.footer && (
-          <div style={{ display: "flex", ...S, fontWeight: 600, fontSize: 22 * u, color: p.gold, padding: `${7 * u}px ${22 * u}px`, background: "rgba(0,0,0,0.35)" }}>{`Overall  ${b.footer}`}</div>
-        )}
+            </div>
+          ))}
+        </div>
+        {b.status && <div style={{ display: "flex", justifyContent: "center", ...S, fontWeight: 800, fontSize: 20 * u, letterSpacing: 3 * u, color: "#1b1408", padding: `${6 * u}px`, backgroundImage: `linear-gradient(90deg, ${p.gold}, ${p.bracken})` }}>{b.status}</div>}
       </div>
+    );
+  } else {
+    panel = <div style={glass}>{head}</div>;
+  }
+
+  const fz = z.flash;
+  return (
+    <div style={{ width: W, height: H, display: "flex", position: "relative" }}>
+      <div style={{ position: "absolute", left: z.score.x, top: z.score.y, width: z.score.w, height: z.score.h, display: "flex", flexDirection: "column", justifyContent: portrait ? "flex-start" : "flex-end", alignItems: "flex-end" }}>{panel}</div>
       {b.flash && (
-        <div
-          style={{
-            display: "flex",
-            marginTop: 16 * u,
-            ...D,
-            fontSize: 58 * u,
-            letterSpacing: 3 * u,
-            color: "#ffffff",
-            padding: `${8 * u}px ${34 * u}px`,
-            borderRadius: 999,
-            backgroundImage: `linear-gradient(90deg, ${p.red}, ${mix(p.red, "#ff7a45", 0.4)})`,
-            boxShadow: `0 ${10 * u}px ${30 * u}px ${rgba(p.red, 0.45)}`,
-          }}
-        >
-          {b.flash}
+        <div style={{ position: "absolute", left: fz.x, top: fz.y, width: fz.w, height: fz.h, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div
+            style={{
+              display: "flex",
+              ...D,
+              fontSize: (b.flash.length > 14 ? 50 : 66) * u,
+              letterSpacing: 3 * u,
+              color: "#ffffff",
+              padding: `${10 * u}px ${38 * u}px`,
+              borderRadius: 999,
+              backgroundImage: `linear-gradient(90deg, ${p.red}, ${mix(p.red, "#ff7a45", 0.4)})`,
+              boxShadow: `0 ${10 * u}px ${30 * u}px ${rgba(p.red, 0.45)}`,
+            }}
+          >
+            {b.flash}
+          </div>
         </div>
       )}
     </div>
