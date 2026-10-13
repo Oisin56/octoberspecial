@@ -1,22 +1,17 @@
 "use client";
 
 /**
- * One camera for the whole visit. Opening the camera is what makes the phone ask for permission, so instead of
- * switching it off every time the record screen closes, it's kept ready between clips while the app is open,
- * and switched off after a few idle minutes (or when the phone puts the app away) to save battery.
+ * The camera, switched off the moment it isn't needed (no battery drain, no camera light left on).
+ * A second request while it's still opening shares the same camera.
  */
-const IDLE_MS = 3 * 60_000;
 
 let current: MediaStream | null = null;
 let opening: Promise<MediaStream> | null = null;
-let idle: ReturnType<typeof setTimeout> | null = null;
 
 const live = (s: MediaStream | null): s is MediaStream => !!s && s.getVideoTracks().some((t) => t.readyState === "live");
 
 /** The camera (and microphone), opening it only if it isn't already open. */
 export async function getCamera(): Promise<MediaStream> {
-  if (idle) clearTimeout(idle);
-  idle = null;
   if (live(current)) return current;
   if (opening) return opening;
   opening = navigator.mediaDevices
@@ -34,25 +29,15 @@ export async function getCamera(): Promise<MediaStream> {
   return opening;
 }
 
-/** Finished with the camera for now: it stays ready for the next clip, then switches off. */
-export function releaseCamera(after = IDLE_MS) {
-  if (idle) clearTimeout(idle);
-  idle = setTimeout(stopCamera, after);
+/** Finished with the camera: it switches off straight away. */
+export function releaseCamera() {
+  stopCamera();
 }
 
 /** Switch the camera off now. */
 export function stopCamera() {
-  if (idle) clearTimeout(idle);
-  idle = null;
   current?.getTracks().forEach((t) => t.stop());
   current = null;
-}
-
-// The phone puts the app away (locked, another app): the camera goes off, like any camera app
-if (typeof document !== "undefined") {
-  document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "hidden" && current) releaseCamera(20_000);
-  });
 }
 
 /** Zoom the camera can do by itself (most Android phones in Chrome). iPhone doesn't let websites zoom. */
@@ -70,3 +55,7 @@ export async function setNativeZoom(s: MediaStream | null, zoom: number) {
 }
 
 export const isIPhone = () => typeof navigator !== "undefined" && /iPhone|iPad|iPod/.test(navigator.userAgent);
+
+/** Opened from the home screen (no Safari address bar) */
+export const isHomeScreenApp = () =>
+  typeof window !== "undefined" && (window.matchMedia("(display-mode: standalone)").matches || !!(navigator as Navigator & { standalone?: boolean }).standalone);

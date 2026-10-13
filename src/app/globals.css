@@ -1226,3 +1226,7 @@ table.card.compact .shotdot { display: none; }
 .cam-tip p { margin: 0 0 10px; font-size: 16px; line-height: 1.4; }
 .cam-tip .cam-tip-h { font-family: var(--font-display); font-size: 22px; font-weight: 700; margin-bottom: 6px; }
 @media (prefers-reduced-motion: reduce) { .cam.recording::after, .cam-rec-banner .dot { animation: none; } }
+.cam-tip ol { list-style: decimal; margin: 0 0 10px; padding-left: 24px; font-size: 17px; line-height: 1.45; }
+.cam-tip ol li { margin-bottom: 4px; }
+.cam-tip .cam-tip-note { font-size: 14px; color: var(--ink-soft); }
+.cam-tip ol li::marker { font-weight: 700; }

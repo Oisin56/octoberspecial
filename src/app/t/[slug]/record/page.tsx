@@ -7,7 +7,7 @@ import { Loading } from "@/components/ui";
 import { ClipDetail } from "@/components/ClipDetail";
 import { setPendingClip, takePendingClip } from "@/lib/pendingClip";
 import { mergeShots } from "@/lib/shotQueue";
-import { getCamera, isIPhone, nativeZoom, releaseCamera, setNativeZoom } from "@/lib/camera";
+import { getCamera, isHomeScreenApp, isIPhone, nativeZoom, releaseCamera, setNativeZoom } from "@/lib/camera";
 
 /** In-app recordings up to 3 minutes (several shots can be cut from one) */
 const MAX_SECONDS = 180;
@@ -72,12 +72,13 @@ function RecordInner() {
   const digital = useRef<{ stop: () => void } | null>(null);
   const [tip, setTip] = useState(false);
   const [iphone, setIphone] = useState(false);
+  const [homeApp, setHomeApp] = useState(false);
   const [clip, setClip] = useState<Blob | null>(null);
   // Picked in the feed: the clip is handed over, so the camera stays off
   const fromFeed = sp.get("from") === "feed";
   const [waitPending, setWaitPending] = useState(sp.get("clip") === "1");
 
-  /** Done with the camera on this screen: it stays ready for the next clip for a few minutes */
+  /** Done with the camera: it switches off straight away */
   const stopCamera = useCallback(() => {
     if (stream.current) releaseCamera();
     stream.current = null;
@@ -101,8 +102,10 @@ function RecordInner() {
       if (range) setNativeZoom(s, Math.max(range.min, 1));
       setPhase("ready");
       setIphone(isIPhone());
+      setHomeApp(isHomeScreenApp());
+      // iPhone: once the camera question has been answered, show how to stop it being asked again
       try {
-        if (isIPhone() && !localStorage.getItem(TIP_KEY)) setTip(true);
+        if (isIPhone() && !localStorage.getItem(TIP_KEY) && !sessionStorage.getItem(TIP_KEY)) setTip(true);
       } catch {}
     } catch {
       setPhase("failed");
@@ -347,20 +350,59 @@ function RecordInner() {
 
       {tip && !recording && (
         <div className="cam-tip" role="dialog" aria-label="Stop the camera question">
-          <p className="cam-tip-h">Stop the camera question</p>
-          <p>The app keeps the camera ready between clips. To stop your iPhone asking at all: open the Settings app, find Safari, and set Camera and Microphone to Allow.</p>
-          <p>If an &ldquo;Undo&rdquo; box ever pops up while you film, that&apos;s the iPhone&apos;s Shake to Undo. Settings, Accessibility, Touch turns it off.</p>
-          <button
-            className="btn block"
-            onClick={() => {
-              try {
-                localStorage.setItem(TIP_KEY, "1");
-              } catch {}
-              setTip(false);
-            }}
-          >
-            Got it
-          </button>
+          <p className="cam-tip-h">Stop your iPhone asking every time</p>
+          {homeApp ? (
+            <ol>
+              <li>
+                Open the <b>Settings</b> app
+              </li>
+              <li>
+                Tap <b>Apps</b>, then <b>Safari</b> (on older iPhones, Safari is in the main list)
+              </li>
+              <li>
+                Tap <b>Camera</b> and choose <b>Allow</b>. Do the same for <b>Microphone</b>
+              </li>
+            </ol>
+          ) : (
+            <ol>
+              <li>
+                Tap <b>aA</b> (or <b>⋯</b>) beside the web address at the top or bottom of the screen
+              </li>
+              <li>
+                Tap <b>Website Settings</b>
+              </li>
+              <li>
+                Set <b>Camera</b> and <b>Microphone</b> to <b>Allow</b>
+              </li>
+            </ol>
+          )}
+          <p className="cam-tip-note">Apple doesn&apos;t let apps in Safari change this for you. It takes 20 seconds, once. If an &ldquo;Undo&rdquo; box ever pops up while filming, that&apos;s Shake to Undo: Settings, Accessibility, Touch turns it off.</p>
+          <div className="row">
+            <button
+              className="btn"
+              style={{ flex: 1 }}
+              onClick={() => {
+                try {
+                  localStorage.setItem(TIP_KEY, "1");
+                } catch {}
+                setTip(false);
+              }}
+            >
+              Done it
+            </button>
+            <button
+              className="btn secondary"
+              style={{ flex: 1 }}
+              onClick={() => {
+                try {
+                  sessionStorage.setItem(TIP_KEY, "1");
+                } catch {}
+                setTip(false);
+              }}
+            >
+              Later
+            </button>
+          </div>
         </div>
       )}
     </div>
