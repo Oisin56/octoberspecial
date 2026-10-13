@@ -77,7 +77,14 @@ export interface Game {
 
 export type HandicapRule =
   | { mode: "manual"; shots: Record<string, number> } // shots per ball id
-  | { mode: "allowance"; pct: number; relative: boolean }; // from player handicaps
+  | {
+      mode: "allowance";
+      pct: number;
+      relative: boolean;
+      /** World Handicap System: player handicaps are indexes, turned into a course handicap for the tee played
+       *  (index × slope ÷ 113 + rating − par) before the allowance. Without it, handicaps are used as they are. */
+      course?: { slope: number; rating: number; par: number } | null;
+    }; // from player handicaps
 
 export interface PointsRule {
   front: number; // head-to-head: segment pots
@@ -87,6 +94,8 @@ export interface PointsRule {
   positions?: number[];
   /** Skins: points per skin. */
   skin?: number;
+  /** Field rounds played in several groups: positions are over the whole field, not within each group. */
+  across?: boolean;
 }
 
 export interface RoundCfg {
@@ -120,7 +129,11 @@ export interface TournamentCfg {
   sideGames: SideGameCfg[];
   /** Who side games are awarded to. */
   sideGamesBy: "player" | "team";
+  /** How the tournament is won: points from each round (default), or running Stableford or stroke-play totals. */
+  standings?: StandingsMode;
 }
+
+export type StandingsMode = "points" | "stableford" | "stroke";
 
 export interface BallHole {
   gross: number | null;
@@ -168,6 +181,11 @@ export function oneBallHandicap(play: PlayType, hcps: number[], pct: number): nu
   return 0;
 }
 
+/** World Handicap System course handicap: index × slope ÷ 113 + (course rating − par). */
+export function courseHandicap(index: number, c: { slope: number; rating: number; par: number }): number {
+  return (index * c.slope) / 113 + (c.rating - c.par);
+}
+
 /** Shots received per ball in a game. */
 export function gameShots(round: RoundCfg, game: Game, players: Player[]): Record<string, number> {
   const balls = ballsOfGame(game, round.play);
@@ -176,8 +194,9 @@ export function gameShots(round: RoundCfg, game: Game, players: Player[]): Recor
     for (const b of balls) out[b] = Math.max(0, Math.round(round.handicap.shots[b] ?? 0));
     return out;
   }
-  const { pct, relative } = round.handicap;
-  const hcp = (pid: string) => players.find((p) => p.id === pid)?.handicap ?? 0;
+  const { pct, relative, course } = round.handicap;
+  const index = (pid: string) => players.find((p) => p.id === pid)?.handicap ?? 0;
+  const hcp = (pid: string) => (course?.slope ? courseHandicap(index(pid), course) : index(pid));
   for (const side of game.sides) {
     if (ONE_BALL.includes(round.play)) {
       out[side.id] = oneBallHandicap(round.play, side.playerIds.map(hcp), pct);
@@ -472,9 +491,27 @@ export function gameSummary(round: RoundCfg, game: Game, players: Player[], entr
   return { gameId: game.id, shots, front, back, full, points, holesPlayed: full.holesPlayed, complete: full.complete };
 }
 
+/** A Stableford or stroke-play round in several groups whose places are over the whole field. */
+export const acrossField = (r: Pick<RoundCfg, "points" | "scoring">) =>
+  !!r.points.across && !!r.points.positions?.length && (r.scoring === "stableford" || r.scoring === "stroke");
+
+/** Rank every side in the round together (once every group has finished) and pay the places. */
+function applyAcross(round: RoundCfg, games: GameSummary[]) {
+  const value: Record<string, number> = {};
+  for (const g of games) Object.assign(value, g.full.value);
+  const done = games.length > 0 && games.every((g) => g.full.complete);
+  const paid = done ? positionPoints(rank(value, round.scoring === "stroke"), round.points.positions ?? []) : {};
+  for (const g of games)
+    for (const id of Object.keys(g.full.value)) {
+      g.full.points[id] = paid[id] ?? 0;
+      g.points[id] = g.front.points[id] + g.back.points[id] + g.full.points[id];
+    }
+}
+
 export function roundSummary(round: RoundCfg, players: Player[], teams: Team[], entries: HoleEntry[]): RoundSummary {
   const pids = players.map((p) => p.id);
   const games = round.games.map((g) => gameSummary(round, g, players, entries));
+  if (acrossField(round)) applyAcross(round, games);
   const playerPoints = zero(pids);
   const teamPoints = zero(teams.map((t) => t.id));
   const tallies: Tallies = { birdies: zero(pids), eagles: zero(pids), gir: zero(pids), ctp: zero(pids), ld: zero(pids) };
@@ -542,16 +579,92 @@ export interface TournamentSummary {
   pointsAvailable: number;
   pointsRemaining: number;
   complete: boolean;
+  /** Set when the tournament is won on running Stableford or stroke-play totals rather than points */
+  totals: Totals | null;
 }
 
 /** Points on offer in a round (used for "points remaining"). */
 export function roundPointsAvailable(r: RoundCfg): number {
   if (r.scoring === "skins") return r.holes.length * (r.points.skin ?? 1) * r.games.length;
   const nines = isNine(r) ? 0 : r.points.front + r.points.back;
+  if (acrossField(r)) return r.games.length * nines + (r.points.positions ?? []).reduce((a, b) => a + b, 0);
   return r.games.reduce((t, g) => {
     if (g.sides.length === 2 || !r.points.positions?.length) return t + nines + r.points.full;
     return t + nines + r.points.positions.reduce((a, b) => a + b, 0);
   }, 0);
+}
+
+export interface TotalRow {
+  playerId: string;
+  /** Stableford points, or net strokes to par */
+  value: number;
+  /** Gross strokes and gross to par (stroke play) */
+  gross: number;
+  grossToPar: number;
+  holes: number;
+  /** The same, round by round (by round id) */
+  rounds: Record<string, { value: number; gross: number; holes: number }>;
+  /** Place, ties sharing it (0 = not started) */
+  pos: number;
+  tied: boolean;
+}
+
+/** Running Stableford or stroke-play totals across every round. */
+export interface Totals {
+  kind: "stableford" | "stroke";
+  rows: TotalRow[];
+}
+
+/** Each player's own ball, hole by hole, added up over the whole tournament. Stroke play is net to par
+ *  (a hole without a score counts as net double bogey), so players part-way round compare fairly. */
+export function totalsFor(cfg: TournamentCfg, entriesByRound: Record<string, HoleEntry[]>): Totals | null {
+  const kind = cfg.standings;
+  if (kind !== "stableford" && kind !== "stroke") return null;
+  const rows: Record<string, TotalRow> = Object.fromEntries(
+    cfg.players.map((p) => [p.id, { playerId: p.id, value: 0, gross: 0, grossToPar: 0, holes: 0, rounds: {}, pos: 0, tied: false }]),
+  );
+  for (const r of cfg.rounds) {
+    const entries = entriesByRound[r.id] ?? [];
+    for (const g of r.games) {
+      const shots = gameShots(r, g, cfg.players);
+      for (const e of entries) {
+        if (e.game !== g.id) continue;
+        const par = r.holes.find((h) => h.number === e.hole)?.par;
+        if (par == null) continue;
+        for (const side of g.sides)
+          for (const pid of side.playerIds) {
+            const row = rows[pid];
+            const ball = ONE_BALL.includes(r.play) ? side.id : pid;
+            const b = e.scores[ball];
+            if (!row || !ballDone(b, kind, r.play)) continue;
+            const s = holeShots(r, shots[ball] ?? 0, e.hole);
+            const net = ballNet(b, s);
+            const v = kind === "stableford" ? ballPts(b, par, s) : (net ?? par + 2) - par;
+            const gross = b?.gross != null && !b.pickedUp ? b.gross : par + 2 + s;
+            row.value += v;
+            row.gross += gross;
+            row.grossToPar += gross - par;
+            row.holes++;
+            const rr = (row.rounds[r.id] ??= { value: 0, gross: 0, holes: 0 });
+            rr.value += v;
+            rr.gross += gross;
+            rr.holes++;
+          }
+      }
+    }
+  }
+  const lower = kind === "stroke";
+  const list = Object.values(rows).sort(
+    (a, b) => (a.holes ? 0 : 1) - (b.holes ? 0 : 1) || (lower ? a.value - b.value : b.value - a.value) || b.holes - a.holes,
+  );
+  list.forEach((row, i) => {
+    if (!row.holes) return;
+    const same = list.filter((o) => o.holes && o.value === row.value);
+    row.pos = list.findIndex((o) => o.holes && o.value === row.value) + 1;
+    row.tied = same.length > 1;
+    void i;
+  });
+  return { kind, rows: list };
 }
 
 export function tournamentSummary(cfg: TournamentCfg, entriesByRound: Record<string, HoleEntry[]>): TournamentSummary {
@@ -613,12 +726,14 @@ export function tournamentSummary(cfg: TournamentCfg, entriesByRound: Record<str
       }
       if (!gs.front.complete) pointsRemaining += r.points.front;
       if (!gs.back.complete) pointsRemaining += r.points.back;
+      if (acrossField(r)) return; // the places are added once for the round, below
       if (!gs.full.complete)
         pointsRemaining +=
           g.sides.length > 2 && r.points.positions?.length
             ? r.points.positions.reduce((a, b) => a + b, 0)
             : r.points.full;
     });
+    if (acrossField(r) && !rs.games.every((g) => g.full.complete)) pointsRemaining += (r.points.positions ?? []).reduce((a, b) => a + b, 0);
   });
   if (!complete) pointsRemaining += sideGamePts;
 
@@ -635,5 +750,6 @@ export function tournamentSummary(cfg: TournamentCfg, entriesByRound: Record<str
     pointsAvailable,
     pointsRemaining,
     complete,
+    totals: totalsFor(cfg, entriesByRound),
   };
 }

@@ -3,7 +3,7 @@
 import { useT } from "@/components/Providers";
 import { Board, Loading, pts } from "@/components/ui";
 import { SIDE_GAME_LABEL, formatLabel } from "@/lib/types";
-import { standings } from "@/lib/live";
+import { standings, totalsView } from "@/lib/live";
 import { roundStage } from "@/lib/scorecards";
 
 const SERIES = ["var(--board)", "var(--red)", "var(--bracken)", "#1d4f91", "#6b4c9a", "#2e7d4f", "#b0582b", "#4a5560"];
@@ -22,6 +22,90 @@ export default function Leaderboard() {
   const awardsFor = summary.awards.filter((a) => (cfg.sideGames.find((g) => g.kind === a.kind)?.points ?? 0) > 0 && (cfg.sideGamesBy === "team") === teamMode);
   const tallies = summary.awards.filter((a) => !awardsFor.includes(a));
   const played = summary.rounds.filter((r) => r.games.some((g) => g.holesPlayed > 0)).length;
+  const totals = totalsView(state, summary);
+
+  if (totals)
+    return (
+      <>
+        <h1 style={{ marginBottom: 14 }}>Leaderboard</h1>
+        <Board />
+        <section className="section panel">
+          <h2 style={{ marginBottom: 8 }}>{totals.kind === "stroke" ? "Net to par, round by round" : "Stableford points, round by round"}</h2>
+          <div className="card-scroll">
+            <table className="stats">
+              <thead>
+                <tr>
+                  <th></th>
+                  <th>Player</th>
+                  <th>Total</th>
+                  {totals.kind === "stroke" && <th>Gross</th>}
+                  {state.rounds.map((r) => (
+                    <th key={r.id} title={`${r.course_name}: ${formatLabel(r)}`}>
+                      R{r.number}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {totals.rows.map((r) => (
+                  <tr key={r.id}>
+                    <td className="num muted">{r.pos}</td>
+                    <td>
+                      {r.name}
+                      {r.thru != null && <span className="small muted"> thru {r.thru}</span>}
+                    </td>
+                    <td className="num" style={{ fontWeight: 700 }}>
+                      {r.score}
+                    </td>
+                    {totals.kind === "stroke" && <td className="num muted">{r.gross?.replace("Gross ", "") ?? ""}</td>}
+                    {r.perRound.map((v, i) => (
+                      <td key={i} className="num">
+                        {v}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="small muted">
+            {totals.kind === "stroke"
+              ? "Net strokes to par, after handicap shots. A hole without a score counts as net double bogey. Gross is the strokes actually taken."
+              : "Stableford points after handicap shots, added up over every round."}
+          </p>
+        </section>
+        <section className="section panel">
+          <h2 style={{ marginBottom: 8 }}>Tallies</h2>
+          <p className="small muted" style={{ marginTop: 0 }}>
+            Counted across the whole event. Birdies and eagles are gross.
+          </p>
+          <div className="card-scroll">
+            <table className="stats">
+              <thead>
+                <tr>
+                  <th></th>
+                  {tallies.concat(awardsFor).map((a) => (
+                    <th key={a.kind}>{SIDE_GAME_LABEL[a.kind]}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {cfg.players.map((p) => (
+                  <tr key={p.id}>
+                    <td>{p.name}</td>
+                    {tallies.concat(awardsFor).map((a) => (
+                      <td key={a.kind} className="num">
+                        {summary.tallies[a.kind][p.id] ?? 0}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </>
+    );
 
   return (
     <>

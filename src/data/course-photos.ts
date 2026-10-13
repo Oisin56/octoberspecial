@@ -62,3 +62,16 @@ export const COURSE_PHOTOS: Record<string, CoursePhoto> = {
     "nearby": true
   }
 };
+
+/** Golf scenes (not landmarks) used as a stand-in for any course without a photo of its own. */
+const STAND_INS = ["druids-heath", "wicklow", "concra-wood", "slieve-russell"];
+
+/** The course's own free-licence photo, else a stand-in golf course photo picked by its name (always the same one). */
+export function coursePhotoFor(slug: string, name: string): (CoursePhoto & { standIn: boolean }) | null {
+  const own = COURSE_PHOTOS[slug.replace(/^local:/, "")];
+  if (own) return { ...own, standIn: false };
+  let h = 0;
+  for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  const p = COURSE_PHOTOS[STAND_INS[h % STAND_INS.length]];
+  return p ? { ...p, alt: "A golf course (a stand-in until there's a photo of this one)", standIn: true } : null;
+}

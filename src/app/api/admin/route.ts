@@ -4,7 +4,8 @@ import { hashPin, isOrganiser } from "@/lib/auth";
 import { bad, context, json, loadServerState, siteOrigin, slugify } from "@/lib/server-data";
 import { EMAIL_RE, emailPiece, mailConfigured } from "@/lib/email";
 import { draftGuide, generatePiece, type PieceKind } from "@/lib/ai";
-import { cleanGuide, type Tone } from "@/lib/types";
+import { cleanGuide, normalizeRound, type RoundRow, type Tone } from "@/lib/types";
+import { guideFrom, guideStep, newGuideWork, type GuideWork } from "@/lib/guide";
 const TONE_IDS: Tone[] = ["broadsheet", "tabloid", "commentator", "dry"];
 import { getCourse, validStrokeIndexes } from "@/lib/courses";
 import type { Game, HandicapRule, PointsRule } from "@/lib/engine";
@@ -14,7 +15,7 @@ export const maxDuration = 60;
 const TOURNAMENT_FIELDS = [
   "name", "subtitle", "start_date", "end_date", "theme", "custom_colors", "logo_path", "hero_path", "tone",
   "side_games", "side_games_by", "teams", "auto_bulletins", "video_enabled", "organiser_player_id", "published",
-  "require_attestation",
+  "require_attestation", "feed_on", "ai_on", "standings",
 ];
 const PLAYER_FIELDS = [
   "name", "nickname", "handicap", "home_club", "bio", "best_club", "worst_club", "weakness", "quote", "photo_path", "team_id", "sort",
@@ -26,13 +27,14 @@ function courseRef(slug: string) {
   return slug.includes(":") ? slug : `local:${slug}`;
 }
 
-function cleanGames(games: unknown, playerIds: Set<string>, teamIds: Set<string>): Game[] | string {
+function cleanGames(games: unknown, playerIds: Set<string>, teamIds: Set<string>, oneSideOk = false): Game[] | string {
   if (!Array.isArray(games) || !games.length) return "Add at least one match or group";
   const seenSide = new Set<string>();
   const out: Game[] = [];
   for (const [gi, g] of (games as Game[]).entries()) {
     const gid = slugify(String(g.id || `g${gi + 1}`)) || `g${gi + 1}`;
-    if (!Array.isArray(g.sides) || g.sides.length < 2) return `Match ${gi + 1} needs at least two sides`;
+    // A player on their own (Stableford or stroke play) is fine; a match needs two sides
+    if (!Array.isArray(g.sides) || g.sides.length < (oneSideOk ? 1 : 2)) return `Match ${gi + 1} needs at least two sides`;
     const sides = [];
     for (const [si, s] of g.sides.entries()) {
       const pids = (s.playerIds ?? []).filter((p) => playerIds.has(p));
@@ -75,7 +77,7 @@ export async function POST(req: Request) {
         fans: fans.error ? [] : (fans.data ?? []),
         pinSet: Object.fromEntries((pins ?? []).map((p) => [p.id, !!p.pin_hash])),
         organiserPinSet: !!t.organiser_pin_hash,
-        env: { ai: !!process.env.ANTHROPIC_API_KEY, courses: !!process.env.GOLFCOURSEAPI_KEY, mail: mailConfigured() },
+        env: { ai: !!process.env.ANTHROPIC_API_KEY, courses: !!process.env.GOLFCOURSEAPI_KEY || !!process.env.GOLFAPI_KEY, mail: mailConfigured() },
       });
     }
 
@@ -86,6 +88,7 @@ export async function POST(req: Request) {
         if (!/^\d{4,8}$/.test(String(b.organiserPin))) return bad("Organiser PIN must be 4–8 digits");
         patch.organiser_pin_hash = hashPin(String(b.organiserPin));
       }
+      if ("standings" in patch && !["points", "stableford", "stroke"].includes(String(patch.standings))) return bad("Unknown way of winning");
       if (Array.isArray(patch.teams)) {
         patch.teams = (patch.teams as { id?: string; name: string; color?: string }[]).map((tm, i) => ({
           id: tm.id || slugify(tm.name) || `team${i + 1}`,
@@ -165,6 +168,7 @@ export async function POST(req: Request) {
           full: Number(pr.full) || 0,
           positions: Array.isArray(pr.positions) ? pr.positions.map(Number).filter((n) => n >= 0) : undefined,
           skin: pr.skin != null ? Number(pr.skin) : undefined,
+          across: pr.across ? true : undefined,
         };
         // keep legacy columns in step for older views
         patch.nine_points = Number(pr.front) || 0;
@@ -174,7 +178,13 @@ export async function POST(req: Request) {
         const hr = r.handicap_rule as HandicapRule;
         patch.handicap_rule =
           hr.mode === "allowance"
-            ? { mode: "allowance", pct: Math.max(0, Math.min(150, Number(hr.pct) || 0)), relative: !!hr.relative }
+            ? {
+                mode: "allowance",
+                pct: Math.max(0, Math.min(150, Number(hr.pct) || 0)),
+                relative: !!hr.relative,
+                // Course handicaps from the index (set from the tee's slope and rating): kept unless sent
+                course: "course" in hr ? cleanCourseRating(hr.course) : await currentCourseRating(db, r.id, t.id),
+              }
             : {
                 mode: "manual",
                 shots: Object.fromEntries(Object.entries(hr.shots ?? {}).map(([k, v]) => [k, Math.max(0, Math.round(Number(v) || 0))])),
@@ -182,7 +192,8 @@ export async function POST(req: Request) {
       }
       if ("games" in r) {
         const { data: ps } = await db.from("players").select("id").eq("tournament_id", t.id);
-        const g = cleanGames(r.games, new Set((ps ?? []).map((x) => x.id)), new Set((t.teams ?? []).map((x) => x.id)));
+        const fmt = r.format ?? (r.id ? (await db.from("rounds").select("format").eq("id", r.id).maybeSingle()).data?.format : null);
+        const g = cleanGames(r.games, new Set((ps ?? []).map((x) => x.id)), new Set((t.teams ?? []).map((x) => x.id)), fmt === "stableford" || fmt === "stroke");
         if (typeof g === "string") return bad(g);
         patch.games = g;
         patch.scorer_id = g[0]?.scorerId ?? null;
@@ -215,6 +226,7 @@ export async function POST(req: Request) {
         if (!existing) return bad("Round not found", 404);
       }
       const existingRef = existing && !existing.course_slug.startsWith("manual:") ? courseRef(existing.course_slug) : null;
+      let teeRating: { slope: number; rating: number; par: number } | null = null;
       const useRef = r.courseRef || (r.tee ? existingRef : null);
       if (useRef && !("holes" in r)) {
         const c = await getCourse(useRef);
@@ -230,7 +242,12 @@ export async function POST(req: Request) {
         // A different course: its own guide (or none, to be filled in)
         if (!("course_guide" in r) && c.ref !== existing?.course_slug) patch.course_guide = c.guide ?? null;
         patch.tee = tee.name;
+        teeRating = tee.slope && tee.rating ? { slope: tee.slope, rating: tee.rating, par: tee.par.reduce((a, b) => a + b, 0) } : null;
         patch.holes = tee.par.map((par, i) => ({ number: i + 1, par, si: tee.si[i], yards: tee.yards[i] || undefined }));
+        // Course handicaps in use: follow the new tee's slope and rating
+        const rule = (patch.handicap_rule ?? (r.id ? (await db.from("rounds").select("handicap_rule").eq("id", r.id).single()).data?.handicap_rule : null)) as HandicapRule | null;
+        if (rule?.mode === "allowance" && rule.course)
+          patch.handicap_rule = { ...rule, course: tee.slope && tee.rating ? { slope: tee.slope, rating: tee.rating, par: tee.par.reduce((a, b) => a + b, 0) } : null };
         if (tee.par.length === 9) patch.hole_set = "all";
       } else if (r.tee && existing && !existingRef) {
         patch.tee = r.tee;
@@ -257,7 +274,7 @@ export async function POST(req: Request) {
       if (!patch.course_name || !patch.holes) return bad("Choose a course (or enter the card) for the new round");
       const { data: last } = await db
         .from("rounds")
-        .select("number")
+        .select("number,format,play,points_rule,handicap_rule")
         .eq("tournament_id", t.id)
         .order("number", { ascending: false })
         .limit(1)
@@ -271,6 +288,18 @@ export async function POST(req: Request) {
         handicap_rule: { mode: "manual", shots: {} },
         ...patch,
       };
+      // Made with the setup wizard (course handicaps from the index): a new round follows the last one's format,
+      // allowance and points, with this tee's slope and rating; who plays with whom goes on the to-do list
+      const lastRule = last?.handicap_rule as HandicapRule | null;
+      if (last && lastRule?.mode === "allowance" && "course" in lastRule && !("handicap_rule" in r)) {
+        insert.format = last.format;
+        insert.play = last.play;
+        if (last.points_rule) insert.points_rule = last.points_rule;
+        insert.handicap_rule = { ...lastRule, course: teeRating };
+        insert.nine_points = 0;
+        insert.full_points = Math.floor(Number((last.points_rule as PointsRule | null)?.full ?? 0));
+        if (!insert.games) insert.games = [];
+      }
       if (!insert.games) {
         // Default: everyone in one game as singles (head-to-head for two players)
         const { data: ps } = await db.from("players").select("id,team_id").eq("tournament_id", t.id).order("sort");
@@ -286,6 +315,31 @@ export async function POST(req: Request) {
       }
       if (error || !data) return bad(error?.message ?? "Couldn't add the round", 500);
       return json({ ok: true, id: data.id });
+    }
+
+    // The course guide, found a step at a time (the same careful search as after the setup wizard)
+    case "guideStep": {
+      const { data: round } = await db.from("rounds").select("*").eq("id", b.roundId).eq("tournament_id", t.id).maybeSingle();
+      if (!round) return bad("Round not found", 404);
+      if (!process.env.ANTHROPIC_API_KEY) return bad("ANTHROPIC_API_KEY isn't set", 500);
+      const w = (b.work ?? null) as GuideWork | null;
+      const work: GuideWork = w && ["search", "read", "done"].includes(w.stage)
+        ? {
+            stage: w.stage,
+            sources: (Array.isArray(w.sources) ? w.sources : []).filter((x) => /^https?:\/\//.test(String(x?.url))).slice(0, 5),
+            overview: typeof w.overview === "string" ? w.overview.slice(0, 1500) : undefined,
+            signature: typeof w.signature === "string" ? w.signature.slice(0, 800) : undefined,
+            holes: Object.fromEntries(Object.entries(w.holes ?? {}).filter(([k, v]) => /^\d{1,2}$/.test(k) && typeof v === "string").map(([k, v]) => [k, String(v).slice(0, 300)])),
+            from: (Array.isArray(w.from) ? w.from : []).map(String).slice(0, 8),
+          }
+        : newGuideWork();
+      try {
+        const next = await guideStep(normalizeRound(round as RoundRow), work);
+        return json({ work: next, guide: next.stage === "done" ? guideFrom(next) : null });
+      } catch {
+        const done = { ...work, stage: "done" as const, result: "No hole-by-hole info found" };
+        return json({ work: done, guide: guideFrom(done) });
+      }
     }
 
     case "draftGuide": {
@@ -494,4 +548,22 @@ export async function POST(req: Request) {
     default:
       return bad("Unknown action");
   }
+}
+
+/** A tee's slope and rating for course handicaps, or null. */
+function cleanCourseRating(c: unknown): { slope: number; rating: number; par: number } | null {
+  if (!c || typeof c !== "object") return null;
+  const x = c as Record<string, unknown>;
+  const slope = Number(x.slope);
+  const rating = Number(x.rating);
+  const par = Number(x.par);
+  if (!(slope >= 55 && slope <= 155) || !(rating >= 25 && rating <= 85) || !(par >= 27 && par <= 80)) return null;
+  return { slope: Math.round(slope), rating, par };
+}
+
+async function currentCourseRating(db: ReturnType<typeof adminClient>, roundId: unknown, tournamentId: string) {
+  if (!roundId) return null;
+  const { data } = await db.from("rounds").select("handicap_rule").eq("id", String(roundId)).eq("tournament_id", tournamentId).maybeSingle();
+  const rule = data?.handicap_rule as HandicapRule | null;
+  return rule?.mode === "allowance" ? cleanCourseRating(rule.course) : null;
 }

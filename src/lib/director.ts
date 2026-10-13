@@ -10,7 +10,7 @@ import { cleanBody, cleanTitle } from "./cleanText";
 import { readPlanJson } from "./planJson";
 import { shotLine } from "./shots";
 import { scoreBug, type ScoreBug } from "./scorebug";
-import { standings } from "./live";
+import { standings, totalsView } from "./live";
 import {
   ballName,
   formatLabel,
@@ -167,6 +167,8 @@ function standingsBefore(s: TournamentState, r: TournamentState["rounds"][number
   const then = { ...s, rounds: earlier, entries: s.entries.filter((e) => earlier.some((x) => x.id === e.round_id)) } as TournamentState;
   const cfg = toTournamentCfg(then);
   const team = cfg.teams.length >= 2;
+  const totals = totalsView(then, tournamentSummary(cfg, toEntries(then.entries)));
+  if (totals) return totals.rows.filter((r) => r.pos).slice(0, 6).map((r) => [r.name, r.score]);
   const st = standings(then, tournamentSummary(cfg, toEntries(then.entries)), team);
   const list = team ? cfg.teams.map((t) => [t.name, st.banked[t.id] ?? 0] as const) : cfg.players.map((p) => [p.name, st.banked[p.id] ?? 0] as const);
   if (list.every(([, v]) => !v)) return undefined;
@@ -177,6 +179,8 @@ function standingsRows(s: TournamentState): [string, string][] {
   const cfg = toTournamentCfg(s);
   const t = tournamentSummary(cfg, toEntries(s.entries));
   const fin = t.complete;
+  const totals = totalsView(s, t);
+  if (totals) return totals.rows.filter((r) => r.pos).slice(0, 6).map((r) => [r.name, r.score]);
   if (cfg.teams.length >= 2)
     return cfg.teams
       .map((tm) => [tm.name, fin ? t.teamTotal[tm.id] : t.teamProjected[tm.id]] as const)

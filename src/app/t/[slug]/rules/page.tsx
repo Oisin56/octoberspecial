@@ -2,7 +2,7 @@
 
 import { useT } from "@/components/Providers";
 import { Loading, pts } from "@/components/ui";
-import { roundPointsAvailable } from "@/lib/engine";
+import { acrossField, roundPointsAvailable } from "@/lib/engine";
 import { PLAY_LABEL, SCORING_LABEL, SIDE_GAME_LABEL, toRoundCfg } from "@/lib/types";
 
 const PLAY_RULE: Record<string, string> = {
@@ -34,7 +34,12 @@ export default function Rules() {
       <h2>The rules</h2>
       <div className="byline">Generated from the tournament settings</div>
       <p>
-        {cfg.rounds.length} round{cfg.rounds.length === 1 ? "" : "s"}, {pts(summary.pointsAvailable)} points available in total.
+        {cfg.rounds.length} round{cfg.rounds.length === 1 ? "" : "s"},{" "}
+        {summary.totals
+          ? summary.totals.kind === "stroke"
+            ? "won on the lowest net total: strokes taken less handicap shots, added up over every round. A hole without a score counts as net double bogey."
+            : "won on the most Stableford points, added up over every round."
+          : `${pts(summary.pointsAvailable)} points available in total.`}
         {teamMode ? ` Team event: ${cfg.teams.map((t) => t.name).join(" v ")}. Every point a side wins goes to its team.` : ""} The site keeps points
         only. Any money is settled separately.
       </p>
@@ -47,7 +52,11 @@ export default function Rules() {
         const pointsText =
           rc.scoring === "skins"
             ? `${pts(rc.points.skin ?? 1)} point per skin`
-            : field && rc.points.positions?.length
+            : summary.totals
+              ? "counts towards the running totals"
+              : acrossField(rc)
+              ? `points by finishing position across the whole field: ${(rc.points.positions ?? []).map(pts).join(", ")}`
+              : field && rc.points.positions?.length
               ? `points by finishing position: ${rc.points.positions.map(pts).join(", ")}`
               : (rc.holes.length <= 9
                   ? [`the ${rc.holes.length} holes ${pts(rc.points.full)}`]
@@ -64,7 +73,7 @@ export default function Rules() {
                     : rc.play === "scramble"
                       ? "35% of the lower plus 15% of the higher (pairs); 25/20/15/10% for teams of four"
                       : `${rc.handicap.pct}% of handicap`
-              }${rc.handicap.relative ? ", strokes given off the lowest" : ""}`
+              }${rc.handicap.course?.slope ? ` (course handicap from the index: slope ${rc.handicap.course.slope}, rating ${rc.handicap.course.rating})` : ""}${rc.handicap.relative ? ", strokes given off the lowest" : ""}`
             : Object.values(rc.handicap.shots).some((v) => v > 0)
               ? "shots set by the organiser"
               : "flat (off scratch)";

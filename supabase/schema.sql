@@ -333,10 +333,16 @@ create policy read_all on votes for select using (true);
 drop policy if exists read_all on tournaments;
 revoke select on tournaments from anon, authenticated;
 drop view if exists public_tournaments;
+-- Phase C: how it's won (points, or running Stableford / stroke-play totals), the extras switched on,
+-- and what's still being got ready after the setup wizard
+alter table tournaments add column if not exists standings text not null default 'points';
+alter table tournaments add column if not exists feed_on boolean not null default true;
+alter table tournaments add column if not exists ai_on boolean not null default true;
+alter table tournaments add column if not exists setup_jobs jsonb;
 create view public_tournaments with (security_invoker = false) as
   select id, slug, name, subtitle, start_date, end_date, theme, custom_colors, logo_path, hero_path, tone,
          side_games, side_games_by, teams, auto_bulletins, video_enabled, organiser_player_id, published, created_at, reel_music_path,
-         require_attestation, broadcast_on, broadcast_cap_cents
+         require_attestation, broadcast_on, broadcast_cap_cents, standings, feed_on, ai_on, setup_jobs
   from tournaments;
 grant select on public_tournaments to anon, authenticated;
 

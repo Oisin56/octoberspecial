@@ -23,7 +23,12 @@ export function SiteHeader() {
   const live = state?.rounds.some((r) => r.status === "live");
   const canScore = session?.role === "organiser" || session?.role === "player";
   // Computers: the top tabs, plus Score during a round and Admin for the organiser (phones use the bar at the foot)
-  const tabs = [...(live && canScore ? [{ path: "/score", label: "Score" }] : []), ...TABS, ...(session?.role === "organiser" ? [{ path: "/admin", label: "Admin" }] : [])];
+  const feedOn = state?.tournament.feed_on !== false;
+  const tabs = [
+    ...(live && canScore ? [{ path: "/score", label: "Score" }] : []),
+    ...TABS.filter((x) => feedOn || x.path !== "/feed"),
+    ...(session?.role === "organiser" ? [{ path: "/admin", label: "Admin" }] : []),
+  ];
   const t = state?.tournament;
   const logo = mediaUrl(t?.logo_path);
 

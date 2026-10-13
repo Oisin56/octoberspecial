@@ -82,14 +82,14 @@ export function TabBar() {
     items = [
       { k: "home", label: "Home", to: "/" },
       { k: "live", label: "Live", to: "/live" },
-      { k: "feed", label: "Feed", to: "/feed" },
+      state.tournament.feed_on === false ? { k: "board", label: "Leaderboard", to: "/leaderboard" } : { k: "feed", label: "Feed", to: "/feed" },
       { k: "admin", label: "Admin", to: "/admin" },
     ];
   } else {
     items = [
       { k: "home", label: "Home", to: "/" },
       { k: "live", label: "Live", to: "/live" },
-      { k: "feed", label: "Feed", to: "/feed" },
+      ...(state.tournament.feed_on === false ? [] : [{ k: "feed" as Glyph, label: "Feed", to: "/feed" }]),
       { k: "board", label: "Leaderboard", to: "/leaderboard" },
     ];
   }
@@ -97,7 +97,11 @@ export function TabBar() {
   return (
     <>
       {onCourse && !path.endsWith("/score") && <InstallHint />}
-      <nav className={`oncourse tabbar${onCourse ? " live" : ""}`} aria-label={onCourse ? "On the course" : "Sections"}>
+      <nav
+        className={`oncourse tabbar${onCourse ? " live" : ""}`}
+        aria-label={onCourse ? "On the course" : "Sections"}
+        style={{ gridTemplateColumns: `repeat(${items.length + 1}, minmax(0, 1fr))` }}
+      >
         {items.map((it) => {
           const at = here(it.to.split("?")[0]);
           return (
@@ -130,7 +134,7 @@ const PAGES: [string, string][] = [
 
 /** Every page, and who you are */
 function MoreSheet({ onClose }: { onClose: () => void }) {
-  const { session, href } = useT();
+  const { session, href, state } = useT();
   return (
     <div className="who-back" role="dialog" aria-label="More" onClick={onClose}>
       <div className="who-sheet" onClick={(e) => e.stopPropagation()}>
@@ -141,7 +145,7 @@ function MoreSheet({ onClose }: { onClose: () => void }) {
               Admin: organiser home
             </Link>
           )}
-          {PAGES.map(([p, label]) => (
+          {PAGES.filter(([p]) => p !== "/feed" || state?.tournament.feed_on !== false).map(([p, label]) => (
             <Link key={p} className="more-link" href={href(p)} onClick={onClose}>
               {label}
             </Link>

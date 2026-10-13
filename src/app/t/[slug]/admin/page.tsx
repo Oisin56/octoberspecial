@@ -20,7 +20,7 @@ import { DirectorPanel } from "@/components/DirectorPanel";
 import { EmailTab, useSubscribers } from "@/components/EmailAdmin";
 import { Writer, WRITE_TYPES, type WriteType } from "@/components/Writer";
 import { useCountdown } from "@/components/visual";
-import { THEMES, TONE_LABEL, toRoundCfg } from "@/lib/types";
+import { THEMES, TONE_LABEL, toRoundCfg, type SetupJob } from "@/lib/types";
 import { cardInfo } from "@/lib/scorecards";
 import { CardsAdmin } from "@/components/CardsAdmin";
 import { BroadcastSettings } from "@/components/BroadcastSettings";
@@ -110,15 +110,6 @@ export default function Admin() {
       {s === "share" && <InviteEditor data={data} onSaved={reload} />}
       {s === "settings" && (
         <>
-          <section className="panel stack">
-            <h2>Setup checklist</h2>
-            <p style={{ margin: 0 }}>Going through it all again from the start? The step-by-step setup walks you through every part in order.</p>
-            <div>
-              <Link className="btn secondary" href={href("/setup")}>
-                Open step-by-step setup
-              </Link>
-            </div>
-          </section>
           <ResetTestData onSaved={reload} />
         </>
       )}
@@ -151,11 +142,20 @@ function OrganiserHome({ data }: { data: AdminData }) {
   // What needs doing, most urgent first. Only the top two are shown.
   const todo: { text: string; action: string; to: string; external?: boolean }[] = [];
   if (rounds.length === 0) todo.push({ text: "Add the courses you're playing.", action: "Add a round", to: "#rounds" });
+  // Made with the wizard and "I'll set them myself": an empty list (older rounds have none at all: everyone in one game)
+  const unset = rounds.filter((r) => r.status === "upcoming" && Array.isArray(r.games) && r.games.length === 0 && st.players.length > 1);
+  if (unset.length)
+    todo.push({
+      text: `Who plays with whom in round${unset.length > 1 ? "s" : ""} ${listNames(unset.map((r) => String(r.number)))}: not set yet.`,
+      action: "Set them",
+      to: "#rounds",
+    });
   if (st.players.length < 2) todo.push({ text: "Add the players.", action: "Add players", to: "#players" });
   if (flagged.length) todo.push({ text: `${flagged[0].info.flag!.by} says something's not right on a round ${flagged[0].round.number} card.`, action: "Check the cards", to: "#cards" });
   if (live) todo.push({ text: `Round ${live.number} at ${live.course_name} is under way.`, action: "Enter scores", to: href(`/score?round=${live.number}`), external: true });
   const lastDone = complete[complete.length - 1];
-  if (lastDone && !pieces.some((p) => p.kind === "report" && p.round_id === lastDone.id && p.status === "published")) {
+  const aiOn = t.ai_on !== false;
+  if (aiOn && lastDone && !pieces.some((p) => p.kind === "report" && p.round_id === lastDone.id && p.status === "published")) {
     const d = drafts.find((p) => p.kind === "report" && p.round_id === lastDone.id);
     todo.push(
       d
@@ -163,7 +163,7 @@ function OrganiserHome({ data }: { data: AdminData }) {
         : { text: `Round ${lastDone.number} is finished. Nobody has written it up yet.`, action: "Write the report", to: `#write/report/${lastDone.id}` },
     );
   }
-  if (next && !live && !pieces.some((p) => p.kind === "preview" && p.round_id === next.id))
+  if (aiOn && next && !live && !pieces.some((p) => p.kind === "preview" && p.round_id === next.id))
     todo.push({ text: `No preview yet for round ${next.number} at ${next.course_name}.`, action: "Write the preview", to: `#write/preview/${next.id}` });
   if (drafts.length && !todo.some((x) => x.to === "#write"))
     todo.push({ text: `${drafts.length} ${drafts.length === 1 ? "draft is" : "drafts are"} waiting to be read.`, action: "Read them", to: "#write" });
@@ -210,6 +210,8 @@ function OrganiserHome({ data }: { data: AdminData }) {
 
       {!data.env.ai && <p className="notice">The AI writer is off until ANTHROPIC_API_KEY is added in Vercel.</p>}
 
+      <SetupResume jobs={t.setup_jobs ?? []} />
+
       <section className={`next-up${todo.length ? "" : " calm"}`} aria-label="Next up">
         <h2>Next up</h2>
         {todo.length === 0 ? (
@@ -246,10 +248,42 @@ function OrganiserHome({ data }: { data: AdminData }) {
       <AccountLink slug={t.slug} />
 
       <p className="org-foot">
-        <Link href={href("/setup")}>Step-by-step setup</Link>
         <a href="#settings">Settings and test data</a>
       </p>
     </div>
+  );
+}
+
+/** Still getting ready after the setup wizard (course guides, the first preview): carries on here, quietly. */
+function SetupResume({ jobs: initial }: { jobs: SetupJob[] }) {
+  const { api, href } = useT();
+  const [jobs, setJobs] = useState(initial);
+  const left = jobs.filter((j) => j.status === "todo").length;
+  const pending = initial.some((j) => j.status === "todo");
+  useEffect(() => {
+    if (!pending) return;
+    let stop = false;
+    (async () => {
+      for (let n = 0; n < 40 && !stop; n++) {
+        const r = await api("/api/setup", {});
+        if (!r.ok) break;
+        const list = (r.j.jobs as SetupJob[]) ?? [];
+        if (!stop) setJobs(list);
+        if (!list.some((j) => j.status === "todo")) break;
+        if (r.j.busy) await new Promise((res) => setTimeout(res, 5000));
+      }
+    })();
+    return () => {
+      stop = true;
+    };
+  }, [pending, api]);
+  if (!pending) return null;
+  const done = jobs.length - left;
+  return (
+    <p className="notice">
+      {left ? `Still reading up on the courses: ${done} of ${jobs.length} done. ` : "All set: the course guides are in. "}
+      <Link href={href("/ready")}>{left ? "Watch it" : "See what was found"}</Link>
+    </p>
   );
 }
 

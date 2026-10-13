@@ -1,4 +1,5 @@
 import type {
+  StandingsMode,
   BallHole,
   Game,
   HandicapRule,
@@ -42,6 +43,27 @@ export interface TournamentRow {
   organiser_player_id: string | null;
   published: boolean;
   reel_music_path?: string | null;
+  /** How it's won: points from each round (default), or running Stableford or stroke-play totals */
+  standings?: StandingsMode | null;
+  /** The live feed (photos, comments, notes from the course). On unless switched off */
+  feed_on?: boolean | null;
+  /** AI writing: previews, reports and bulletins. On unless switched off */
+  ai_on?: boolean | null;
+  /** What's still being got ready after the setup wizard (course guides, photos, the first preview) */
+  setup_jobs?: SetupJob[] | null;
+}
+
+export interface SetupJob {
+  id: string;
+  kind: "guide" | "photo" | "preview";
+  roundId?: string;
+  label: string;
+  status: "todo" | "done" | "none" | "failed";
+  note?: string;
+  /** Work in progress (the guide's search and pages read) */
+  data?: unknown;
+  /** When a step last started (so two phones don't run the same step at once) */
+  startedAt?: number;
 }
 
 export interface PlayerRow {
@@ -341,6 +363,7 @@ export function toTournamentCfg(s: Pick<TournamentState, "tournament" | "players
     rounds: [...s.rounds].sort((a, b) => a.number - b.number).map((r) => toRoundCfg(r, players)),
     sideGames: s.tournament.side_games ?? [],
     sideGamesBy: s.tournament.side_games_by ?? "player",
+    standings: s.tournament.standings ?? "points",
   };
 }
 

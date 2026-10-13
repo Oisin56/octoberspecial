@@ -2,14 +2,14 @@
 
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
-import { COURSE_PHOTOS } from "@/data/course-photos";
+import { coursePhotoFor } from "@/data/course-photos";
 import { mediaUrl } from "@/lib/supabase";
 import type { RoundRow } from "@/lib/types";
 
 /** The photo for a round: the organiser's upload, else a credited free-licence photo. */
 export function roundPhoto(round: Pick<RoundRow, "course_slug" | "course_name"> & { photo_path?: string | null }) {
   if (round.photo_path) return { src: mediaUrl(round.photo_path)!, alt: round.course_name, credit: null as null | { author: string; licence: string; page: string }, uploaded: true };
-  const p = COURSE_PHOTOS[round.course_slug.replace(/^local:/, "")];
+  const p = coursePhotoFor(round.course_slug, round.course_name);
   if (!p) return null;
   return { src: p.src, alt: p.alt, credit: { author: p.author, licence: p.licence, page: p.page }, uploaded: false };
 }

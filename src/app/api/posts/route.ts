@@ -35,6 +35,7 @@ export async function POST(req: Request) {
 
   // Fans post photos (with a caption if they like) to the public feed: no clips, no notes on the play
   if (session.fanId) {
+    if (t.feed_on === false) return bad("The feed is switched off for this tournament", 403);
     const text = String(b.body ?? "").trim().slice(0, 500);
     const photo = b.mediaPath ? String(b.mediaPath) : "";
     if (!(await fanAllowed(t.id, session.fanId))) return bad("You can't post here any more", 403);

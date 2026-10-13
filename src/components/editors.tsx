@@ -501,10 +501,46 @@ const PLAY_DEFAULTS: Record<PlayType, { pct: number; relative: boolean }> = {
   scramble: { pct: 100, relative: false },
 };
 
+/** How the tournament is won: points from each round, or running Stableford or stroke-play totals. */
+function StandingsEditor({ data, onSaved }: { data: AdminData; onSaved: () => void }) {
+  const t = data.state.tournament;
+  const [v, setV] = useState(t.standings ?? "points");
+  const s = useSave();
+  const opts: [string, string, string][] = [
+    ["points", "Points from each round", "Each round awards points (matches, places, skins); the most points wins"],
+    ["stableford", "Stableford total", "Everyone's Stableford points added up over every round"],
+    ["stroke", "Stroke play total (net)", "Everyone's net strokes added up over every round; lowest wins"],
+  ];
+  async function save(next: string) {
+    setV(next as typeof v);
+    const r = await s.run({ action: "updateTournament", patch: { standings: next } });
+    if (r.ok) onSaved();
+  }
+  return (
+    <section className="panel stack">
+      <h2>How it&apos;s won</h2>
+      <div className="stack">
+        {opts.map(([id, label, note]) => (
+          <label key={id} className="row" style={{ gap: 10, alignItems: "flex-start" }}>
+            <input type="radio" name="standings" checked={v === id} onChange={() => save(id)} style={{ width: 22, height: 22, marginTop: 2 }} />
+            <span>
+              <strong className="display" style={{ fontSize: 19 }}>{label}</strong>
+              <br />
+              <span className="small muted">{note}</span>
+            </span>
+          </label>
+        ))}
+      </div>
+      <Msg msg={s.msg} />
+    </section>
+  );
+}
+
 export function RoundsEditor({ data, onSaved }: { data: AdminData; onSaved: () => void }) {
   const [adding, setAdding] = useState(data.state.rounds.length === 0);
   return (
     <div className="stack">
+      {data.state.rounds.length > 0 && <StandingsEditor data={data} onSaved={onSaved} />}
       {data.state.rounds.map((r) => (
         <RoundCard key={r.id} round={r} data={data} onSaved={onSaved} />
       ))}
@@ -685,7 +721,7 @@ function HoleSetPick({ value, onChange }: { value: HoleSet; onChange: (v: HoleSe
   );
 }
 
-function CardTable({ card, setCard }: { card: { par: number; si: number; yards?: number }[]; setCard: (c: { par: number; si: number; yards: number }[]) => void }) {
+export function CardTable({ card, setCard }: { card: { par: number; si: number; yards?: number }[]; setCard: (c: { par: number; si: number; yards: number }[]) => void }) {
   const siOk = validStrokeIndexes(card.map((h) => h.si));
   return (
     <div className="stack">
@@ -1009,13 +1045,38 @@ function RoundPhoto({ round, onSaved }: { round: RoundRow; onSaved: () => void }
 /** The background the AI writer uses for this course: overview, signature holes, notes per hole. */
 function GuideEditor({ roundId, pars, guide, setGuide }: { roundId: string; pars: number[]; guide: CourseGuide; setGuide: (g: CourseGuide) => void }) {
   const s = useSave();
+  const { api } = useT();
   const [found, setFound] = useState<{ sources: string[]; searched: boolean; warnings?: string } | null>(null);
+  const [step, setStep] = useState<string | null>(null);
+  /** Search, then read the best pages one at a time; every note is checked against the card */
   async function draft() {
     if ((guide.overview || Object.keys(guide.holes).length) && !confirm("Replace the current guide with a fresh draft?")) return;
-    const r = await s.run({ action: "draftGuide", roundId }, "Draft ready: check it, then save the round");
-    if (!r.ok) return;
-    setGuide(r.j.guide as CourseGuide);
-    setFound({ sources: (r.j.sources as string[]) ?? [], searched: !!r.j.searched, warnings: r.j.warnings as string | undefined });
+    setFound(null);
+    setStep("Searching for the course's hole-by-hole pages…");
+    let work: Record<string, unknown> | null = null;
+    for (let n = 0; n < 8; n++) {
+      const r = await api("/api/admin", { action: "guideStep", roundId, work });
+      if (!r.ok) {
+        setStep(null);
+        return setFound({ sources: [], searched: true, warnings: String(r.j.error ?? "Couldn't search just now. Try again.") });
+      }
+      work = r.j.work as Record<string, unknown>;
+      const sources = (work.sources as { url: string; status: string }[]) ?? [];
+      const nextUp = sources.find((x) => x.status === "todo");
+      if (work.stage === "done") {
+        setStep(null);
+        const g = r.j.guide as CourseGuide | null;
+        if (g) setGuide({ overview: g.overview || guide.overview, signature: g.signature || guide.signature, holes: g.holes });
+        const skipped = sources.filter((x) => x.status === "rejected" || x.status === "failed").map((x) => `${new URL(x.url).hostname.replace(/^www\./, "")} (${(x as { why?: string }).why ?? "not used"})`);
+        return setFound({
+          sources: (work.from as string[]) ?? [],
+          searched: true,
+          warnings: [g ? `${String(work.result)}. Check it, then save the round.` : "No hole-by-hole info found: nothing reliable enough to use.", skipped.length ? `Not used: ${skipped.join("; ")}.` : ""].filter(Boolean).join(" "),
+        });
+      }
+      if (nextUp) setStep(`Reading ${new URL(nextUp.url).hostname.replace(/^www\./, "")}…`);
+    }
+    setStep(null);
   }
   return (
     <div className="stack guide-editor">
@@ -1055,8 +1116,8 @@ function GuideEditor({ roundId, pars, guide, setGuide }: { roundId: string; pars
         })}
       </div>
       <div className="row">
-        <button type="button" className="btn secondary" disabled={s.busy} onClick={draft}>
-          {s.busy ? "Researching the course (up to a minute)…" : "Draft it for me"}
+        <button type="button" className="btn secondary" disabled={!!step} onClick={draft}>
+          {step ?? "Draft it for me"}
         </button>
         <Msg msg={s.msg} />
       </div>
@@ -1350,14 +1411,24 @@ export function ContentEditor({ data, onSaved }: { data: AdminData; onSaved: () 
   const [tone, setTone] = useState<Tone>(t.tone);
   const [auto, setAuto] = useState(t.auto_bulletins);
   const [video, setVideo] = useState(t.video_enabled);
+  const [feed, setFeed] = useState(t.feed_on !== false);
+  const [ai, setAi] = useState(t.ai_on !== false);
   const s = useSave();
   async function save() {
-    const r = await s.run({ action: "updateTournament", patch: { tone, auto_bulletins: auto, video_enabled: video } });
+    const r = await s.run({ action: "updateTournament", patch: { tone, auto_bulletins: ai && auto, video_enabled: video, feed_on: feed, ai_on: ai } });
     if (r.ok) onSaved();
   }
   return (
     <section className="panel stack">
-      <h2>Writing and media</h2>
+      <h2>Writing, feed and video</h2>
+      <label className="row display" style={{ fontSize: 18 }}>
+        <input type="checkbox" checked={feed} onChange={(e) => setFeed(e.target.checked)} style={{ width: 22, height: 22 }} />
+        Live feed: photos, comments and notes for everyone following
+      </label>
+      <label className="row display" style={{ fontSize: 18 }}>
+        <input type="checkbox" checked={ai} onChange={(e) => setAi(e.target.checked)} style={{ width: 22, height: 22 }} />
+        AI writing: previews, reports and bulletins
+      </label>
       {!data.env.ai && <p className="notice small">The AI writer is switched off until ANTHROPIC_API_KEY is set in Vercel.</p>}
       <div className="field">
         <label>Writing style for previews, bulletins and reports</label>
@@ -1370,8 +1441,8 @@ export function ContentEditor({ data, onSaved }: { data: AdminData; onSaved: () 
           ))}
         </div>
       </div>
-      <label className="row display" style={{ fontSize: 18 }}>
-        <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} style={{ width: 22, height: 22 }} />
+      <label className="row display" style={{ fontSize: 18, opacity: ai ? 1 : 0.5 }}>
+        <input type="checkbox" checked={ai && auto} disabled={!ai} onChange={(e) => setAuto(e.target.checked)} style={{ width: 22, height: 22 }} />
         Write live bulletins automatically at key moments
       </label>
       <label className="row display" style={{ fontSize: 18 }}>

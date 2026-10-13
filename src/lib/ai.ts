@@ -17,6 +17,7 @@ import {
   holeShots,
 } from "./engine";
 import { shotsTimeline } from "./shots";
+import { totalsView } from "./live";
 import {
   PLAY_LABEL,
   SCORING_LABEL,
@@ -137,6 +138,18 @@ function standingsText(s: TournamentState) {
   const t = tournamentSummary(cfg, toEntries(s.entries));
   const nm = (id: string) => s.players.find((p) => p.id === id)?.name ?? id;
   const lines: string[] = [];
+  const totals = totalsView(s, t);
+  if (totals) {
+    lines.push(
+      `Tournament: ${s.tournament.name}. Won on running ${totals.kind === "stroke" ? "stroke-play totals (net to par after handicap shots; lowest wins)" : "Stableford points (highest wins)"} over ${s.rounds.length} round${s.rounds.length === 1 ? "" : "s"}.`,
+    );
+    lines.push(
+      "Overall standings: " +
+        totals.rows
+          .map((r) => `${r.pos ? `${r.pos}. ` : ""}${r.name} ${r.score}${r.gross ? ` (${r.gross.toLowerCase()})` : ""}${r.thru != null ? ` thru ${r.thru}` : ""}`)
+          .join(", "),
+    );
+  } else
   lines.push(`Tournament: ${s.tournament.name}. ${fmt(t.pointsAvailable)} points available in total; ${fmt(t.pointsRemaining)} still to be decided.`);
   if (cfg.teams.length) {
     lines.push(
@@ -333,6 +346,7 @@ export async function generatePiece(
   } = {},
 ) {
   const s = await loadServerState(tournamentId);
+  if (s.tournament.ai_on === false) throw new Error("AI writing is switched off for this tournament. Turn it on in Fine-tune (Look and writing).");
   const round = roundId ? s.rounds.find((r) => r.id === roundId) ?? null : null;
   if (roundId && !round) throw new Error("Round not found");
 
@@ -558,7 +572,7 @@ export async function maybeBulletin(tid: string, roundId: string, gameId: string
     legacy = !!(await adminClient().from("cards").select("round_id").limit(1)).error;
     if (legacy) await adminClient().from("rounds").update({ status: "complete" }).eq("id", roundId);
   }
-  const aiOn = !!process.env.ANTHROPIC_API_KEY && s.tournament.auto_bulletins !== false;
+  const aiOn = !!process.env.ANTHROPIC_API_KEY && s.tournament.auto_bulletins !== false && s.tournament.ai_on !== false;
   if (!aiOn) return;
 
   const existing = new Set(s.pieces.filter((p) => p.round_id === roundId).map((p) => p.trigger));

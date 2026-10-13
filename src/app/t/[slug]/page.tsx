@@ -23,8 +23,8 @@ export default function Home() {
         <h2>{state.tournament.name}</h2>
         <p>This tournament is still being set up.</p>
         {session?.role === "organiser" ? (
-          <Link className="btn" href={href("/setup")}>
-            Continue setup
+          <Link className="btn" href={href("/admin#rounds")}>
+            Add the rounds
           </Link>
         ) : (
           <p className="muted">Check back soon.</p>
@@ -129,6 +129,7 @@ export default function Home() {
           <EmailSignup />
         </div>
 
+        {state.tournament.feed_on !== false && (
         <aside>
           <div className="section-head">
             <h2>Latest</h2>
@@ -138,6 +139,7 @@ export default function Home() {
           </div>
           <SocialFeed limit={5} composer={false} />
         </aside>
+        )}
       </div>
     </>
   );

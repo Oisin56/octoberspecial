@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useT } from "./Providers";
 import { cleanBody, cleanTitle } from "@/lib/cleanText";
 import { cardInfo, cardLabel } from "@/lib/scorecards";
-import { liveLine, roundBoard, standings } from "@/lib/live";
+import { liveLine, roundBoard, standings, toPar, totalsView, type TotalsView } from "@/lib/live";
 import { CountUp, CourseImage, Icon } from "./visual";
 import { ballsOfGame, gameHole, holeShots, isNine, type Game, type GameSummary, type SegmentResult } from "@/lib/engine";
 import {
@@ -57,9 +57,61 @@ function Tiles({ value, red, small }: { value: number; red?: boolean; small?: bo
   );
 }
 
+/** Running Stableford or stroke-play totals: places, names and scores on the big board. */
+function TotalsBoard({ view }: { view: TotalsView }) {
+  const { state } = useT();
+  if (!state) return null;
+  const shown = view.rows.slice(0, 8);
+  const small = shown.length > 3;
+  const live = state.rounds.find((r) => r.status === "live");
+  const done = state.rounds.filter((r) => r.status === "complete").length;
+  const leaderValue = view.rows[0]?.pos ? view.rows[0].value : null;
+  const fmt = (n: number) => (view.kind === "stroke" ? toPar(Math.round(n)) : pts(Math.round(n)));
+  return (
+    <section className="board" aria-label="Overall standings">
+      <div className="board-top">
+        <div className="board-title">{view.title}</div>
+        {live && <span className="live-badge">Live</span>}
+      </div>
+      <div className="board-rows">
+        {shown.map((r) => {
+          const lead = !!r.pos && r.value === leaderValue;
+          return (
+            <div className={`board-row${lead && !r.pos.startsWith("T") ? " lead" : ""}`} key={r.id}>
+              <span className={`board-name${lead ? " leader" : ""}`} style={{ fontSize: small ? 24 : undefined }}>
+                <span className="board-pos">{r.pos}</span>
+                {r.name}
+                {(r.thru != null || r.gross) && (
+                  <span className="board-sub">
+                    {r.thru != null && `thru ${r.thru}`}
+                    {r.thru != null && r.gross && " · "}
+                    {r.gross}
+                  </span>
+                )}
+              </span>
+              <span className="tiles" aria-label={r.score}>
+                <span className={`tile${lead ? " red" : ""}${small ? " small" : ""}`}>{r.pos ? <CountUp value={r.value} format={fmt} /> : "–"}</span>
+              </span>
+            </div>
+          );
+        })}
+        {view.rows.length > shown.length && <div className="small" style={{ color: "var(--board-soft)" }}>+{view.rows.length - shown.length} more on the leaderboard</div>}
+      </div>
+      <div className="board-foot">
+        <span>
+          {live ? `Round ${live.number} of ${state.rounds.length}` : done === state.rounds.length && done ? "All rounds played" : `${done} of ${state.rounds.length} rounds played`}
+        </span>
+        {view.kind === "stroke" && <span className="small">Net to par. A hole without a score counts as net double bogey.</span>}
+      </div>
+    </section>
+  );
+}
+
 export function Board() {
   const { state, summary, cfg } = useT();
   if (!state || !summary || !cfg) return null;
+  const totals = totalsView(state, summary);
+  if (totals) return <TotalsBoard view={totals} />;
   const teamMode = cfg.teams.length >= 2;
   // Big tiles: banked (final cards). Underneath, Ryder Cup style: projected if everything finished as it stands
   const st = standings(state, summary, teamMode);

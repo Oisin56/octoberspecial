@@ -4,7 +4,7 @@
  *   - the tournament: points banked (final cards) and projected (Ryder Cup style: as things stand now)
  * Pure: derived from the scoring engine and the cards.
  */
-import { gameHole, gameShots, positionPoints, sideName, type Game, type GameSummary, type RoundCfg, type SegmentResult, type TournamentSummary } from "./engine";
+import { acrossField, gameHole, gameShots, positionPoints, sideName, type Game, type GameSummary, type RoundCfg, type SegmentResult, type TournamentSummary } from "./engine";
 import { cardInfo, type CardStage } from "./scorecards";
 import { toEntries, toRoundCfg, toTournamentCfg, type RoundRow, type TournamentState } from "./types";
 
@@ -104,17 +104,13 @@ function matchState(s: TournamentState, round: RoundRow, cfg: RoundCfg, g: Game,
   };
 }
 
-/** Today's round: match states, or one leaderboard across every group. */
-export function roundBoard(s: TournamentState, summary: TournamentSummary, round: RoundRow): RoundBoard {
-  const ri = s.rounds.indexOf(round);
-  const rs = summary.rounds[ri];
+/** One leaderboard across every group in a round: "−3", "18 pts", "2 skins", with tied places. */
+function fieldRows(s: TournamentState, summary: TournamentSummary, round: RoundRow): FieldRow[] {
+  const rs = summary.rounds[s.rounds.indexOf(round)];
   const cfg = toRoundCfg(round, s.players);
   const players = toTournamentCfg(s).players;
-  const headToHead = cfg.scoring === "match" && cfg.games.every((g) => g.sides.length === 2);
-  const matches = headToHead ? cfg.games.map((g, gi) => matchState(s, round, cfg, g, rs.games[gi], gi)) : [];
-
   const field: FieldRow[] = [];
-  if (!headToHead) {
+  {
     const entries = toEntries(s.entries.filter((e) => e.round_id === round.id))[round.id] ?? [];
     cfg.games.forEach((g, gi) => {
       const gs = rs.games[gi];
@@ -152,6 +148,32 @@ export function roundBoard(s: TournamentState, summary: TournamentSummary, round
     });
   }
 
+  return field;
+}
+
+/** Whole-field places as things stand, for a round whose places are over every group (none once paid). */
+function acrossLeaders(s: TournamentState, summary: TournamentSummary, round: RoundRow): Record<string, number> {
+  const cfg = toRoundCfg(round, s.players);
+  if (!acrossField(cfg) || cfg.closed) return {};
+  const rs = summary.rounds[s.rounds.indexOf(round)];
+  if (!rs || rs.games.every((g) => g.full.complete)) return {};
+  const ranking = fieldRows(s, summary, round)
+    .filter((r) => r.thru)
+    .map((r) => ({ sideId: r.sideId, pos: Number(r.pos.replace("T", "")), value: r.value }));
+  return positionPoints(ranking, cfg.points.positions ?? []);
+}
+
+/** Today's round: match states, or one leaderboard across every group. */
+export function roundBoard(s: TournamentState, summary: TournamentSummary, round: RoundRow): RoundBoard {
+  const ri = s.rounds.indexOf(round);
+  const rs = summary.rounds[ri];
+  const cfg = toRoundCfg(round, s.players);
+  const players = toTournamentCfg(s).players;
+  const headToHead = cfg.scoring === "match" && cfg.games.every((g) => g.sides.length === 2);
+  const matches = headToHead ? cfg.games.map((g, gi) => matchState(s, round, cfg, g, rs.games[gi], gi)) : [];
+
+  const field = headToHead ? [] : fieldRows(s, summary, round);
+
   const teams = s.tournament.teams ?? [];
   let session: RoundBoard["session"] = null;
   if (teams.length >= 2) {
@@ -170,10 +192,12 @@ function projectRound(s: TournamentState, summary: TournamentSummary, round: Rou
   const rs = summary.rounds[ri];
   const player: Record<string, number> = {};
   const team: Record<string, number> = {};
+  const across = acrossLeaders(s, summary, round);
   cfg.games.forEach((g, gi) => {
     const gs = rs.games[gi];
     const pts = { ...gs.points };
     if (!cfg.closed) for (const [k, v] of Object.entries(liveLeaders(cfg, g, gs))) pts[k] = (pts[k] ?? 0) + v;
+    for (const [k, v] of Object.entries(across)) if (g.sides.some((sd) => sd.id === k)) pts[k] = (pts[k] ?? 0) + v;
     credit(s, g, pts, player, team);
   });
   return { player, team };
@@ -194,7 +218,8 @@ function liveLeaders(cfg: RoundCfg, g: Game, gs: GameSummary): Record<string, nu
   const field = g.sides.length > 2 && cfg.points.positions?.length ? cfg.points.positions : undefined;
   seg(gs.front, cfg.points.front);
   seg(gs.back, cfg.points.back);
-  seg(gs.full, cfg.points.full, field);
+  // Places over the whole field are worked out once for the round (acrossLeaders)
+  if (!acrossField(cfg)) seg(gs.full, cfg.points.full, field);
   return out;
 }
 
@@ -224,6 +249,7 @@ export function standings(s: TournamentState, summary: TournamentSummary, byTeam
     const cfg = toRoundCfg(round, s.players);
     const rs = summary.rounds[ri];
     if (!rs) return;
+    const across = acrossLeaders(s, summary, round);
     cfg.games.forEach((g, gi) => {
       const gs = rs.games[gi];
       // Not final yet: its awarded points are provisional
@@ -236,7 +262,9 @@ export function standings(s: TournamentState, summary: TournamentSummary, byTeam
       if (!cfg.closed) {
         const p: Record<string, number> = {};
         const t: Record<string, number> = {};
-        credit(s, g, liveLeaders(cfg, g, gs), p, t);
+        const lead = liveLeaders(cfg, g, gs);
+        for (const [k, v] of Object.entries(across)) lead[k] = (lead[k] ?? 0) + v;
+        credit(s, g, lead, p, t);
         for (const [k, v] of Object.entries(byTeam ? t : p)) projected[k] = (projected[k] ?? 0) + v;
       }
     });
@@ -280,3 +308,49 @@ export function fieldPosition(b: RoundBoard, playerId: string): string | null {
   return `${posText}, ${fmtPts(gap)} behind ${lead.name}`;
 }
 
+
+export interface TotalsView {
+  kind: "stableford" | "stroke";
+  title: string;
+  rows: {
+    id: string;
+    name: string;
+    /** "1", "T2", "" (not started) */
+    pos: string;
+    value: number;
+    /** "−3", "54 pts" */
+    score: string;
+    /** Stroke play: "Gross 154 (+10)" */
+    gross: string | null;
+    /** Holes played in the live round, if playing in it */
+    thru: number | null;
+    /** By round: "−2", "36", "" (not played) */
+    perRound: string[];
+  }[];
+}
+
+/** Running Stableford or stroke-play totals, as the site shows them. */
+export function totalsView(s: TournamentState, summary: TournamentSummary): TotalsView | null {
+  const t = summary.totals;
+  if (!t) return null;
+  const rounds = [...s.rounds].sort((a, b) => a.number - b.number);
+  const live = liveRound(s);
+  const fmt = (v: number) => (t.kind === "stroke" ? toPar(v) : `${fmtPts(v)} pts`);
+  return {
+    kind: t.kind,
+    title: t.kind === "stroke" ? "Stroke play (net)" : "Stableford",
+    rows: t.rows.map((r) => ({
+      id: r.playerId,
+      name: s.players.find((p) => p.id === r.playerId)?.name ?? "",
+      pos: r.pos ? `${r.tied ? "T" : ""}${r.pos}` : "",
+      value: r.value,
+      score: r.holes ? fmt(r.value) : "–",
+      gross: t.kind === "stroke" && r.holes ? `Gross ${r.gross} (${toPar(r.grossToPar)})` : null,
+      thru: live && r.rounds[live.id] && r.rounds[live.id].holes < live.holes.length ? r.rounds[live.id].holes : null,
+      perRound: rounds.map((rd) => {
+        const x = r.rounds[rd.id];
+        return x?.holes ? (t.kind === "stroke" ? toPar(x.value) : fmtPts(x.value)) : "";
+      }),
+    })),
+  };
+}

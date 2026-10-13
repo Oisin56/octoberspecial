@@ -4,13 +4,14 @@ import { createHash } from "node:crypto";
 import { adminClient } from "./admin";
 import { paletteFor } from "./themes";
 import type { AiPieceRow, TournamentRow } from "./types";
-import { COURSE_PHOTOS } from "@/data/course-photos";
+import { coursePhotoFor } from "@/data/course-photos";
 import { mediaUrl } from "./supabase";
 import { cleanBody, cleanTitle } from "./cleanText";
 import { newsletterEmail, type NewsletterData } from "./newsletter";
 import { loadServerState } from "./server-data";
 import { courseInfo, forecast } from "./ai";
 import { roundPointsAvailable, tournamentSummary } from "./engine";
+import { totalsView } from "./live";
 import { SIDE_GAME_LABEL, formatLabel, sideLabel, toEntries, toRoundCfg, toTournamentCfg } from "./types";
 
 /**
@@ -169,12 +170,13 @@ export async function buildNewsletter(t: TournamentRow, piece: AiPieceRow, site:
   const photoFor = (r: { course_slug: string; course_name: string; photo_path?: string | null } | null) => {
     if (!r) return null;
     if (r.photo_path) return { src: mediaUrl(r.photo_path)!, alt: r.course_name };
-    const ph = COURSE_PHOTOS[String(r.course_slug).replace(/^local:/, "")];
+    const ph = coursePhotoFor(String(r.course_slug), r.course_name);
     return ph ? { src: `${site}/_next/image?url=${encodeURIComponent(ph.src)}&w=1200&q=75`, alt: ph.alt, credit: `Photo © ${ph.author}, ${ph.licence}` } : null;
   };
   const hero = photoFor(round) ?? (t.hero_path ? { src: mediaUrl(t.hero_path)!, alt: t.name } : null) ?? photoFor(st.rounds[0] ?? null);
 
   // Standings
+  const totals = totalsView(st, summary);
   const teamMode = cfg.teams.length >= 2;
   const useProjected = !summary.complete;
   const rows = (teamMode
@@ -275,10 +277,14 @@ export async function buildNewsletter(t: TournamentRow, piece: AiPieceRow, site:
     title: piece.title ?? label,
     body: piece.body,
     hero,
-    standings: rows.slice(0, 6).map((r) => ({ name: r.name, value: fmt(r.v), lead: anyPoints && leaders.length === 1 && r.id === leaders[0].id })),
-    standingsTitle: summary.complete ? "Final standings" : anyPoints ? "Overall points" : `${fmt(summary.pointsAvailable)} points to play for`,
-    leadLine,
-    tug: duel && anyPoints ? { left: duel[0].name, right: duel[1].name, leftPct: (duel[0].v / total) * 100, rightPct: (duel[1].v / total) * 100, target: `${fmt(total / 2 + 0.5)} wins it` } : null,
+    standings: totals
+      ? totals.rows.slice(0, 6).map((r) => ({ name: `${r.pos ? `${r.pos}. ` : ""}${r.name}`, value: r.score, lead: !!r.pos && r.pos === "1" }))
+      : rows.slice(0, 6).map((r) => ({ name: r.name, value: fmt(r.v), lead: anyPoints && leaders.length === 1 && r.id === leaders[0].id })),
+    standingsTitle: totals
+      ? `${summary.complete ? "Final: " : ""}${totals.title}`
+      : summary.complete ? "Final standings" : anyPoints ? "Overall points" : `${fmt(summary.pointsAvailable)} points to play for`,
+    leadLine: totals ? null : leadLine,
+    tug: !totals && duel && anyPoints ? { left: duel[0].name, right: duel[1].name, leftPct: (duel[0].v / total) * 100, rightPct: (duel[1].v / total) * 100, target: `${fmt(total / 2 + 0.5)} wins it` } : null,
     awards: anyPoints ? awards : [],
     roundCard,
     results,

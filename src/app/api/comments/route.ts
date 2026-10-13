@@ -34,6 +34,7 @@ export async function POST(req: Request) {
   const { data: post } = await db.from("posts").select("id,round_id").eq("id", postId).eq("tournament_id", t.id).eq("hidden", false).maybeSingle();
   if (!post) return bad("That post isn't there any more", 404);
   if (session.fanId && !(await fanAllowed(t.id, session.fanId))) return bad("You can't comment here any more", 403);
+  if (t.feed_on === false && !isOrganiser(session)) return bad("The feed is switched off for this tournament", 403);
   if (tooFast(`comment:${session.fanId ?? session.playerId ?? session.name}`, 6, 60e3)) return bad("One comment every few seconds, please", 429);
 
   const { data, error } = await db
