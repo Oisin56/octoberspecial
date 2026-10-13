@@ -2,7 +2,7 @@ import { adminClient } from "@/lib/admin";
 import { after } from "next/server";
 import { bad, context, json, siteOrigin } from "@/lib/server-data";
 import { sweep } from "@/lib/broadcast";
-import { isOrganiser } from "@/lib/auth";
+import { isCrew, isOrganiser } from "@/lib/auth";
 import { fanAllowed, tooFast } from "@/lib/social";
 
 export const maxDuration = 60;
@@ -33,20 +33,24 @@ export async function POST(req: Request) {
     return json({ ok: true });
   }
 
-  // Followers post text only, to the public feed
+  // Fans post photos (with a caption if they like) to the public feed: no clips, no notes on the play
   if (session.fanId) {
     const text = String(b.body ?? "").trim().slice(0, 500);
-    if (!text) return bad("Write something first");
+    const photo = b.mediaPath ? String(b.mediaPath) : "";
     if (!(await fanAllowed(t.id, session.fanId))) return bad("You can't post here any more", 403);
+    if (!photo) return bad("Add a photo to post. You can comment on anything in the feed.");
+    if (!/^photo\/[\w-]+\/[\w-]+\.[a-z0-9]+$/.test(photo)) return bad("Photos only");
     if (tooFast(`fanpost:${session.fanId}`, 3, 60e3)) return bad("Give it a minute before posting again", 429);
     const { data, error } = await adminClient()
       .from("posts")
-      .insert({ tournament_id: t.id, author_name: session.name, fan_id: session.fanId, kind: "note", body: text, visibility: "public" })
+      .insert({ tournament_id: t.id, author_name: session.name, fan_id: session.fanId, kind: "photo", media_path: photo, body: text || null, visibility: "public" })
       .select()
       .single();
     if (error) return bad(/fan_id/.test(error.message) ? "Posting needs the latest database update" : error.message, 500);
     return json({ post: data });
   }
+  // Clips, notes and course photos: players and the organiser
+  if (!isCrew(session)) return bad("Log in as a player to post here", 403);
   const kind = ["note", "photo", "video"].includes(b.kind) ? b.kind : "note";
   const body = String(b.body ?? "").trim().slice(0, 2000);
   const mediaPath = b.mediaPath ? String(b.mediaPath) : null;

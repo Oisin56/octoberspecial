@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { adminClient } from "@/lib/admin";
 import { hashPin, isOrganiser } from "@/lib/auth";
 import { bad, context, json, loadServerState, siteOrigin, slugify } from "@/lib/server-data";
@@ -74,7 +75,6 @@ export async function POST(req: Request) {
         fans: fans.error ? [] : (fans.data ?? []),
         pinSet: Object.fromEntries((pins ?? []).map((p) => [p.id, !!p.pin_hash])),
         organiserPinSet: !!t.organiser_pin_hash,
-        contributorPinSet: !!t.contributor_pin_hash || !!process.env.CONTRIBUTOR_PIN,
         env: { ai: !!process.env.ANTHROPIC_API_KEY, courses: !!process.env.GOLFCOURSEAPI_KEY, mail: mailConfigured() },
       });
     }
@@ -85,10 +85,6 @@ export async function POST(req: Request) {
       if (b.organiserPin) {
         if (!/^\d{4,8}$/.test(String(b.organiserPin))) return bad("Organiser PIN must be 4–8 digits");
         patch.organiser_pin_hash = hashPin(String(b.organiserPin));
-      }
-      if (b.contributorPin) {
-        if (!/^\d{4,8}$/.test(String(b.contributorPin))) return bad("Caddie PIN must be 4–8 digits");
-        patch.contributor_pin_hash = hashPin(String(b.contributorPin));
       }
       if (Array.isArray(patch.teams)) {
         patch.teams = (patch.teams as { id?: string; name: string; color?: string }[]).map((tm, i) => ({
@@ -121,6 +117,20 @@ export async function POST(req: Request) {
       const { error } = await db.from("players").insert({ ...patch, id, tournament_id: t.id });
       if (error) return bad(error.message, 500);
       return json({ ok: true, id });
+    }
+
+    // A player's personal sign-in link: made the first time it's asked for; "reset" makes a new one (the old stops working)
+    case "playerLink": {
+      const pid = String(b.playerId ?? "");
+      const { data: p } = await db.from("players").select("id,link_code").eq("tournament_id", t.id).eq("id", pid).maybeSingle();
+      if (!p) return bad("Player not found", 404);
+      let code = p.link_code as string | null;
+      if (!code || b.reset) {
+        code = randomBytes(15).toString("base64url");
+        const { error } = await db.from("players").update({ link_code: code }).eq("id", p.id).eq("tournament_id", t.id);
+        if (error) return bad(/link_code/.test(error.message) ? "Player links need the latest database update (schema.sql)" : error.message, 500);
+      }
+      return json({ url: `${siteOrigin(req)}/t/${t.slug}/in/${code}` });
     }
 
     case "deletePlayer": {

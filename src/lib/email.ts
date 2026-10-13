@@ -117,15 +117,30 @@ export function fanLinkEmail(t: TournamentRow, name: string, link: string) {
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;background:#fff;border-radius:8px;overflow:hidden">
 <tr><td style="background:${p.board};color:${p.tile};padding:18px 24px;font-family:Arial Narrow,Arial,sans-serif;font-size:24px;font-weight:bold">${esc(t.name)}</td></tr>
 <tr><td style="padding:22px 24px;font-size:17px;line-height:1.55">
-<p>Hi ${esc(name)},</p><p>Tap the button to join the conversation. You can then post, comment and like from this phone or computer.</p>
+<p>Hi ${esc(name)},</p><p>Tap the button to join the conversation. You can then share photos, comment and like from this phone or computer.</p>
 <p style="margin:26px 0"><a href="${esc(link)}" style="display:inline-block;background:${p.board};color:${p.tile};text-decoration:none;font-family:Arial,sans-serif;font-weight:bold;font-size:19px;padding:16px 28px;border-radius:10px">Join the conversation</a></p>
 <p style="font-size:13px;color:#666;font-family:Arial,sans-serif">The button works for 2 days. Didn't ask for this? Ignore this email and nothing happens.</p>
 </td></tr></table></td></tr></table></body></html>`;
-  const text = `Hi ${name},\n\nOpen this link to join the conversation on ${t.name}. You can then post, comment and like.\n\n${link}\n\nThe link works for 2 days. Didn't ask for this? Ignore this email and nothing happens.\n`;
+  const text = `Hi ${name},\n\nOpen this link to join the conversation on ${t.name}. You can then share photos, comment and like.\n\n${link}\n\nThe link works for 2 days. Didn't ask for this? Ignore this email and nothing happens.\n`;
   return { subject: `Join the conversation: ${t.name}`, html, text };
 }
 
-export async function sendOne(t: TournamentRow, to: string, msg: { subject: string; html: string; text: string }, unsubscribe?: string) {
+/** An organiser signing in to see their tournaments. */
+export function accountLinkEmail(link: string) {
+  const html = `<!doctype html><html><body style="margin:0;background:#e4e9e5;font-family:Georgia,serif;color:#18231d">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:20px 12px">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;background:#fff;border-radius:8px;overflow:hidden">
+<tr><td style="background:#1f3d2b;color:#f7f7f2;padding:18px 24px;font-family:Arial Narrow,Arial,sans-serif;font-size:24px;font-weight:bold">MyGolfSpecial</td></tr>
+<tr><td style="padding:22px 24px;font-size:17px;line-height:1.55">
+<p>Tap the button to sign in and see your tournaments.</p>
+<p style="margin:26px 0"><a href="${esc(link)}" style="display:inline-block;background:#1f3d2b;color:#f7f7f2;text-decoration:none;font-family:Arial,sans-serif;font-weight:bold;font-size:19px;padding:16px 28px;border-radius:10px">Sign in</a></p>
+<p style="font-size:13px;color:#666;font-family:Arial,sans-serif">The button works once, for 30 minutes. Didn't ask for this? Ignore this email and nothing happens.</p>
+</td></tr></table></td></tr></table></body></html>`;
+  const text = `Open this link to sign in to MyGolfSpecial and see your tournaments:\n\n${link}\n\nIt works once, for 30 minutes. Didn't ask for this? Ignore this email and nothing happens.\n`;
+  return { subject: "Sign in to MyGolfSpecial", html, text };
+}
+
+export async function sendOne(t: Pick<TournamentRow, "name">, to: string, msg: { subject: string; html: string; text: string }, unsubscribe?: string) {
   await transport().sendMail({
     from: fromHeader(t),
     to,

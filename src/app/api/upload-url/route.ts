@@ -1,6 +1,7 @@
 import { adminClient } from "@/lib/admin";
 import { isCrew, isOwner } from "@/lib/auth";
 import { bad, context, json } from "@/lib/server-data";
+import { tooFast } from "@/lib/social";
 
 const ALLOWED = /^(image\/(jpeg|png|webp|heic|heif)|video\/(mp4|quicktime|webm)|audio\/(mpeg|mp3|mp4|x-m4a|aac|wav|x-wav))$/;
 
@@ -8,8 +9,12 @@ const ALLOWED = /^(image\/(jpeg|png|webp|heic|heif)|video\/(mp4|quicktime|webm)|
 export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
   const { t, session } = await context(req, body);
-  if (!isCrew(session) && !(await isOwner())) return bad("Log in as a player to upload", 401);
   const type = String(body.contentType ?? "");
+  // Fans: photos for the feed
+  const fanId = session?.fanId ?? null;
+  const fanPhoto = !!fanId && /^image\//.test(type) && !body.posterFor;
+  if (!isCrew(session) && !fanPhoto && !(await isOwner())) return bad(fanId ? "Fans can post photos" : "Log in as a player to upload", 401);
+  if (fanPhoto && tooFast(`fanup:${fanId}`, 10, 600e3)) return bad("Give it a minute before posting again", 429);
   if (!ALLOWED.test(type)) return bad("Photos, videos or audio only");
   if (type.startsWith("audio") && session?.role !== "organiser" && !(await isOwner())) return bad("Only the organiser can upload music", 403);
   const ext = (String(body.filename ?? "").split(".").pop() || type.split("/")[1]).toLowerCase().replace(/[^a-z0-9]/g, "");

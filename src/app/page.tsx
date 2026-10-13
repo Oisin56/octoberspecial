@@ -57,9 +57,14 @@ export default function Front() {
               My<b>Golf</b>Special
             </span>
           </Link>
-          <Link href="/new" className="mgs-head-link">
-            Start your trip
-          </Link>
+          <span className="mgs-head-links">
+            <Link href="/account" className="mgs-head-link quiet">
+              My tournaments
+            </Link>
+            <Link href="/new" className="mgs-head-link">
+              Start your trip
+            </Link>
+          </span>
         </div>
       </header>
 

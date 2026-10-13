@@ -46,6 +46,9 @@ export default function Live() {
             Add a post
           </Link>
         )}
+        <Link className="btn ghost" href={href("/feed")}>
+          See the clips
+        </Link>
       </RoundBanner>
 
       <div className="section-tight" style={{ marginBottom: 18 }}>

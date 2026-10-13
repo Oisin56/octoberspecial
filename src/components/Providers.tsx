@@ -4,7 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useState } from "rea
 import { useTournament, type LiveTournament } from "@/lib/useTournament";
 
 export interface ClientSession {
-  role: "organiser" | "player" | "contributor" | "fan";
+  role: "organiser" | "player" | "fan";
   name: string;
   playerId?: string;
   fanId?: string;
@@ -12,9 +12,11 @@ export interface ClientSession {
 
 interface Ctx extends LiveTournament {
   session: ClientSession | null;
-  /** Logged in as a player, organiser or someone walking with them (not a fan) */
+  /** Logged in as a player or the organiser (not a fan) */
   crew: boolean;
   reloadSession: () => Promise<void>;
+  /** The session has been checked at least once (so "not logged in" is real) */
+  sessionReady: boolean;
   /** Build a link inside this tournament */
   href: (path: string) => string;
   /** POST JSON to an API route with this tournament attached */
@@ -26,6 +28,7 @@ const TournamentContext = createContext<Ctx | null>(null);
 export function Providers({ slug, children }: { slug: string; children: React.ReactNode }) {
   const live = useTournament(slug);
   const [session, setSession] = useState<ClientSession | null>(null);
+  const [sessionReady, setReady] = useState(false);
 
   const reloadSession = useCallback(async () => {
     try {
@@ -35,6 +38,7 @@ export function Providers({ slug, children }: { slug: string; children: React.Re
     } catch {
       /* offline: keep what we had */
     }
+    setReady(true);
   }, [slug]);
 
   useEffect(() => {
@@ -56,7 +60,7 @@ export function Providers({ slug, children }: { slug: string; children: React.Re
   );
 
   return (
-    <TournamentContext.Provider value={{ ...live, session, crew: !!session && session.role !== "fan", reloadSession, href, api }}>{children}</TournamentContext.Provider>
+    <TournamentContext.Provider value={{ ...live, session, sessionReady, crew: !!session && session.role !== "fan", reloadSession, href, api }}>{children}</TournamentContext.Provider>
   );
 }
 

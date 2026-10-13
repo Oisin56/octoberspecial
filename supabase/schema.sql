@@ -411,6 +411,32 @@ alter table ai_pieces add column if not exists tone text;          -- style used
 alter table ai_pieces add column if not exists prev_title text;    -- previous version, for "Undo"
 alter table ai_pieces add column if not exists prev_body text;
 
+-- ------------------------------------------------------------ organiser accounts (email sign-in) and player links
+create table if not exists accounts (
+  id uuid primary key default gen_random_uuid(),
+  email text not null,
+  created_at timestamptz not null default now()
+);
+create unique index if not exists accounts_email_uniq on accounts (lower(email));
+create table if not exists account_tournaments (
+  account_id uuid not null references accounts(id) on delete cascade,
+  tournament_id uuid not null references tournaments(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (account_id, tournament_id)
+);
+create table if not exists account_tokens (
+  token_hash text primary key,       -- the emailed sign-in link (only its hash is kept)
+  email text not null,
+  expires_at timestamptz not null,
+  used_at timestamptz
+);
+alter table accounts enable row level security;            -- server only
+alter table account_tournaments enable row level security;
+alter table account_tokens enable row level security;
+-- Each player's personal sign-in link (the organiser sends it; "New link" replaces it)
+alter table players add column if not exists link_code text;
+create unique index if not exists players_link_code_uniq on players (link_code) where link_code is not null;
+
 -- ------------------------------------------------------------ access (explicit, for projects that don't grant by default)
 grant usage on schema public to anon, authenticated, service_role;
 grant all on all tables in schema public to service_role;
@@ -422,6 +448,7 @@ revoke all on subscribers from anon, authenticated;
 revoke all on fans from anon, authenticated;
 revoke all on reports from anon, authenticated;
 revoke all on score_changes from anon, authenticated;
+revoke all on accounts, account_tournaments, account_tokens from anon, authenticated;
 
 -- Tell the API about the new tables straight away
 notify pgrst, 'reload schema';

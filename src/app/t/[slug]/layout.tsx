@@ -6,7 +6,7 @@ import { ThemeRoot } from "@/components/ThemeRoot";
 import { ClipQueue } from "@/components/ClipQueue";
 import { SignPrompt } from "@/components/SignPrompt";
 import { LiveStrip } from "@/components/LiveStrip";
-import { OnCourseBar } from "@/components/OnCourseBar";
+import { TabBar } from "@/components/TabBar";
 import type { Metadata, Viewport } from "next";
 import { tournamentBySlug } from "@/lib/server-data";
 import { paletteFor } from "@/lib/themes";
@@ -38,7 +38,7 @@ export default async function TournamentLayout({ children, params }: LayoutProps
         <ClipQueue />
         <SignPrompt />
         <main className="wrap">{children}</main>
-        <OnCourseBar />
+        <TabBar />
         <footer className="made-with">
           <Link href="/">Made with {BRAND.name}</Link>
         </footer>

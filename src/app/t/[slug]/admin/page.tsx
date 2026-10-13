@@ -167,7 +167,7 @@ function OrganiserHome({ data }: { data: AdminData }) {
     todo.push({ text: `No preview yet for round ${next.number} at ${next.course_name}.`, action: "Write the preview", to: `#write/preview/${next.id}` });
   if (drafts.length && !todo.some((x) => x.to === "#write"))
     todo.push({ text: `${drafts.length} ${drafts.length === 1 ? "draft is" : "drafts are"} waiting to be read.`, action: "Read them", to: "#write" });
-  if (noPin.length) todo.push({ text: `${listNames(noPin.map((p) => p.name))} ${noPin.length === 1 ? "has" : "have"} no PIN yet, so can't log in.`, action: "Set PINs", to: "#players" });
+  if (noPin.length) todo.push({ text: `${listNames(noPin.map((p) => p.name))} can't log in yet. Send each player their link (or set a PIN).`, action: "Send links", to: "#players" });
   if (!t.published && rounds.length && st.players.length >= 2) todo.push({ text: "The site isn't public yet.", action: "Share it", to: "#share" });
 
   const theme = THEMES.find((x) => x.id === t.theme)?.name ?? "Custom";
@@ -243,11 +243,55 @@ function OrganiserHome({ data }: { data: AdminData }) {
         ))}
       </nav>
 
+      <AccountLink slug={t.slug} />
+
       <p className="org-foot">
         <Link href={href("/setup")}>Step-by-step setup</Link>
         <a href="#settings">Settings and test data</a>
       </p>
     </div>
+  );
+}
+
+/** My tournaments: this tournament in the organiser's email account (one tap once signed in) */
+function AccountLink({ slug }: { slug: string }) {
+  const [acct, setAcct] = useState<{ account: { email: string } | null; tournaments: { slug: string }[] } | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    fetch("/api/account", { cache: "no-store" })
+      .then((r) => r.json())
+      .then(setAcct)
+      .catch(() => {});
+  }, []);
+  if (!acct) return null;
+  if (!acct.account)
+    return (
+      <p className="org-acct">
+        <Link href={`/account?add=${encodeURIComponent(slug)}`}>Sign in with your email</Link> to keep all your tournaments in one place, on any device.
+      </p>
+    );
+  if (acct.tournaments.some((x) => x.slug === slug))
+    return (
+      <p className="org-acct">
+        In <Link href="/account">My tournaments</Link> ({acct.account.email}).
+      </p>
+    );
+  return (
+    <p className="org-acct">
+      <button
+        className="btn secondary"
+        disabled={busy}
+        onClick={async () => {
+          setBusy(true);
+          const r = await fetch("/api/account", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "link", t: slug }) });
+          const j = await r.json().catch(() => ({}));
+          setBusy(false);
+          if (r.ok) setAcct((a) => (a ? { ...a, tournaments: j.tournaments } : a));
+        }}
+      >
+        Add to My tournaments
+      </button>
+    </p>
   );
 }
 

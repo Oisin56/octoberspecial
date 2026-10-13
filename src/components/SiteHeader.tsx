@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useT } from "./Providers";
 import { mediaUrl } from "@/lib/supabase";
+import { RoleBadge } from "./TabBar";
 
 const TABS = [
   { path: "/", label: "Home" },
@@ -21,6 +22,8 @@ export function SiteHeader() {
   const { state, session, href } = useT();
   const live = state?.rounds.some((r) => r.status === "live");
   const canScore = session?.role === "organiser" || session?.role === "player";
+  // Computers: the top tabs, plus Score during a round and Admin for the organiser (phones use the bar at the foot)
+  const tabs = [...(live && canScore ? [{ path: "/score", label: "Score" }] : []), ...TABS, ...(session?.role === "organiser" ? [{ path: "/admin", label: "Admin" }] : [])];
   const t = state?.tournament;
   const logo = mediaUrl(t?.logo_path);
 
@@ -39,27 +42,11 @@ export function SiteHeader() {
             </span>
           </Link>
           <div className="who">
-            {session?.role === "fan" ? (
-              <Link href={href("/login")}>{session.name}</Link>
-            ) : session ? (
-              <>
-                {canScore && <Link href={href("/score")}>Score</Link>}
-                {canScore && " · "}
-                <Link href={href("/post")}>Post</Link>
-                {session.role === "organiser" && (
-                  <>
-                    {" · "}
-                    <Link href={href("/admin")}>Admin</Link>
-                  </>
-                )}
-              </>
-            ) : (
-              <Link href={href("/login")}>Log in</Link>
-            )}
+            <RoleBadge />
           </div>
         </div>
         <nav className="tabs" aria-label="Sections">
-          {TABS.map((tab) => {
+          {tabs.map((tab) => {
             const full = href(tab.path);
             const active = tab.path === "/" ? path === full : path.startsWith(full);
             return (

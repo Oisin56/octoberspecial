@@ -4,15 +4,15 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useT } from "@/components/Providers";
 import { Loading } from "@/components/ui";
+import { landingPath } from "@/lib/landing";
 
-/** Where the home-screen app opens: the scorecard if a round is live and you're logged in, else the tournament home. */
+/** Where the home-screen app opens: each person's own starting page (see landingPath). */
 export default function Go() {
-  const { state, crew, href } = useT();
+  const { state, session, sessionReady, href } = useT();
   const router = useRouter();
   useEffect(() => {
-    if (!state) return;
-    const live = state.rounds.some((r) => r.status === "live");
-    router.replace(href(live && crew ? "/score" : "/"));
-  }, [state, crew, href, router]);
+    if (!state || !sessionReady) return;
+    router.replace(href(landingPath(state, session)));
+  }, [state, session, sessionReady, href, router]);
   return <Loading />;
 }

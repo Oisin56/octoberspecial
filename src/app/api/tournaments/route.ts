@@ -1,5 +1,6 @@
 import { adminClient } from "@/lib/admin";
-import { checkOwnerPin, hashPin, isOwner, setOwner, setSession } from "@/lib/auth";
+import { checkOwnerPin, getAccount, hashPin, isOwner, setOwner, setSession } from "@/lib/auth";
+import { linkTournament } from "@/lib/accounts";
 import { bad, json, slugify } from "@/lib/server-data";
 
 /** Create a new tournament. Only the site owner can (owner PIN = ORGANISER_PIN env). */
@@ -31,6 +32,9 @@ export async function POST(req: Request) {
     .single();
   if (error) return bad(error.message, 500);
   await setSession(data.id, { role: "organiser", name: "Organiser" });
+  // Signed in by email: it goes straight into My tournaments
+  const account = await getAccount();
+  if (account) await linkTournament(account.id, data.id).catch(() => {});
   return json({ slug: data.slug });
 }
 

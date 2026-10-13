@@ -27,7 +27,6 @@ export interface AdminData {
   state: TournamentState;
   pinSet: Record<string, boolean>;
   organiserPinSet: boolean;
-  contributorPinSet: boolean;
   env: { ai: boolean; courses: boolean; mail?: boolean };
   /** Followers who joined the conversation */
   fans?: { id: string; name: string; blocked: boolean; created_at: string }[];
@@ -249,6 +248,77 @@ export function PlayersEditor({ data, onSaved }: { data: AdminData; onSaved: () 
   );
 }
 
+/**
+ * A player's personal link: sent from the organiser's own phone (WhatsApp, Messages, Email), so no phone numbers
+ * or emails are stored. Tapping it logs the player in on their phone. "New link" stops the old one working.
+ */
+function SendLink({ player }: { player: PlayerRow }) {
+  const { api, state } = useT();
+  const [open, setOpen] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+  const tname = state?.tournament.name ?? "the tournament";
+  const text = (url: string) => `${player.name}, here's your link for ${tname}. Tap it to log in (no PIN needed): ${url}`;
+
+  async function get(reset = false) {
+    setMsg(null);
+    const r = await api("/api/admin", { action: "playerLink", playerId: player.id, reset });
+    if (!r.ok) return setMsg(String(r.j.error ?? "Couldn't make the link"));
+    const url = String(r.j.url);
+    if (!reset && typeof navigator !== "undefined" && navigator.share) {
+      try {
+        await navigator.share({ title: `${tname}: ${player.name}'s link`, text: text(url) });
+        return;
+      } catch {
+        /* cancelled or not allowed: show the options instead */
+      }
+    }
+    setOpen(url);
+    if (reset) setMsg("New link made. The old one no longer works.");
+  }
+
+  return (
+    <>
+      <button className="chip" onClick={() => get()}>
+        Send link
+      </button>
+      {open && (
+        <div className="sheet-back" role="dialog" aria-label={`${player.name}'s link`} onClick={() => setOpen(null)}>
+          <div className="sheet-card stack" onClick={(e) => e.stopPropagation()}>
+            <h3 style={{ margin: 0 }}>{player.name}&apos;s link</h3>
+            <p className="small muted" style={{ margin: 0 }}>
+              Send it to {player.name} only: it logs them in as {player.name}.
+            </p>
+            <input readOnly value={open} onFocus={(e) => e.target.select()} />
+            <a className="btn block" href={`https://wa.me/?text=${encodeURIComponent(text(open))}`} target="_blank" rel="noreferrer">
+              WhatsApp
+            </a>
+            <a className="btn secondary block" href={`mailto:?subject=${encodeURIComponent(`Your link for ${tname}`)}&body=${encodeURIComponent(text(open))}`}>
+              Email
+            </a>
+            <button
+              className="btn secondary block"
+              onClick={() => {
+                navigator.clipboard?.writeText(open);
+                setMsg("Copied");
+              }}
+            >
+              Copy the link
+            </button>
+            <button className="chip" onClick={() => confirm(`Make a new link for ${player.name}? The old one stops working.`) && get(true)}>
+              New link
+            </button>
+            {msg && <p className="small">{msg}</p>}
+            <button className="btn secondary block" onClick={() => setOpen(null)}>
+              Done
+            </button>
+          </div>
+        </div>
+      )}
+      {!open && msg && <span className="error small">{msg}</span>}
+    </>
+  );
+}
+
 const PROFILE_FIELDS = [
   ["nickname", "Nickname"],
   ["home_club", "Home club"],
@@ -305,9 +375,12 @@ function PlayerCard({ player, teams, pinSet, onSaved }: { player: PlayerRow; tea
           {teams.length > 0 && <span className="muted small"> · {teams.find((x) => x.id === player.team_id)?.name ?? "no team"}</span>}
           {!pinSet && <span className="error small"> · no PIN</span>}
         </h3>
-        <button className="chip" aria-expanded={open} onClick={() => setOpen(!open)}>
-          {open ? "Close" : "Edit"}
-        </button>
+        <span className="row">
+          <SendLink player={player} />
+          <button className="chip" aria-expanded={open} onClick={() => setOpen(!open)}>
+            {open ? "Close" : "Edit"}
+          </button>
+        </span>
       </div>
       {open && (
         <>
@@ -1321,16 +1394,14 @@ export function InviteEditor({ data, onSaved }: { data: AdminData; onSaved: () =
   const { href } = useT();
   const t = data.state.tournament;
   const [orgPin, setOrgPin] = useState("");
-  const [cPin, setCPin] = useState("");
   const s = useSave();
   const link = typeof window !== "undefined" ? `${window.location.origin}${href("/")}` : href("/");
   const missingPins = data.state.players.filter((p) => !data.pinSet[p.id]);
 
   async function savePins() {
-    const r = await s.run({ action: "updateTournament", patch: {}, organiserPin: orgPin || undefined, contributorPin: cPin || undefined });
+    const r = await s.run({ action: "updateTournament", patch: {}, organiserPin: orgPin || undefined });
     if (r.ok) {
       setOrgPin("");
-      setCPin("");
       onSaved();
     }
   }
@@ -1366,13 +1437,9 @@ export function InviteEditor({ data, onSaved }: { data: AdminData; onSaved: () =
           <span className="lbl">{data.organiserPinSet ? "Change organiser PIN" : "Organiser PIN"}</span>
           <input value={orgPin} onChange={(e) => setOrgPin(e.target.value)} inputMode="numeric" placeholder="4–8 digits" />
         </label>
-        <label className="field" style={{ flex: "1 1 200px" }}>
-          <span className="lbl">{data.contributorPinSet ? "Change caddie and friends PIN" : "Caddie and friends PIN"}</span>
-          <input value={cPin} onChange={(e) => setCPin(e.target.value)} inputMode="numeric" placeholder="4–8 digits" />
-        </label>
       </div>
       <div className="row">
-        <button className="btn secondary" disabled={s.busy || (!orgPin && !cPin)} onClick={savePins}>
+        <button className="btn secondary" disabled={s.busy || !orgPin} onClick={savePins}>
           Save PINs
         </button>
         {t.published ? (

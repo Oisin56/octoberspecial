@@ -2,14 +2,21 @@ import "server-only";
 import { cookies } from "next/headers";
 import { createHmac, createHash, timingSafeEqual } from "node:crypto";
 
-export type Role = "organiser" | "player" | "contributor" | "fan";
+/** Three roles: the organiser, the players, and fans (everyone else: caddies, friends, people at home) */
+export type Role = "organiser" | "player" | "fan";
 
 export interface Session {
   role: Role;
   name: string;
   playerId?: string;
-  /** Fans: followers signed up by email (comments and text posts only) */
+  /** Fans: followers signed up by email (photos, comments and likes) */
   fanId?: string;
+}
+
+/** An organiser's account (signed in by email): the tournaments it runs */
+export interface Account {
+  id: string;
+  email: string;
 }
 
 /** One cookie holds a session per tournament (keyed by tournament id),
@@ -17,11 +24,12 @@ export interface Session {
 interface Jar {
   t: Record<string, Session>;
   owner?: boolean;
+  account?: Account;
   iat: number;
 }
 
 const COOKIE = "os_session";
-const MAX_AGE = 60 * 60 * 24 * 60; // 60 days
+const MAX_AGE = 60 * 60 * 24 * 180; // 180 days
 
 function secret() {
   const s = process.env.SESSION_SECRET;
@@ -52,7 +60,7 @@ async function readJar(): Promise<Jar> {
   if (!payload || !sig || !safeEqual(sig, sign(payload))) return empty;
   try {
     const j = JSON.parse(Buffer.from(payload, "base64url").toString());
-    return { t: j.t ?? {}, owner: !!j.owner, iat: j.iat ?? Date.now() };
+    return { t: j.t ?? {}, owner: !!j.owner, account: j.account?.id ? j.account : undefined, iat: j.iat ?? Date.now() };
   } catch {
     return empty;
   }
@@ -72,7 +80,28 @@ async function writeJar(j: Jar) {
 
 export async function getSession(tournamentId: string): Promise<Session | null> {
   const j = await readJar();
-  return j.t[tournamentId] ?? null;
+  const s = j.t[tournamentId] ?? null;
+  // The old caddie-and-friends login is gone: those phones follow as fans now (join with an email to post)
+  if (s && (s.role as string) === "contributor") return null;
+  return s;
+}
+
+export async function getAccount(): Promise<Account | null> {
+  return (await readJar()).account ?? null;
+}
+
+/** Sign an organiser's account in on this device, with an organiser session for each of its tournaments. */
+export async function setAccount(a: Account, sessions: Record<string, Session>) {
+  const j = await readJar();
+  j.account = a;
+  for (const [tid, s] of Object.entries(sessions)) j.t[tid] = s;
+  await writeJar(j);
+}
+
+export async function clearAccount() {
+  const j = await readJar();
+  delete j.account;
+  await writeJar(j);
 }
 
 export async function setSession(tournamentId: string, s: Session) {
@@ -103,9 +132,9 @@ export function checkOwnerPin(pin: string) {
   return !!expected && safeEqual(pin.trim(), expected);
 }
 
-/** Players, organisers and contributors: everyone who can score, film and post media (not fans). */
+/** Players and organisers: everyone who can score, film and log what happened (not fans). */
 export function isCrew(s: Session | null): s is Session {
-  return !!s && s.role !== "fan";
+  return !!s && (s.role === "player" || s.role === "organiser");
 }
 
 export function isOrganiser(s: Session | null) {

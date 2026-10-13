@@ -13,6 +13,7 @@ import { setPendingClip } from "@/lib/pendingClip";
 import { clipFile, prefetchClip } from "@/lib/shareFile";
 import { currentHole } from "@/lib/scorePos";
 import type { AiPieceRow, CommentRow, PostRow, TournamentState } from "@/lib/types";
+import { roundBoard } from "@/lib/live";
 
 /**
  * The feed: one column, newest first, like X or Instagram. Clips, highlight films, photos and notes
@@ -129,6 +130,12 @@ export function SocialFeed({ roundId, limit, composer = true }: { roundId?: stri
 
   const likes = useLikes();
 
+  // From the log-in page's "Join the conversation"
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("join") === "1" && !session) window.setTimeout(() => setSheet({ k: "join", why: "post" }), 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   if (!state) return null;
   const list = items.slice(0, shown);
   const join = (why: string) => setSheet({ k: "join", why });
@@ -157,6 +164,7 @@ export function SocialFeed({ roundId, limit, composer = true }: { roundId?: stri
 
   return (
     <div className="sf">
+      {!roundId && <LiveNow />}
       {composer && <Composer roundId={roundId} onJoin={() => join("post")} say={say} />}
 
       {list.length === 0 && (
@@ -517,6 +525,35 @@ function shareLink(url: string, text: string, title: string, say: (m: string) =>
     .catch(() => say(url));
 }
 
+// ------------------------------------------------------------ the live score, pinned to the top
+
+/** While a round is on: the score of every match (or the top five), one tap from the full live card */
+function LiveNow() {
+  const { state, summary, href } = useT();
+  if (!state || !summary) return null;
+  const round = state.rounds.find((r) => r.status === "live");
+  if (!round) return null;
+  const board = roundBoard(state, summary, round);
+  const rows =
+    board.kind === "match"
+      ? board.matches.map((m) => ({ k: m.gameId, left: m.sides.map((sd) => sd.name).join(" v "), right: m.started ? `${m.big}${m.small ? ` · ${m.small}` : ""}` : "Not started" }))
+      : board.field.slice(0, 5).map((r) => ({ k: r.sideId, left: r.thru ? `${r.pos} ${r.name}` : r.name, right: r.thru ? `${r.score} · thru ${r.thru}` : "Not started" }));
+  return (
+    <Link className="sf-live" href={href("/live")} aria-label="Live now: see the full live card">
+      <span className="sf-live-h">
+        <span className="dot" aria-hidden /> Live now · R{round.number} {round.course_name}
+      </span>
+      {rows.slice(0, 5).map((r) => (
+        <span className="sf-live-row" key={r.k}>
+          <span>{r.left}</span>
+          <b>{r.right}</b>
+        </span>
+      ))}
+      <span className="sf-live-more">See the live card ›</span>
+    </Link>
+  );
+}
+
 // ------------------------------------------------------------ writing a post
 
 function Composer({ roundId, onJoin, say }: { roundId?: string; onJoin: () => void; say: (m: string) => void }) {
@@ -537,7 +574,7 @@ function Composer({ roundId, onJoin, say }: { roundId?: string; onJoin: () => vo
         </span>
         <span className="sf-ask">
           <span className="sf-ask-q">What&apos;s happening?</span>
-          <span className="sf-ask-sub">Join to post and comment</span>
+          <span className="sf-ask-sub">Join to share photos and comment</span>
         </span>
       </button>
     );
@@ -553,8 +590,12 @@ function Composer({ roundId, onJoin, say }: { roundId?: string; onJoin: () => vo
     setPhoto(f);
   }
 
+  // Fans share photos (with a caption); players can also post notes and clips
+  const fan = !!session.fanId;
+  const ready = fan ? !!photo : !!(text.trim() || photo);
+
   async function post() {
-    if (busy || (!text.trim() && !photo)) return;
+    if (busy || !ready) return;
     setBusy(true);
     try {
       let mediaPath: string | null = null;
@@ -589,6 +630,17 @@ function Composer({ roundId, onJoin, say }: { roundId?: string; onJoin: () => vo
   }
 
   const who: Who = session.fanId ? "fan" : session.playerId ? "player" : "crew";
+  if (fan && !photo)
+    return (
+      <div className="sf-compose fan">
+        <Avatar name={session.name} who={who} />
+        <label className="btn sf-share-photo">
+          {Ic.photo}
+          <span>Share a photo</span>
+          <input type="file" accept="image/*" hidden onChange={(e) => (picked(e.target.files?.[0]), (e.target.value = ""))} />
+        </label>
+      </div>
+    );
   return (
     <div className="sf-compose">
       <Avatar name={session.name} who={who} />
@@ -596,10 +648,10 @@ function Composer({ roundId, onJoin, say }: { roundId?: string; onJoin: () => vo
         <textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder="What's happening?"
+          placeholder={fan ? "Add a caption (optional)" : "What's happening?"}
           maxLength={crew ? 2000 : 500}
           rows={text.length > 60 ? 3 : 1}
-          aria-label="What's happening?"
+          aria-label={fan ? "Caption" : "What's happening?"}
         />
         {preview && (
           <div className="sf-compose-photo">
@@ -618,7 +670,7 @@ function Composer({ roundId, onJoin, say }: { roundId?: string; onJoin: () => vo
               <input type="file" accept={state?.tournament.video_enabled === false ? "image/*" : "image/*,video/*"} hidden onChange={(e) => (picked(e.target.files?.[0]), (e.target.value = ""))} />
             </label>
           )}
-          <button className="btn sf-post" disabled={busy || (!text.trim() && !photo)} onClick={post}>
+          <button className="btn sf-post" disabled={busy || !ready} onClick={post}>
             {busy ? "Posting…" : "Post"}
           </button>
         </div>
@@ -816,7 +868,7 @@ function JoinSheet({ why, onClose, say }: { why: string; onClose: () => void; sa
     <Sheet label="Join the conversation" onClose={onClose}>
       <form className="sf-join" onSubmit={submit}>
         <p className="sf-join-lede">
-          {why === "comment" ? "Comment" : "Post and comment"} on {tname}. Use your own name. We&apos;ll email you a link to sign in: no password.
+          {why === "comment" ? "Comment" : "Share photos and comment"} on {tname}. Use your own name. We&apos;ll email you a link to sign in: no password.
         </p>
         <label className="sf-field">
           <span>Your name</span>
