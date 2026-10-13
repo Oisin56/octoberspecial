@@ -14,8 +14,8 @@ import {
   type Game,
   type GameSummary,
   type RoundCfg,
+  holeShots,
 } from "./engine";
-import { shotsOnHole } from "./scoring";
 import { shotsTimeline } from "./shots";
 import {
   PLAY_LABEL,
@@ -246,7 +246,7 @@ function scorecardText(
             if (sc.pickedUp) return `${nm} picked up`;
             const d = sc.gross! - h.par;
             const tag = d <= -2 ? " EAGLE" : d === -1 ? " birdie" : "";
-            const st = shotsOnHole(gs.shots[b] ?? 0, h.si);
+            const st = holeShots(cfg, gs.shots[b] ?? 0, h.number);
             return `${nm} ${sc.gross}${st ? ` (gets ${st})` : ""}${tag}${sc.gir ? " GIR" : ""}`;
           })
           .join(", ");

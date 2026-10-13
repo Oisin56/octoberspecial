@@ -12,9 +12,8 @@
  * count with what they had entered by the moment the clip was posted.
  */
 import { ballsOfSide, gameShots, tournamentSummary, type Game, type ScoringType } from "./engine";
-import { shotsOnHole } from "./scoring";
 import { roundBoard } from "./live";
-import { gameHole } from "./engine";
+import { gameHole, holeShots } from "./engine";
 import { toEntries, toRoundCfg, toTournamentCfg, type HoleEntryRow, type TournamentState } from "./types";
 
 export interface BugRow {
@@ -23,6 +22,8 @@ export interface BugRow {
   /** "−3", "18 pts", "2 skins" */
   value: string;
   thru: number;
+  /** Every hole of the round played (shown as F) */
+  finished?: boolean;
   /** In the clip */
   onCamera: boolean;
   lead: boolean;
@@ -99,7 +100,7 @@ export function scoreBug(s: S, opts: { round: number; hole: number; after?: bool
     const side = g.sides.find((x) => x.id === sideId);
     if (!side) return 0;
     const sh = gameShots(cfg, g, players);
-    return Math.max(0, ...ballsOfSide(side, cfg.play).map((b) => shotsOnHole(sh[b] ?? 0, h.si)));
+    return Math.max(0, ...ballsOfSide(side, cfg.play).map((b) => holeShots(cfg, sh[b] ?? 0, h.number)));
   };
 
   if (board.kind === "match") {
@@ -127,6 +128,7 @@ export function scoreBug(s: S, opts: { round: number; hole: number; after?: bool
       name: x.name,
       value: x.score,
       thru: x.thru,
+      finished: x.thru >= cfg.holes.length,
       onCamera: x.playerIds.some((p) => pids.includes(p)),
       lead: x.pos === "1" || x.pos === "T1",
       gap,

@@ -72,10 +72,10 @@ export const SEGMENT_HOLES: Record<Segment, number[]> = {
 // ---------------------------------------------------------------- basics
 
 /** Shots a player receives on a hole given their shots for the round. */
-export function shotsOnHole(roundShots: number, si: number): number {
+export function shotsOnHole(roundShots: number, si: number, holes = 18): number {
   if (roundShots <= 0) return 0;
-  const base = Math.floor(roundShots / 18);
-  const extra = si <= roundShots % 18 ? 1 : 0;
+  const base = Math.floor(roundShots / holes);
+  const extra = si <= roundShots % holes ? 1 : 0;
   return base + extra;
 }
 

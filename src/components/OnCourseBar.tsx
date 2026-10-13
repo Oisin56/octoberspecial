@@ -5,13 +5,14 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useT } from "./Providers";
 import { currentHole } from "@/lib/scorePos";
+import { toRoundCfg } from "@/lib/types";
 
 /**
  * While a round is live, anyone logged in gets three big buttons at the foot of every page:
- * Score, Record and Note. Record opens the camera in one tap. The screen is kept awake.
+ * Score (Card for everyone but the scorer), Record and Note. Record opens the camera in one tap. The screen is kept awake.
  */
 export function OnCourseBar() {
-  const { state, crew, href, slug } = useT();
+  const { state, crew, session, href, slug } = useT();
   const path = usePathname();
   const [, bump] = useState(0);
 
@@ -59,6 +60,8 @@ export function OnCourseBar() {
   const where = `round=${live.number}${hole ? `&hole=${hole}` : ""}`;
   const onScore = path?.endsWith("/score");
   const video = state.tournament.video_enabled;
+  // The scorer enters scores; everyone else follows the live card
+  const scorer = toRoundCfg(live, state.players).games.some((g) => (session?.playerId && g.scorerId === session.playerId) || (session?.role === "organiser" && !g.scorerId));
 
   return (
     <>
@@ -66,7 +69,7 @@ export function OnCourseBar() {
     <nav className="oncourse" aria-label="On the course">
       <Link className={`oc-btn${onScore ? " here" : ""}`} href={href("/score")} aria-current={onScore ? "page" : undefined}>
         <Glyph k="score" />
-        <span>Score</span>
+        <span>{scorer ? "Score" : "Card"}</span>
       </Link>
       <Link className="oc-btn oc-record" href={href(video ? `/record?${where}` : `/post?${where}&from=course`)}>
         <Glyph k="record" />

@@ -1172,3 +1172,57 @@ table.card.compact .shotdot { display: none; }
 .bc-spend { display: grid; gap: 8px; }
 .bc-bar { height: 10px; border-radius: 999px; background: var(--mist); overflow: hidden; }
 .bc-bar span { display: block; height: 100%; background: linear-gradient(90deg, var(--board), var(--bracken)); border-radius: 999px; }
+
+/* ---- Score entry: number tiles around par (one tap), locked finished holes, the live card */
+.scorecard .pscore.entry { padding: 8px 10px 10px; }
+.scorecard .ptop { display: flex; align-items: center; gap: 6px; }
+.scorecard .ptop .pwho { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.scorecard .ptop .pname { font-family: var(--font-display); font-weight: 700; font-size: 23px; line-height: 1.05; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); }
+.scorecard .ptop .shots { font-family: var(--font-display); font-size: 14px; color: var(--bracken); min-height: 0; }
+.chip.big { min-height: 40px; padding: 6px 10px; font-size: 14px; font-weight: 600; }
+.num-tiles { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; margin-top: 8px; }
+.num-tile { appearance: none; min-width: 0; height: 58px; border-radius: 12px; border: 1.5px solid var(--rule); background: var(--tile, #f7f7f2); color: var(--ink); font-family: var(--font-display); font-size: 30px; font-weight: 700; line-height: 1; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 0; }
+.num-tile small { font-size: 11px; font-weight: 600; margin-top: 2px; letter-spacing: 0.01em; }
+.num-tile[aria-pressed="true"] { background: var(--board); color: var(--tile, #fff); border-color: var(--board); }
+.num-tile.more { font-size: 17px; }
+.num-tile.more[aria-pressed="true"] { font-size: 30px; }
+.gave-up { margin: 8px 0 0; height: 58px; display: flex; align-items: center; justify-content: center; border-radius: 12px; background: var(--mist); font-family: var(--font-display); font-size: 20px; font-weight: 600; color: var(--ink-soft); }
+.hole-result { text-align: center; font-family: var(--font-display); font-size: 19px; font-weight: 700; margin: 10px 0 0; }
+.hole-sheet .grid.numbers { grid-template-columns: repeat(5, 1fr); }
+.hole-sheet .grid button.part { background: #f3e6c8; }
+.frozen { background: var(--paper); border: 1px solid var(--rule); border-radius: 10px; padding: 6px 12px 12px; margin-top: 8px; }
+.frozen .frow { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--rule); }
+.frozen .frow .pname { font-family: var(--font-display); font-weight: 700; font-size: 22px; }
+.frozen .fval { font-family: var(--font-display); font-weight: 700; font-size: 32px; text-align: right; line-height: 1; }
+.frozen .fval small { display: block; font-size: 13px; font-weight: 500; color: var(--ink-soft); }
+.frozen .edit-score { margin-top: 12px; min-height: 56px; font-size: 20px; }
+.correcting { background: #fff4d6; border: 1.5px solid var(--bracken); border-radius: 10px; padding: 10px 12px; margin: 4px 0 8px; font-size: 15px; }
+.live-card .keeper { background: var(--board); color: var(--tile, #fff); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 4px; }
+.live-card .keeper .who { font-family: var(--font-display); font-size: 22px; font-weight: 700; color: #fff; }
+.live-card .keeper .small { opacity: 0.85; }
+.live-card .live-line { font-size: 20px; font-weight: 700; margin: 0; text-align: center; }
+/* big choice buttons in setup (e.g. which holes a round plays) */
+.pick-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(88px, 1fr)); gap: 8px; }
+.pick-tile { appearance: none; min-height: 56px; border-radius: 12px; border: 1.5px solid var(--rule); background: var(--paper); color: var(--ink); font-family: var(--font-display); font-size: 19px; font-weight: 700; cursor: pointer; padding: 8px; }
+.pick-tile[aria-pressed="true"] { background: var(--board); color: var(--tile); border-color: var(--board); }
+
+/* ---- The camera: unmistakable while recording, zoom, the one-time iPhone tip */
+.cam.recording::after { content: ""; position: absolute; inset: 0; z-index: 3; pointer-events: none; box-shadow: inset 0 0 0 8px #e5484d; animation: rec-pulse 1.2s ease-in-out infinite; }
+@keyframes rec-pulse { 50% { box-shadow: inset 0 0 0 8px rgba(229, 72, 77, 0.35); } }
+.cam-rec-banner { position: relative; z-index: 4; align-self: center; margin-top: calc(14px + env(safe-area-inset-top)); display: flex; align-items: center; gap: 10px; background: #e5484d; color: #fff; font-family: var(--font-display); font-size: 28px; font-weight: 700; letter-spacing: 0.04em; padding: 8px 20px; border-radius: 999px; box-shadow: 0 4px 18px rgba(0, 0, 0, 0.35); font-variant-numeric: tabular-nums; }
+.cam-rec-banner .dot { width: 16px; height: 16px; border-radius: 50%; background: #fff; animation: rec-dot 1s steps(2) infinite; }
+.cam-rec-banner.warn { background: #ffb020; color: #1b1408; }
+.cam-rec-banner.warn .dot { background: #1b1408; }
+@keyframes rec-dot { 50% { opacity: 0.2; } }
+.cam-foot { position: relative; z-index: 4; margin-top: auto; display: flex; flex-direction: column; align-items: center; }
+.cam-foot .cam-bottom { width: 100%; margin-top: 0; }
+.cam-zoom { display: flex; gap: 8px; align-items: center; background: rgba(0, 0, 0, 0.45); border-radius: 999px; padding: 6px; margin-bottom: 8px; }
+.cam-zoom button { width: 54px; height: 54px; border-radius: 50%; border: 0; background: rgba(255, 255, 255, 0.15); color: #fff; font-family: var(--font-display); font-size: 19px; font-weight: 700; cursor: pointer; }
+.cam-zoom button[aria-pressed="true"] { background: #fff; color: #111; }
+.cam-zoom-now { font-family: var(--font-display); font-size: 18px; font-weight: 700; padding: 0 8px; }
+.cam-native { font-family: var(--font-display); font-size: 16px; font-weight: 600; background: rgba(0, 0, 0, 0.45); padding: 8px 14px; border-radius: 999px; margin-bottom: 4px; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.cam.recording .cam-time { font-size: 16px; }
+.cam-tip { position: absolute; z-index: 6; left: 12px; right: 12px; bottom: calc(150px + env(safe-area-inset-bottom)); background: var(--paper); color: var(--ink); border-radius: 18px; padding: 16px 18px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45); }
+.cam-tip p { margin: 0 0 10px; font-size: 16px; line-height: 1.4; }
+.cam-tip .cam-tip-h { font-family: var(--font-display); font-size: 22px; font-weight: 700; margin-bottom: 6px; }
+@media (prefers-reduced-motion: reduce) { .cam.recording::after, .cam-rec-banner .dot { animation: none; } }

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { publicClient } from "./supabase";
-import { toEntries, toTournamentCfg, type HoleEntryRow, type TournamentState } from "./types";
+import { normalizeRound, toEntries, toTournamentCfg, type HoleEntryRow, type TournamentState } from "./types";
 import { tournamentSummary, type TournamentCfg, type TournamentSummary } from "./engine";
 import { queued } from "./offlineQueue";
 
@@ -35,7 +35,7 @@ async function loadAll(slug: string): Promise<TournamentState | null> {
   return {
     tournament,
     players: players.data ?? [],
-    rounds: rounds.data ?? [],
+    rounds: (rounds.data ?? []).map(normalizeRound),
     entries: entries.data ?? [],
     attestations: attestations.data ?? [],
     posts: posts.data ?? [],

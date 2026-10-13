@@ -1,6 +1,8 @@
 import "server-only";
 import { COURSES, type CourseData } from "@/data/courses";
 import { GUIDES } from "@/data/course-guides";
+import { validStrokeIndexes } from "./holes";
+export { validStrokeIndexes };
 import type { CourseGuide } from "./types";
 
 /** A course ready to drop into a round: par/SI/yards per tee. */
@@ -22,6 +24,8 @@ export interface CourseHit {
 }
 
 const GCA = "https://api.golfcourseapi.com/v1";
+
+
 
 function gcaHeaders() {
   const key = process.env.GOLFCOURSEAPI_KEY;
@@ -89,13 +93,14 @@ export async function getCourse(ref: string): Promise<CourseOption | null> {
   for (const [gender, list] of groups) {
     for (const t of (Array.isArray(list) ? list : []) as Record<string, unknown>[]) {
       const holes = (Array.isArray(t.holes) ? t.holes : []) as Record<string, unknown>[];
-      if (holes.length < 18) continue;
-      const h18 = holes.slice(0, 18);
+      // 18 holes, or a 9-hole course
+      const n = holes.length >= 18 ? 18 : holes.length === 9 ? 9 : 0;
+      if (!n) continue;
+      const h18 = holes.slice(0, n);
       const par = h18.map((h) => Number(h.par) || 4);
       let si = h18.map((h) => Number(h.handicap) || 0);
-      // Repair stroke indexes if missing or not 1..18
-      const valid = [...si].sort((a, b) => a - b).every((v, i) => v === i + 1);
-      if (!valid) si = h18.map((_, i) => i + 1);
+      // Repair stroke indexes if missing or muddled
+      if (!validStrokeIndexes(si)) si = h18.map((_, i) => i + 1);
       const label = String(t.tee_name ?? "Tee");
       tees.push({
         name: gender === "female" ? `${label} (ladies)` : label,

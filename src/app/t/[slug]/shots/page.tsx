@@ -25,12 +25,13 @@ function ShotsInner() {
   const players = useMemo(() => (state && round ? groupPlayers(state, round.id, posGame, session?.playerId) : []), [state, round, posGame, session?.playerId]);
   const startHole = useMemo(() => {
     const q = Number(sp.get("hole"));
-    if (q >= 1 && q <= 18) return q;
-    if (posHole) return posHole;
+    const nums = round?.holes.map((x) => x.number) ?? [];
+    if (nums.includes(q)) return q;
+    if (posHole && nums.includes(posHole)) return posHole;
     // the latest hole the group has scores for
     const ids = new Set(players.map((p) => p.id));
     const done = (state?.entries ?? []).filter((e) => e.round_id === round?.id && Object.keys(e.scores).some((b) => ids.has(b))).map((e) => e.hole);
-    return done.length ? Math.max(...done) : 1;
+    return done.length ? Math.max(...done) : (nums[0] ?? 1);
   }, [sp, posHole, players, state, round]);
   const [hole, setHole] = useState<number | null>(null);
   const h = hole ?? startHole;
@@ -45,7 +46,11 @@ function ShotsInner() {
   if (!round) return <p>No round is being played.</p>;
   const hh = round.holes.find((x) => x.number === h)!;
   const info: HoleInfo = { par: hh.par, yards: hh.yards, note: round.course_guide?.holes?.[String(h)] ?? "" };
-  const go = (n: number) => setHole(Math.max(1, Math.min(18, n)));
+  // The round's own holes (1 to 18, or a nine)
+  const nums = round.holes.map((x) => x.number).sort((a, b) => a - b);
+  const nextNo = nums.find((n) => n > h) ?? null;
+  const prevNo = [...nums].reverse().find((n) => n < h) ?? null;
+  const go = (n: number | null) => n != null && setHole(n);
 
   return (
     <ShotCard
@@ -55,10 +60,10 @@ function ShotsInner() {
       hole={h}
       holeInfo={info}
       players={players}
-      nextLabel={h < 18 ? `Hole ${h + 1}` : "Done"}
-      backLabel={h > 1 ? `back to ${h - 1}` : undefined}
-      onContinue={() => (h < 18 ? go(h + 1) : history.back())}
-      onBack={() => go(h - 1)}
+      nextLabel={nextNo != null ? `Hole ${nextNo}` : "Done"}
+      backLabel={prevNo != null ? `back to ${prevNo}` : undefined}
+      onContinue={() => (nextNo != null ? go(nextNo) : history.back())}
+      onBack={() => go(prevNo)}
       onLeave={() => pos?.game && writeScorePos(slug, round.id, { game: pos.game, hole: pos.hole })}
     />
   );

@@ -20,6 +20,8 @@ export async function POST(req: Request) {
   const gameId = String(body.game ?? "main");
   const hole = Number(body.hole);
   if (!roundId || !(hole >= 1 && hole <= 18)) return bad("Bad hole");
+  // The organiser correcting another match's score (from Admin, Scorecards): always logged
+  const correcting = body.correct === true && session.role === "organiser";
 
   const db = adminClient();
   const [{ data: round }, { data: players }] = await Promise.all([
@@ -31,8 +33,13 @@ export async function POST(req: Request) {
   const game = cfg.games.find((g) => g.id === gameId);
   if (!game) return bad("Match not found in this round", 404);
 
-  const isScorer = session.role === "organiser" || (!!session.playerId && session.playerId === game.scorerId);
-  if (!isScorer) return bad("Only this match's scorer can enter scores", 403);
+  // Only the match's scorer enters scores (the organiser too when nobody's been chosen); the organiser corrects any match from Admin
+  const isScorer = (!!session.playerId && session.playerId === game.scorerId) || (session.role === "organiser" && !game.scorerId) || correcting;
+  if (!isScorer)
+    return bad(
+      session.role === "organiser" ? "Only this match's scorer enters its scores. To correct one, use Admin, Scorecards, Correct a score." : "Only this match's scorer can enter scores",
+      403,
+    );
 
   const h = cfg.holes.find((x) => x.number === hole);
   if (!h) return bad("Hole not on card");
@@ -83,6 +90,9 @@ export async function POST(req: Request) {
 
   const after_ = { scores, ctp_winner: ctp, ld_winner: ld, conceded };
   const changed = JSON.stringify(before ?? null) !== JSON.stringify(after_);
+  if (correcting && changed && !final) {
+    await db.from("score_changes").insert({ tournament_id: t.id, ...cardKey, hole, action: "score corrected by the organiser", before: before ?? null, after: after_, by_name: session.name });
+  }
   if (final && changed) {
     await db.from("score_changes").insert({ tournament_id: t.id, ...cardKey, hole, action: "score changed on a final card", before: before ?? null, after: after_, by_name: session.name });
     if (card) await db.from("cards").update({ amended: true }).match(cardKey);

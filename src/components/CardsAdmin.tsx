@@ -92,20 +92,18 @@ export function CardsAdmin({ data, onSaved }: { data: AdminData; onSaved: () => 
                     <Link className="chip" href={href(`/card?round=${round.number}&game=${encodeURIComponent(g.id)}`)}>
                       See the card
                     </Link>
+                    <Link className="chip" href={href(`/score?round=${round.number}&game=${encodeURIComponent(g.id)}&correct=1`)}>
+                      Correct a score
+                    </Link>
                     {(info.stage === "finished" || info.stage === "submitted") && (
                       <button className="chip" disabled={busy === k} onClick={() => act("finalise", round.id, g.id, "Card made final")}>
                         Make it final now
                       </button>
                     )}
                     {info.stage === "final" && (
-                      <>
-                        <Link className="chip" href={href(`/score?round=${round.number}&game=${encodeURIComponent(g.id)}`)}>
-                          Change a score
-                        </Link>
-                        <button className="chip" disabled={busy === k} onClick={() => act("reopen", round.id, g.id, "Card reopened")}>
-                          Reopen
-                        </button>
-                      </>
+                      <button className="chip" disabled={busy === k} onClick={() => act("reopen", round.id, g.id, "Card reopened")}>
+                        Reopen
+                      </button>
                     )}
                   </div>
                 </div>
@@ -116,12 +114,12 @@ export function CardsAdmin({ data, onSaved }: { data: AdminData; onSaved: () => 
       })}
 
       <section className="panel stack">
-        <h2 style={{ margin: 0 }}>Changes to final cards</h2>
+        <h2 style={{ margin: 0 }}>Score corrections</h2>
         {changes == null ? (
           <p className="muted">Loading…</p>
         ) : changes.length === 0 ? (
           <p className="muted" style={{ margin: 0 }}>
-            None. Every change made to a card after it&apos;s final is listed here.
+            None. Every score you correct, and every change to a final card, is listed here.
           </p>
         ) : (
           changes.map((c) => (

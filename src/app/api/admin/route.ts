@@ -5,7 +5,7 @@ import { EMAIL_RE, emailPiece, mailConfigured } from "@/lib/email";
 import { draftGuide, generatePiece, type PieceKind } from "@/lib/ai";
 import { cleanGuide, type Tone } from "@/lib/types";
 const TONE_IDS: Tone[] = ["broadsheet", "tabloid", "commentator", "dry"];
-import { getCourse } from "@/lib/courses";
+import { getCourse, validStrokeIndexes } from "@/lib/courses";
 import type { Game, HandicapRule, PointsRule } from "@/lib/engine";
 
 export const maxDuration = 60;
@@ -184,11 +184,17 @@ export async function POST(req: Request) {
           si: Number(h.si),
           yards: h.yards ? Number(h.yards) : undefined,
         }));
-        if (holes.length !== 18) return bad("A card needs 18 holes");
+        if (holes.length !== 18 && holes.length !== 9) return bad("A card needs 18 holes (or 9 for a 9-hole course)");
         if (holes.some((h: { par: number }) => h.par < 3 || h.par > 6)) return bad("Each par must be 3 to 6");
-        const ok = [...holes.map((h: { si: number }) => h.si)].sort((a, b) => a - b).every((v, i) => v === i + 1);
-        if (!ok) return bad("Stroke indexes must be 1 to 18, each used once");
+        if (!validStrokeIndexes(holes.map((h: { si: number }) => h.si)))
+          return bad(holes.length === 18 ? "Stroke indexes must be 1 to 18, each used once" : "Each hole needs a different stroke index");
         patch.holes = holes;
+        if (holes.length === 9) patch.hole_set = "all";
+      }
+      // Which holes are played: the whole card, or the front or back nine of an 18
+      if ("hole_set" in r) {
+        if (!["all", "front", "back"].includes(r.hole_set)) return bad("Unknown choice of holes");
+        patch.hole_set = r.hole_set;
       }
 
       // Course or tee chosen: pull the card
@@ -204,7 +210,7 @@ export async function POST(req: Request) {
         const c = await getCourse(useRef);
         if (!c) return bad("Couldn't load that course's scorecard");
         const tee = c.tees.find((x) => x.name === r.tee) ?? c.tees[0];
-        if (!tee) return bad("That course has no 18-hole tees listed. Enter the card by hand.");
+        if (!tee) return bad("That course has no tees listed. Enter the card by hand.");
         patch.course_slug = c.ref;
         patch.course_name = c.name;
         patch.course_location = c.location || null;
@@ -215,6 +221,7 @@ export async function POST(req: Request) {
         if (!("course_guide" in r) && c.ref !== existing?.course_slug) patch.course_guide = c.guide ?? null;
         patch.tee = tee.name;
         patch.holes = tee.par.map((par, i) => ({ number: i + 1, par, si: tee.si[i], yards: tee.yards[i] || undefined }));
+        if (tee.par.length === 9) patch.hole_set = "all";
       } else if (r.tee && existing && !existingRef) {
         patch.tee = r.tee;
       } else if (r.manualCourse) {
@@ -224,8 +231,16 @@ export async function POST(req: Request) {
         patch.tee = r.tee || null;
       }
 
+      // Database not updated yet (schema.sql not re-run): rounds can't play a nine yet, everything else saves
+      const noHoleSet = (e: { message: string } | null) => !!e && /hole_set/.test(e.message);
+      const nineNeedsSchema = () => bad("To play nine holes, run the latest supabase/schema.sql in Supabase first.", 500);
       if (r.id) {
-        const { error } = await db.from("rounds").update(patch).eq("id", r.id).eq("tournament_id", t.id);
+        let { error } = await db.from("rounds").update(patch).eq("id", r.id).eq("tournament_id", t.id);
+        if (noHoleSet(error)) {
+          if (patch.hole_set !== "all") return nineNeedsSchema();
+          delete patch.hole_set;
+          ({ error } = await db.from("rounds").update(patch).eq("id", r.id).eq("tournament_id", t.id));
+        }
         if (error) return bad(error.message, 500);
         return json({ ok: true, id: r.id });
       }
@@ -253,8 +268,13 @@ export async function POST(req: Request) {
           { id: "main", sides: (ps ?? []).map((p) => ({ id: p.id, playerIds: [p.id], teamId: p.team_id })), scorerId: t.organiser_player_id ?? null },
         ];
       }
-      const { data, error } = await db.from("rounds").insert(insert).select("id").single();
-      if (error) return bad(error.message, 500);
+      let { data, error } = await db.from("rounds").insert(insert).select("id").single();
+      if (noHoleSet(error)) {
+        if (insert.hole_set !== "all") return nineNeedsSchema();
+        delete insert.hole_set;
+        ({ data, error } = await db.from("rounds").insert(insert).select("id").single());
+      }
+      if (error || !data) return bad(error?.message ?? "Couldn't add the round", 500);
       return json({ ok: true, id: data.id });
     }
 

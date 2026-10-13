@@ -17,6 +17,25 @@
 
 import { shotsOnHole } from "./scoring";
 
+/** A nine-hole round: a 9-hole course, or the front or back nine of an 18. */
+export const isNine = (round: Pick<RoundCfg, "holes">) => round.holes.length <= 9;
+
+/**
+ * The stroke index used to give shots on a hole. On 18 holes it's the card's index. On nine holes the
+ * holes are ranked by their card index (toughest first, 1 to 9), so shots go on the toughest of those nine.
+ */
+export function strokeIndex(round: Pick<RoundCfg, "holes">, hole: number): number {
+  const h = round.holes.find((x) => x.number === hole);
+  if (!h) return 99;
+  if (!isNine(round)) return h.si;
+  return [...round.holes].sort((a, b) => a.si - b.si || a.number - b.number).findIndex((x) => x.number === hole) + 1;
+}
+
+/** Shots a ball receives on one hole of this round. */
+export function holeShots(round: Pick<RoundCfg, "holes">, roundShots: number, hole: number): number {
+  return shotsOnHole(roundShots, strokeIndex(round, hole), isNine(round) ? round.holes.length : 18);
+}
+
 export type PlayType = "singles" | "fourball" | "foursomes" | "greensomes" | "scramble";
 export type ScoringType = "stableford" | "stroke" | "match" | "skins";
 export type Segment = "front" | "back" | "full";
@@ -64,7 +83,7 @@ export interface PointsRule {
   front: number; // head-to-head: segment pots
   back: number;
   full: number;
-  /** Field games: points for 1st, 2nd... on the full 18 (ties share). */
+  /** Field games: points for 1st, 2nd... on the full round (ties share). */
   positions?: number[];
   /** Skins: points per skin. */
   skin?: number;
@@ -166,7 +185,8 @@ export function gameShots(round: RoundCfg, game: Game, players: Player[]): Recor
       for (const pid of side.playerIds) out[pid] = (hcp(pid) * pct) / 100;
     }
   }
-  for (const b of balls) out[b] = Math.round(out[b] ?? 0);
+  // Nine holes: half the 18-hole allowance
+  for (const b of balls) out[b] = Math.round((out[b] ?? 0) / (isNine(round) ? 2 : 1));
   if (relative) {
     const low = Math.min(...balls.map((b) => out[b]));
     for (const b of balls) out[b] -= low;
@@ -222,7 +242,7 @@ export function gameHole(
   const gave = round.scoring === "match" && game.sides.length === 2 && entry.conceded ? game.sides.find((s) => s.id === entry.conceded) : undefined;
   if (gave) {
     for (const side of game.sides) {
-      const nets = side.id === gave.id ? [] : ballsOfSide(side, round.play).map((b) => ballNet(entry.scores[b], shotsOnHole(shots[b] ?? 0, h.si))).filter((n): n is number => n != null);
+      const nets = side.id === gave.id ? [] : ballsOfSide(side, round.play).map((b) => ballNet(entry.scores[b], holeShots(round, shots[b] ?? 0, h.number))).filter((n): n is number => n != null);
       res.sides[side.id] = { complete: true, net: nets.length ? Math.min(...nets) : null, pts: 0 };
     }
     res.complete = true;
@@ -233,9 +253,9 @@ export function gameHole(
     const balls = ballsOfSide(side, round.play);
     const complete = balls.every((b) => ballDone(entry.scores[b], round.scoring, round.play));
     const nets = balls
-      .map((b) => ballNet(entry.scores[b], shotsOnHole(shots[b] ?? 0, h.si)))
+      .map((b) => ballNet(entry.scores[b], holeShots(round, shots[b] ?? 0, h.number)))
       .filter((n): n is number => n != null);
-    const pts = Math.max(0, ...balls.map((b) => ballPts(entry.scores[b], h.par, shotsOnHole(shots[b] ?? 0, h.si))));
+    const pts = Math.max(0, ...balls.map((b) => ballPts(entry.scores[b], h.par, holeShots(round, shots[b] ?? 0, h.number))));
     res.sides[side.id] = { complete, net: nets.length ? Math.min(...nets) : null, pts };
   }
   res.complete = game.sides.every((s) => res.sides[s.id].complete);
@@ -253,11 +273,13 @@ export function gameHole(
 
 // ---------------------------------------------------------------- segments
 
-export const SEGMENT_HOLES: Record<Segment, number[]> = {
-  front: [1, 2, 3, 4, 5, 6, 7, 8, 9],
-  back: [10, 11, 12, 13, 14, 15, 16, 17, 18],
-  full: Array.from({ length: 18 }, (_, i) => i + 1),
-};
+/** The holes of a segment. A nine-hole round has no front or back nine: just the one result. */
+export function segmentHoles(round: Pick<RoundCfg, "holes">, segment: Segment): number[] {
+  const all = round.holes.map((h) => h.number).sort((a, b) => a - b);
+  if (segment === "full") return all;
+  if (isNine(round)) return [];
+  return segment === "front" ? all.slice(0, 9) : all.slice(9);
+}
 
 export interface SegmentResult {
   segment: Segment;
@@ -309,7 +331,7 @@ export function segmentResult(
   segment: Segment,
   players: Player[] = [],
 ): SegmentResult {
-  const holes = SEGMENT_HOLES[segment];
+  const holes = segmentHoles(round, segment);
   const value: Record<string, number> = Object.fromEntries(game.sides.map((s) => [s.id, 0]));
   let played = 0;
   let carry = 0;
@@ -345,7 +367,7 @@ export function segmentResult(
   }
 
   // A match is over once it's decided (e.g. won 4&3): the last holes aren't needed
-  const complete = played === holes.length || !!decided;
+  const complete = played === holes.length || !!decided; // (an empty segment, on nine holes, is simply done)
   const lowerBetter = round.scoring === "stroke";
   const ranking = played > 0 ? rank(value, lowerBetter) : [];
   const leaders = ranking.filter((r) => r.pos === 1).map((r) => r.sideId);
@@ -524,10 +546,11 @@ export interface TournamentSummary {
 
 /** Points on offer in a round (used for "points remaining"). */
 export function roundPointsAvailable(r: RoundCfg): number {
-  if (r.scoring === "skins") return 18 * (r.points.skin ?? 1) * r.games.length;
+  if (r.scoring === "skins") return r.holes.length * (r.points.skin ?? 1) * r.games.length;
+  const nines = isNine(r) ? 0 : r.points.front + r.points.back;
   return r.games.reduce((t, g) => {
-    if (g.sides.length === 2 || !r.points.positions?.length) return t + r.points.front + r.points.back + r.points.full;
-    return t + r.points.front + r.points.back + r.points.positions.reduce((a, b) => a + b, 0);
+    if (g.sides.length === 2 || !r.points.positions?.length) return t + nines + r.points.full;
+    return t + nines + r.points.positions.reduce((a, b) => a + b, 0);
   }, 0);
 }
 
@@ -585,7 +608,7 @@ export function tournamentSummary(cfg: TournamentCfg, entriesByRound: Record<str
     r.games.forEach((g, gi) => {
       const gs = rs.games[gi];
       if (r.scoring === "skins") {
-        if (gs.holesPlayed < 18) pointsRemaining += (18 - gs.holesPlayed + (gs.full.carry ?? 0)) * (r.points.skin ?? 1);
+        if (gs.holesPlayed < r.holes.length) pointsRemaining += (r.holes.length - gs.holesPlayed + (gs.full.carry ?? 0)) * (r.points.skin ?? 1);
         return;
       }
       if (!gs.front.complete) pointsRemaining += r.points.front;

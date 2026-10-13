@@ -446,7 +446,7 @@ function Bug({ spec, p, W, H, u, portrait }: CardProps) {
                   {r.onCamera && r.dots > 0 ? dotsOf(r.dots) : null}
                 </div>
                 <div style={{ display: "flex", justifyContent: "flex-end", minWidth: 120 * u, ...D, fontSize: 36 * u, color: r.lead && !r.onCamera ? mix(p.red, "#ffffff", 0.45) : "#ffffff" }}>{r.value}</div>
-                <div style={{ display: "flex", justifyContent: "flex-end", width: 62 * u, ...S, fontWeight: 600, fontSize: 21 * u, color: "rgba(255,255,255,0.7)" }}>{r.thru >= 18 ? "F" : String(r.thru)}</div>
+                <div style={{ display: "flex", justifyContent: "flex-end", width: 62 * u, ...S, fontWeight: 600, fontSize: 21 * u, color: "rgba(255,255,255,0.7)" }}>{r.finished || r.thru >= 18 ? "F" : String(r.thru)}</div>
               </div>
             </div>
           ))}

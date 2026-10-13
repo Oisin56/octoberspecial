@@ -88,6 +88,10 @@ alter table rounds add column if not exists photo_path text;   -- organiser's ow
 alter table rounds add column if not exists course_blurb text;
 alter table rounds add column if not exists lat double precision;
 alter table rounds add column if not exists lon double precision;
+-- Which holes of the card are played: the whole card, or the front or back nine of an 18
+alter table rounds add column if not exists hole_set text not null default 'all';
+alter table rounds drop constraint if exists rounds_hole_set_check;
+alter table rounds add constraint rounds_hole_set_check check (hole_set in ('all','front','back'));
 
 create table if not exists hole_entries (
   id uuid primary key default gen_random_uuid(),

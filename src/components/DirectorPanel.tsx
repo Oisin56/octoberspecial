@@ -673,9 +673,9 @@ export function DirectorPanel() {
                           Hole
                           <select value={s.hole ?? ""} disabled={locked} onChange={(e) => updateSeg(s.id, { ...s, hole: e.target.value === "" ? null : Number(e.target.value) })} aria-label="Hole">
                             <option value="">–</option>
-                            {Array.from({ length: 18 }, (_, k) => (
-                              <option key={k} value={k + 1}>
-                                {k + 1}
+                            {(state.rounds.find((r) => r.number === s.round)?.holes.map((x) => x.number) ?? Array.from({ length: 18 }, (_, k) => k + 1)).map((n) => (
+                              <option key={n} value={n}>
+                                {n}
                               </option>
                             ))}
                           </select>

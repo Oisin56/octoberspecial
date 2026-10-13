@@ -49,7 +49,9 @@ export default function Rules() {
             ? `${pts(rc.points.skin ?? 1)} point per skin`
             : field && rc.points.positions?.length
               ? `points by finishing position: ${rc.points.positions.map(pts).join(", ")}`
-              : [rc.points.front > 0 && `front 9 ${pts(rc.points.front)}`, rc.points.back > 0 && `back 9 ${pts(rc.points.back)}`, `the 18 ${pts(rc.points.full)}`]
+              : (rc.holes.length <= 9
+                  ? [`the ${rc.holes.length} holes ${pts(rc.points.full)}`]
+                  : [rc.points.front > 0 && `front 9 ${pts(rc.points.front)}`, rc.points.back > 0 && `back 9 ${pts(rc.points.back)}`, `the 18 ${pts(rc.points.full)}`])
                   .filter(Boolean)
                   .join(", ") + (rc.games.length > 1 ? " (per match)" : "");
         const hcp =
@@ -73,6 +75,8 @@ export default function Rules() {
             </strong>
             : {PLAY_LABEL[rc.play]}, {SCORING_LABEL[rc.scoring].toLowerCase()}. {rc.games.length > 1 ? `${rc.games.length} matches. ` : ""}
             Worth {pts(roundPointsAvailable(rc))}: {pointsText}. Handicaps: {hcp}.
+            {rc.holes.length <= 9 &&
+              ` ${rc.holes.length} holes${rc.holes[0].number >= 10 ? " (the back nine)" : rc.holes.length < 18 && row.all_holes && row.all_holes.length > 9 ? " (the front nine)" : ""}: ${rc.handicap.mode === "allowance" ? "half the usual handicap shots, " : ""}given on the toughest of the nine by stroke index.`}
           </p>
         );
       })}

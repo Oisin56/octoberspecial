@@ -7,7 +7,8 @@ import type { Game, HandicapRule, PlayType, PointsRule, ScoringType, SideGameCfg
 import { ONE_BALL, roundPointsAvailable } from "@/lib/engine";
 import { GUIDES } from "@/data/course-guides";
 import { CourseImage, roundPhoto } from "./visual";
-import type { CourseGuide } from "@/lib/types";
+import type { CourseGuide, HoleSet } from "@/lib/types";
+import { validStrokeIndexes } from "@/lib/holes";
 import {
   PLAY_LABEL,
   SCORING_LABEL,
@@ -467,7 +468,10 @@ function AddRound({ data, onDone, onCancel }: { data: AdminData; onDone: () => v
   const [manual, setManual] = useState(false);
   const [mName, setMName] = useState("");
   const [card, setCard] = useState(() => Array.from({ length: 18 }, (_, i) => ({ par: 4, si: i + 1, yards: 0 })));
+  /** The whole card, or the front or back nine of an 18 */
+  const [holeSet, setHoleSet] = useState<HoleSet>("all");
   const s = useSave();
+  const teeHoles = course?.tees.find((t) => t.name === tee)?.par.length ?? 18;
 
   async function search(e?: React.FormEvent) {
     e?.preventDefault();
@@ -487,12 +491,13 @@ function AddRound({ data, onDone, onCancel }: { data: AdminData; onDone: () => v
     if (!r.ok) return setNote(j.error ?? "Couldn't load that course");
     setCourse(j.course);
     setTee(j.course.tees[0]?.name ?? "");
-    if (!j.course.tees.length) setNote("That course has no 18-hole tees listed. Enter the card by hand.");
+    if (!j.course.tees.length) setNote("That course has no tees listed. Enter the card by hand.");
   }
   async function create() {
+    const set = (course ? teeHoles : card.length) === 9 ? "all" : holeSet;
     const r = course
-      ? await s.run({ action: "saveRound", round: { courseRef: course.ref, tee } }, "Round added")
-      : await s.run({ action: "saveRound", round: { manualCourse: { name: mName }, holes: card } }, "Round added");
+      ? await s.run({ action: "saveRound", round: { courseRef: course.ref, tee, hole_set: set } }, "Round added")
+      : await s.run({ action: "saveRound", round: { manualCourse: { name: mName }, holes: card, hole_set: set } }, "Round added");
     if (r.ok) onDone();
   }
 
@@ -530,11 +535,12 @@ function AddRound({ data, onDone, onCancel }: { data: AdminData; onDone: () => v
             <select value={tee} onChange={(e) => setTee(e.target.value)}>
               {course.tees.map((t) => (
                 <option key={t.name} value={t.name}>
-                  {t.name} · par {t.par.reduce((a, b) => a + b, 0)} · {t.yards.reduce((a, b) => a + b, 0).toLocaleString()} yds
+                  {t.name} · {t.par.length === 9 ? "9 holes · " : ""}par {t.par.reduce((a, b) => a + b, 0)} · {t.yards.reduce((a, b) => a + b, 0).toLocaleString()} yds
                 </option>
               ))}
             </select>
           </label>
+          {teeHoles === 18 ? <HoleSetPick value={holeSet} onChange={setHoleSet} /> : <p className="small muted" style={{ margin: 0 }}>A 9-hole course.</p>}
           <p className="small muted" style={{ margin: 0 }}>
             You&apos;ll set the format, matches, points and handicaps on the next screen.
           </p>
@@ -546,6 +552,23 @@ function AddRound({ data, onDone, onCancel }: { data: AdminData; onDone: () => v
             <span className="lbl">Course name</span>
             <input value={mName} onChange={(e) => setMName(e.target.value)} />
           </label>
+          <div className="pick-tiles" role="group" aria-label="How many holes does the course have?">
+            {[18, 9].map((n) => (
+              <button
+                key={n}
+                type="button"
+                className="pick-tile"
+                aria-pressed={card.length === n}
+                onClick={() => {
+                  setCard(Array.from({ length: n }, (_, i) => card[i] ?? { par: 4, si: i + 1, yards: 0 }).map((h, i) => ({ ...h, si: n === 9 && h.si > 9 ? i + 1 : h.si })));
+                  if (n === 9) setHoleSet("all");
+                }}
+              >
+                {n === 18 ? "18-hole course" : "9-hole course"}
+              </button>
+            ))}
+          </div>
+          {card.length === 18 && <HoleSetPick value={holeSet} onChange={setHoleSet} />}
           <CardTable card={card} setCard={setCard} />
         </>
       )}
@@ -571,8 +594,26 @@ function AddRound({ data, onDone, onCancel }: { data: AdminData; onDone: () => v
   );
 }
 
+/** Which holes a round plays, as three big buttons. */
+function HoleSetPick({ value, onChange }: { value: HoleSet; onChange: (v: HoleSet) => void }) {
+  const opts: [HoleSet, string][] = [
+    ["all", "18 holes"],
+    ["front", "Front 9"],
+    ["back", "Back 9"],
+  ];
+  return (
+    <div className="pick-tiles" role="group" aria-label="Holes played">
+      {opts.map(([v, label]) => (
+        <button key={v} type="button" className="pick-tile" aria-pressed={value === v} onClick={() => onChange(v)}>
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function CardTable({ card, setCard }: { card: { par: number; si: number; yards?: number }[]; setCard: (c: { par: number; si: number; yards: number }[]) => void }) {
-  const siOk = [...card.map((h) => h.si)].sort((a, b) => a - b).every((v, i) => v === i + 1);
+  const siOk = validStrokeIndexes(card.map((h) => h.si));
   return (
     <div className="stack">
       <div className="card-scroll">
@@ -607,7 +648,7 @@ function CardTable({ card, setCard }: { card: { par: number; si: number; yards?:
           </tbody>
         </table>
       </div>
-      {!siOk && <p className="error small">Stroke indexes must use each number from 1 to 18 once.</p>}
+      {!siOk && <p className="error small">{card.length === 18 ? "Stroke indexes must use each number from 1 to 18 once." : "Each hole needs a different stroke index."}</p>}
     </div>
   );
 }
@@ -631,7 +672,10 @@ function RoundCard({ round, data, onSaved }: { round: RoundRow; data: AdminData;
   const [tee, setTee] = useState(round.tee ?? "");
   const [tees, setTees] = useState<string[]>(round.tee ? [round.tee] : []);
   const [showCard, setShowCard] = useState(false);
-  const [card, setCard] = useState(round.holes.map((h) => ({ par: h.par, si: h.si, yards: h.yards ?? 0 })));
+  const fullCard = round.all_holes ?? round.holes;
+  const [card, setCard] = useState(fullCard.map((h) => ({ par: h.par, si: h.si, yards: h.yards ?? 0 })));
+  const [holeSet, setHoleSet] = useState<HoleSet>(round.hole_set ?? "all");
+  const nine = fullCard.length <= 9 || holeSet !== "all";
   const localGuide = GUIDES[round.course_slug.replace(/^local:/, "")];
   const [guide, setGuide] = useState<CourseGuide>(
     round.course_guide ?? (localGuide ? { overview: localGuide.overview, signature: localGuide.signature, holes: localGuide.holes } : { overview: "", signature: "", holes: {} }),
@@ -657,6 +701,7 @@ function RoundCard({ round, data, onSaved }: { round: RoundRow; data: AdminData;
     const r: Record<string, unknown> = { id: round.id, ...f, points_rule: points, handicap_rule: hcp, games };
     if (tee && tee !== round.tee) r.tee = tee;
     if (showCard) r.holes = card;
+    if (holeSet !== (round.hole_set ?? "all")) r.hole_set = holeSet;
     if (guideDirty) r.course_guide = guide;
     const res = await s.run({ action: "saveRound", round: r });
     if (res.ok) setGuideDirty(false);
@@ -725,6 +770,18 @@ function RoundCard({ round, data, onSaved }: { round: RoundRow; data: AdminData;
             </label>
           </div>
 
+          {fullCard.length === 18 && (
+            <>
+              <h4 className="display" style={{ margin: "8px 0 0", fontSize: 18 }}>
+                Holes
+              </h4>
+              <HoleSetPick value={holeSet} onChange={setHoleSet} />
+              {scored && holeSet !== (round.hole_set ?? "all") && (
+                <p className="notice small" style={{ margin: 0 }}>Scores on holes outside the ones you choose are kept but no longer count.</p>
+              )}
+            </>
+          )}
+
           <h4 className="display" style={{ margin: "8px 0 0", fontSize: 18 }}>
             Format
           </h4>
@@ -762,9 +819,9 @@ function RoundCard({ round, data, onSaved }: { round: RoundRow; data: AdminData;
             </label>
           ) : (
             <div className="row">
-              {(["front", "back", "full"] as const).map((k) => (
+              {(nine ? (["full"] as const) : (["front", "back", "full"] as const)).map((k) => (
                 <label className="field" key={k} style={{ flex: "1 1 110px" }}>
-                  <span className="lbl">{k === "front" ? "Front 9" : k === "back" ? "Back 9" : field ? "18 (if no positions)" : "Full 18"}</span>
+                  <span className="lbl">{k === "front" ? "Front 9" : k === "back" ? "Back 9" : nine ? (field ? "The 9 (if no positions)" : "The 9 holes") : field ? "18 (if no positions)" : "Full 18"}</span>
                   <input inputMode="decimal" value={points[k]} onChange={(e) => setPoints({ ...points, [k]: Number(e.target.value) || 0 })} />
                 </label>
               ))}
@@ -779,7 +836,7 @@ function RoundCard({ round, data, onSaved }: { round: RoundRow; data: AdminData;
                 </label>
               )}
               <p className="small muted" style={{ flexBasis: "100%", margin: 0 }}>
-                Ryder Cup style: front 0, back 0, 18 = 1. A tie splits the points.
+                {nine ? "A tie splits the points." : "Ryder Cup style: front 0, back 0, 18 = 1. A tie splits the points."}
               </p>
             </div>
           )}
@@ -807,7 +864,7 @@ function RoundCard({ round, data, onSaved }: { round: RoundRow; data: AdminData;
           {showGuide && (
             <GuideEditor
               roundId={round.id}
-              pars={round.holes.map((h) => h.par)}
+              pars={fullCard.map((h) => h.par)}
               guide={guide}
               setGuide={(g) => {
                 setGuide(g);

@@ -109,7 +109,12 @@ export interface RoundRow {
   nine_points: number;
   full_points: number;
   shots: Record<string, number>;
+  /** The holes played: the whole card, or the front or back nine of an 18-hole card */
   holes: HoleRowData[];
+  /** Which holes of the card are played ("all" when missing) */
+  hole_set?: HoleSet | null;
+  /** The whole card (set when the round is loaded; holes is then just the holes played) */
+  all_holes?: HoleRowData[];
   scorer_id: string | null;
   status: "upcoming" | "live" | "complete";
   games: Game[] | null;
@@ -298,12 +303,27 @@ export function roundGames(r: RoundRow, players: PlayerRow[]): Game[] {
   ];
 }
 
+export type HoleSet = "all" | "front" | "back";
+
+/** The holes of a card that a round plays. */
+export function playedHoles<T extends { number: number }>(card: T[], set: HoleSet | null | undefined): T[] {
+  if (set === "front") return card.filter((h) => h.number <= 9);
+  if (set === "back") return card.filter((h) => h.number >= 10);
+  return card;
+}
+
+/** A round as the site uses it: holes = the holes played, all_holes = the whole card. */
+export function normalizeRound(r: RoundRow): RoundRow {
+  const card = r.all_holes ?? r.holes ?? [];
+  return { ...r, all_holes: card, holes: playedHoles(card, r.hole_set) };
+}
+
 export function toRoundCfg(r: RoundRow, players: PlayerRow[]): RoundCfg {
   return {
     id: r.id,
     number: r.number,
     name: r.course_name,
-    holes: r.holes.map((h) => ({ number: h.number, par: h.par, si: h.si })),
+    holes: playedHoles(r.all_holes ?? r.holes, r.hole_set).map((h) => ({ number: h.number, par: h.par, si: h.si })),
     play: r.play ?? "singles",
     scoring: r.format,
     games: roundGames(r, players),

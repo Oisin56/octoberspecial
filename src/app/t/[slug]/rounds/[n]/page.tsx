@@ -38,7 +38,9 @@ export default function RoundPage({ params }: { params: Promise<{ n: string }> }
   const pointsLine =
     cfg.scoring === "skins"
       ? `Skins: ${pts(cfg.points.skin ?? 1)} pt each, ties carry over`
-      : `${[cfg.points.front > 0 && `${pts(cfg.points.front)} front 9`, cfg.points.back > 0 && `${pts(cfg.points.back)} back 9`, `${pts(cfg.points.full)} for the 18`]
+      : `${(cfg.holes.length <= 9
+          ? [`${pts(cfg.points.full)} for the ${cfg.holes.length} holes`]
+          : [cfg.points.front > 0 && `${pts(cfg.points.front)} front 9`, cfg.points.back > 0 && `${pts(cfg.points.back)} back 9`, `${pts(cfg.points.full)} for the 18`])
           .filter(Boolean)
           .join(" + ")}${cfg.games.length > 1 ? " per match" : ""}`;
 

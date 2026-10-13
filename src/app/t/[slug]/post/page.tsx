@@ -54,7 +54,7 @@ function PostInner() {
     if (q) return Number(q);
     if (!state || !defaultRound) return null;
     const done = state.entries.filter((e) => e.round_id === defaultRound.id).map((e) => e.hole);
-    return done.length ? Math.min(18, Math.max(...done)) : 1;
+    return done.length ? Math.max(...done) : (defaultRound.holes[0]?.number ?? 1);
   }, [sp, state, defaultRound]);
 
   const [roundId, setRoundId] = useState<string>("");
@@ -219,9 +219,9 @@ function PostInner() {
           <label htmlFor="hl">Hole</label>
           <select id="hl" value={hole} onChange={(e) => setHole(e.target.value)}>
             <option value="">–</option>
-            {Array.from({ length: 18 }, (_, i) => (
-              <option key={i + 1} value={i + 1}>
-                {i + 1}
+            {(state?.rounds.find((x) => x.id === roundId)?.holes.map((x) => x.number) ?? Array.from({ length: 18 }, (_, i) => i + 1)).map((n) => (
+              <option key={n} value={n}>
+                {n}
               </option>
             ))}
           </select>

@@ -6,8 +6,7 @@ import { cleanBody, cleanTitle } from "@/lib/cleanText";
 import { cardInfo, cardLabel } from "@/lib/scorecards";
 import { liveLine, roundBoard, standings } from "@/lib/live";
 import { CountUp, CourseImage, Icon } from "./visual";
-import { ballsOfGame, gameHole, type Game, type GameSummary, type SegmentResult } from "@/lib/engine";
-import { shotsOnHole } from "@/lib/scoring";
+import { ballsOfGame, gameHole, holeShots, isNine, type Game, type GameSummary, type SegmentResult } from "@/lib/engine";
 import {
   SIDE_GAME_LABEL,
   ballName,
@@ -259,9 +258,9 @@ export function GameStatus({ round, gameIndex, compact }: { round: RoundRow; gam
     );
   };
   const segs = [
-    cfg.points.front > 0 && box("Front 9", gs.front, cfg.points.front),
-    cfg.points.back > 0 && box("Back 9", gs.back, cfg.points.back),
-    box("18", gs.full, cfg.points.full),
+    !isNine(cfg) && cfg.points.front > 0 && box("Front 9", gs.front, cfg.points.front),
+    !isNine(cfg) && cfg.points.back > 0 && box("Back 9", gs.back, cfg.points.back),
+    box(isNine(cfg) ? `The ${cfg.holes.length}` : "18", gs.full, cfg.points.full),
   ].filter(Boolean);
 
   return (
@@ -308,7 +307,9 @@ export function Scorecard({ round, gameIndex = 0, badge = true, compact = false 
   if (!game || !gs) return null;
   const balls = ballsOfGame(game, cfg.play);
   const entries = state.entries.filter((e) => e.round_id === round.id && (e.game ?? "main") === game.id);
-  const halves = [round.holes.slice(0, 9), round.holes.slice(9, 18)];
+  // Two halves (out and in) on 18 holes; one card of nine on a nine-hole round
+  const halves = round.holes.length <= 9 ? [round.holes] : [round.holes.slice(0, 9), round.holes.slice(9, 18)];
+  const nine = halves.length === 1;
   const sideOf = (ball: string) => game.sides.find((s) => s.id === ball || s.playerIds.includes(ball))?.id;
   const short = (b: string) => {
     const n = ballName(b, game, state.players);
@@ -324,7 +325,7 @@ export function Scorecard({ round, gameIndex = 0, badge = true, compact = false 
           <table className={`card${compact ? " compact" : ""}`}>
             <thead>
               <tr>
-                <th>{hi === 0 ? "Out" : "In"}</th>
+                <th>{nine ? "" : hi === 0 ? "Out" : "In"}</th>
                 {holes.map((h) => (
                   <th key={h.number}>{h.number}</th>
                 ))}
@@ -364,7 +365,7 @@ export function Scorecard({ round, gameIndex = 0, badge = true, compact = false 
                       if (sc?.gross && !sc.pickedUp) tot += sc.gross;
                       const gh = e && cfg.scoring === "match" ? gameHole(cfg, game, gs.shots, { ...e, game: game.id, ctpWinner: e.ctp_winner, ldWinner: e.ld_winner }) : null;
                       const won = gh?.winner && gh.winner === sideOf(b);
-                      const dots = shotsOnHole(gs.shots[b] ?? 0, h.si);
+                      const dots = holeShots(cfg, gs.shots[b] ?? 0, h.number);
                       return (
                         <td key={h.number} className={won ? "won" : ""} title={dots ? `${dots} shot${dots > 1 ? "s" : ""}` : undefined}>
                           <ScoreMark gross={sc?.gross ?? null} par={h.par} pickedUp={sc?.pickedUp} conceded={!!e?.conceded && e.conceded === sideOf(b)} />

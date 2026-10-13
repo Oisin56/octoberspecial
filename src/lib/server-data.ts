@@ -1,6 +1,6 @@
 import "server-only";
 import { adminClient } from "./admin";
-import type { TournamentRow, TournamentState, RoundRow } from "./types";
+import { normalizeRound, type TournamentRow, type TournamentState, type RoundRow } from "./types";
 import { getSession, type Session } from "./auth";
 
 export interface TournamentPrivate extends TournamentRow {
@@ -57,7 +57,7 @@ export async function loadServerState(tournamentId: string): Promise<TournamentS
   return {
     tournament,
     players: players.data ?? [],
-    rounds: rounds.data ?? [],
+    rounds: (rounds.data ?? []).map(normalizeRound),
     entries: entries.data ?? [],
     attestations: attestations.data ?? [],
     posts: posts.data ?? [],
