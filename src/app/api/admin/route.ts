@@ -15,7 +15,7 @@ export const maxDuration = 60;
 const TOURNAMENT_FIELDS = [
   "name", "subtitle", "start_date", "end_date", "theme", "custom_colors", "logo_path", "hero_path", "tone",
   "side_games", "side_games_by", "teams", "auto_bulletins", "video_enabled", "organiser_player_id", "published",
-  "require_attestation", "feed_on", "ai_on", "standings", "units",
+  "require_attestation", "feed_on", "ai_on", "standings", "units", "share_shape",
 ];
 const PLAYER_FIELDS = [
   "name", "nickname", "handicap", "home_club", "bio", "best_club", "worst_club", "weakness", "quote", "photo_path", "team_id", "sort",
@@ -89,6 +89,7 @@ export async function POST(req: Request) {
         patch.organiser_pin_hash = hashPin(String(b.organiserPin));
       }
       if ("units" in patch && !["yards", "metres"].includes(String(patch.units))) return bad("Yards or metres");
+      if ("share_shape" in patch && patch.share_shape !== null && !["portrait", "landscape"].includes(String(patch.share_shape))) return bad("Upright or wide");
       if ("standings" in patch && !["points", "stableford", "stroke"].includes(String(patch.standings))) return bad("Unknown way of winning");
       if (Array.isArray(patch.teams)) {
         patch.teams = (patch.teams as { id?: string; name: string; color?: string }[]).map((tm, i) => ({

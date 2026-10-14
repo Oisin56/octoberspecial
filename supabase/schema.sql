@@ -344,10 +344,12 @@ alter table tournaments add column if not exists ai_on boolean not null default 
 alter table tournaments add column if not exists setup_jobs jsonb;
 -- Phase D: distances in yards or metres
 alter table tournaments add column if not exists units text not null default 'yards';
+-- Phase E: where the tournament's videos are mostly shared (upright for phones, wide for YouTube and TV)
+alter table tournaments add column if not exists share_shape text check (share_shape in ('portrait', 'landscape'));
 create view public_tournaments with (security_invoker = false) as
   select id, slug, name, subtitle, start_date, end_date, theme, custom_colors, logo_path, hero_path, tone,
          side_games, side_games_by, teams, auto_bulletins, video_enabled, organiser_player_id, published, created_at, reel_music_path,
-         require_attestation, broadcast_on, broadcast_cap_cents, standings, feed_on, ai_on, setup_jobs, units
+         require_attestation, broadcast_on, broadcast_cap_cents, standings, feed_on, ai_on, setup_jobs, units, share_shape
   from tournaments;
 grant select on public_tournaments to anon, authenticated;
 
@@ -478,6 +480,20 @@ create view public_gps with (security_invoker = false) as
   select id, tournament_id, round_id, hole, player_id, client_id, accuracy, to_front, to_middle, to_back, from_tee, source, seq, ignored, author_name, taken_at
   from gps_readings;
 
+-- Phase E: the end-of-tournament film, made on the server step by step (the phone can be put away)
+alter table reels add column if not exists stage text;               -- plan | voices | render | rendering | done
+alter table reels add column if not exists stage_at timestamptz;     -- when the current step started (a stuck step is restarted)
+alter table reels add column if not exists cost_cents numeric not null default 0;  -- what the film cost (an estimate)
+alter table reels add column if not exists done_at timestamptz;
+alter table reels add column if not exists renders int not null default 0;  -- films finished from this plan (each counts towards the tournament's allowance)
+-- Site-wide settings for the site owner: the brand pack, the music tracks, the film spending limits
+create table if not exists site_settings (
+  key text primary key,
+  value jsonb not null default '{}'::jsonb,
+  updated_at timestamptz not null default now()
+);
+alter table site_settings enable row level security;               -- server only
+
 -- ------------------------------------------------------------ access (explicit, for projects that don't grant by default)
 grant usage on schema public to anon, authenticated, service_role;
 grant all on all tables in schema public to service_role;
@@ -486,6 +502,7 @@ grant select on rounds, hole_entries, attestations, posts, comments, ai_pieces, 
 grant select on public_tournaments, public_players, public_gps to anon, authenticated;
 revoke all on gps_readings from anon, authenticated;
 revoke all on reels from anon, authenticated;
+revoke all on site_settings from anon, authenticated;
 revoke all on subscribers from anon, authenticated;
 revoke all on fans from anon, authenticated;
 revoke all on reports from anon, authenticated;

@@ -3,6 +3,15 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { BRAND_SLOTS, MAX_TRACKS, dollars, type BrandSlot, type Shape } from "@/lib/film";
+import { mediaSeconds, uploadBlob } from "@/lib/upload";
+
+interface Films {
+  brand: Partial<Record<BrandSlot, Partial<Record<Shape, { path: string; sec: number; src: string } | null>>>>;
+  music: { id: string; name: string; mood: string; sec: number; src: string }[];
+  limits: { monthlyCents: number; perTournament: number };
+  spend: { cents: number; films: number };
+}
 
 interface Row {
   id: string;
@@ -24,6 +33,7 @@ export default function OwnerPage() {
   const router = useRouter();
   const [owner, setOwner] = useState<boolean | null>(null);
   const [rows, setRows] = useState<Row[]>([]);
+  const [films, setFilms] = useState<Films | null>(null);
   const [pin, setPin] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -35,6 +45,7 @@ export default function OwnerPage() {
     const j = await fetch("/api/owner").then((r) => r.json()).catch(() => ({ owner: false }));
     setOwner(!!j.owner);
     setRows(j.tournaments ?? []);
+    setFilms(j.films ?? null);
   }, []);
   useEffect(() => {
     const t = setTimeout(load, 0);
@@ -151,6 +162,7 @@ export default function OwnerPage() {
                 </article>
               ))}
             </div>
+            {films && <FilmSettings films={films} post={post} reload={load} />}
           </>
         )}
       </main>
@@ -185,5 +197,168 @@ export default function OwnerPage() {
         </div>
       )}
     </div>
+  );
+}
+
+type Post = (body: Record<string, unknown>) => Promise<{ ok: boolean; j: Record<string, unknown> & { error?: string } }>;
+
+/** Films across the site: what they cost, the brand pack every film opens and closes with, the music. */
+function FilmSettings({ films, post, reload }: { films: Films; post: Post; reload: () => void }) {
+  const [monthly, setMonthly] = useState(String(films.limits.monthlyCents / 100));
+  const [per, setPer] = useState(String(films.limits.perTournament));
+  const [msg, setMsg] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [name, setName] = useState("");
+  const [mood, setMood] = useState("");
+  const [file, setFile] = useState<File | null>(null);
+
+  const say = (r: { ok: boolean; j: { error?: string } }, ok: string) => {
+    setMsg(r.ok ? ok : String(r.j.error ?? "That didn't work"));
+    if (r.ok) reload();
+  };
+  async function brand(slot: BrandSlot, shape: Shape, f: File | null) {
+    setBusy(`${slot}-${shape}`);
+    setMsg(null);
+    try {
+      if (!f) return say(await post({ action: "setBrand", slot, shape, path: null }), "Removed");
+      const sec = await mediaSeconds(f, "video");
+      const path = await uploadBlob(f, { contentType: f.type || "video/mp4", filename: f.name });
+      say(await post({ action: "setBrand", slot, shape, path, sec }), "Saved");
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : "Upload failed");
+    } finally {
+      setBusy(null);
+    }
+  }
+  async function addTrack(e: React.FormEvent) {
+    e.preventDefault();
+    if (!file) return;
+    setBusy("track");
+    setMsg(null);
+    try {
+      const sec = await mediaSeconds(file, "audio");
+      const path = await uploadBlob(file, { contentType: file.type || "audio/mpeg", filename: file.name });
+      const r = await post({ action: "addTrack", path, sec, name, mood });
+      say(r, "Track added");
+      if (r.ok) {
+        setName("");
+        setMood("");
+        setFile(null);
+      }
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "Upload failed");
+    } finally {
+      setBusy(null);
+    }
+  }
+  const used = films.limits.monthlyCents ? Math.min(100, Math.round((films.spend.cents / films.limits.monthlyCents) * 100)) : 100;
+
+  return (
+    <section className="owner-films stack">
+      <h2>Films</h2>
+      {msg && <p className={/saved|added|removed/i.test(msg) ? "notice" : "error"}>{msg}</p>}
+
+      <div className="panel stack">
+        <h3>Spending</h3>
+        <p>
+          This month: <strong>{dollars(films.spend.cents)}</strong> of {dollars(films.limits.monthlyCents)} across the whole site, {films.spend.films} film{films.spend.films === 1 ? "" : "s"}. These are estimates from the services&apos; prices.
+        </p>
+        <div className="owner-meter" role="img" aria-label={`${used}% of this month's film budget used`}>
+          <span style={{ width: `${used}%` }} />
+        </div>
+        <div className="row owner-limits">
+          <label className="field">
+            <span>Monthly limit, all tournaments ($)</span>
+            <input inputMode="decimal" value={monthly} onChange={(e) => setMonthly(e.target.value)} />
+          </label>
+          <label className="field">
+            <span>Films each tournament can make</span>
+            <input inputMode="numeric" value={per} onChange={(e) => setPer(e.target.value)} />
+          </label>
+        </div>
+        <button className="btn" disabled={!!busy} onClick={async () => say(await post({ action: "setLimits", monthlyDollars: Number(monthly), perTournament: Number(per) }), "Saved")}>
+          Save the limits
+        </button>
+      </div>
+
+      <div className="panel stack">
+        <h3>Brand pack</h3>
+        <p className="small">Short MP4 clips with their own sound. Upload both shapes: upright for films made for phones, wide for YouTube and TV.</p>
+        <div className="owner-brand">
+          {BRAND_SLOTS.map((slot) => (
+            <div key={slot.id} className="owner-slot">
+              <strong>{slot.name}</strong>
+              <small>{slot.note}</small>
+              {(["portrait", "landscape"] as Shape[]).map((shape) => {
+                const c = films.brand[slot.id]?.[shape];
+                return (
+                  <div key={shape} className="owner-clip">
+                    <span>{shape === "portrait" ? "Upright" : "Wide"}</span>
+                    {c ? (
+                      <>
+                        <a href={c.src} target="_blank" rel="noreferrer">
+                          Watch ({c.sec.toFixed(1)}s)
+                        </a>
+                        <button className="linklike" disabled={!!busy} onClick={() => brand(slot.id, shape, null)}>
+                          Remove
+                        </button>
+                      </>
+                    ) : null}
+                    <label className={`btn secondary small-btn${busy === `${slot.id}-${shape}` ? " busy" : ""}`}>
+                      {busy === `${slot.id}-${shape}` ? "Uploading…" : c ? "Replace" : "Upload"}
+                      <input type="file" accept="video/mp4,video/quicktime,video/webm" hidden disabled={!!busy} onChange={(e) => e.target.files?.[0] && brand(slot.id, shape, e.target.files[0])} />
+                    </label>
+                  </div>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="panel stack">
+        <h3>Music</h3>
+        <p className="small">Up to {MAX_TRACKS} tracks for organisers to choose from. Use music licensed for people to post on YouTube, Instagram and Facebook (not registered with YouTube&apos;s Content ID), at least 4 minutes long if you can.</p>
+        {films.music.length ? (
+          <ul className="owner-tracks">
+            {films.music.map((m) => (
+              <li key={m.id}>
+                <div>
+                  <strong>{m.name}</strong>
+                  <small>
+                    {m.mood ? `${m.mood} · ` : ""}
+                    {Math.floor(m.sec / 60)}:{String(Math.round(m.sec % 60)).padStart(2, "0")}
+                  </small>
+                </div>
+                <audio src={m.src} controls preload="none" />
+                <button className="linklike" disabled={!!busy} onClick={async () => say(await post({ action: "removeTrack", trackId: m.id }), "Removed")}>
+                  Remove
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="muted">No tracks yet. Until there are, films are made without music.</p>
+        )}
+        {films.music.length < MAX_TRACKS && (
+          <form className="stack" onSubmit={addTrack}>
+            <div className="row owner-limits">
+              <label className="field">
+                <span>Name</span>
+                <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Sunday charge" />
+              </label>
+              <label className="field">
+                <span>Mood (optional)</span>
+                <input value={mood} onChange={(e) => setMood(e.target.value)} placeholder="Epic, building" />
+              </label>
+            </div>
+            <input type="file" accept="audio/mpeg,audio/mp3,audio/mp4,audio/x-m4a,audio/wav" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+            <button className="btn" disabled={!file || !name.trim() || !!busy}>
+              {busy === "track" ? "Uploading…" : "Add the track"}
+            </button>
+          </form>
+        )}
+      </div>
+    </section>
   );
 }

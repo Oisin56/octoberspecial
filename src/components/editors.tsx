@@ -1415,9 +1415,10 @@ export function ContentEditor({ data, onSaved }: { data: AdminData; onSaved: () 
   const [feed, setFeed] = useState(t.feed_on !== false);
   const [ai, setAi] = useState(t.ai_on !== false);
   const [units, setUnits] = useState<"yards" | "metres">(t.units === "metres" ? "metres" : "yards");
+  const [share, setShare] = useState<"portrait" | "landscape" | null>(t.share_shape ?? null);
   const s = useSave();
   async function save() {
-    const r = await s.run({ action: "updateTournament", patch: { tone, auto_bulletins: ai && auto, video_enabled: video, feed_on: feed, ai_on: ai, units } });
+    const r = await s.run({ action: "updateTournament", patch: { tone, auto_bulletins: ai && auto, video_enabled: video, feed_on: feed, ai_on: ai, units, ...(video && share ? { share_shape: share } : {}) } });
     if (r.ok) onSaved();
   }
   return (
@@ -1431,6 +1432,16 @@ export function ContentEditor({ data, onSaved }: { data: AdminData; onSaved: () 
           </button>
         ))}
       </div>
+      {video && (
+        <div className="row" style={{ gap: 10, alignItems: "center" }}>
+          <span className="display" style={{ fontSize: 18 }}>Videos mostly shared on</span>
+          {(["portrait", "landscape"] as const).map((u) => (
+            <button key={u} type="button" className="pick-tile" style={{ minHeight: 44, minWidth: 96 }} aria-pressed={share === u} onClick={() => setShare(u)}>
+              {u === "portrait" ? "Phones (upright)" : "YouTube and TV (wide)"}
+            </button>
+          ))}
+        </div>
+      )}
       <label className="row display" style={{ fontSize: 18 }}>
         <input type="checkbox" checked={feed} onChange={(e) => setFeed(e.target.checked)} style={{ width: 22, height: 22 }} />
         Live feed: photos, comments and notes for everyone following

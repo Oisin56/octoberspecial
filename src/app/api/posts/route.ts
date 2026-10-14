@@ -83,6 +83,9 @@ export async function POST(req: Request) {
   // the recording's shape and length (for the broadcast version)
   if (d.shape === "portrait" || d.shape === "landscape") details.shape = d.shape;
   if (d.dur != null && Number(d.dur) > 0 && Number(d.dur) < 600) details.dur = String(Math.round(Number(d.dur) * 10) / 10);
+  // not a shot: an interview, a prediction, scene-setting (and when it was filmed)
+  if (d.clipType === "interview" || d.clipType === "prediction" || d.clipType === "scene" || d.clipType === "other") details.clipType = d.clipType;
+  if (d.when === "pre" || d.when === "post") details.when = d.when;
   const row = {
     tournament_id: t.id,
     round_id: roundId,

@@ -62,6 +62,7 @@ interface Draft {
   draw: "myself" | "random" | null;
   extras: { feed: boolean | null; ai: boolean | null; video: boolean | null };
   units?: "yards" | "metres";
+  share?: "portrait" | "landscape";
   theme: ThemeId | null;
   keep: "email" | "pin" | null;
   email: string;
@@ -896,6 +897,22 @@ function ExtrasStep({ d, setD, next }: { d: Draft; setD: (x: Draft) => void; nex
         <YesNo q="Live feed" note="Photos, comments and notes from the course, for everyone following" value={e.feed ?? true} onChange={(v) => set({ feed: v })} />
         <YesNo q="AI writing" note="Previews before each round, reports after, and bulletins while you play" value={e.ai ?? true} onChange={(v) => set({ ai: v })} />
         <YesNo q="Video" note="Film clips on the course, and a highlights film at the end" value={e.video ?? true} onChange={(v) => set({ video: v })} />
+        {(e.video ?? true) && (
+          <div className="wz-yn">
+            <div className="wz-yn-q">
+              <strong>Where will you mostly share your videos?</strong>
+              <span>The camera asks you to hold the phone this way, and the film at the end is made in this shape.</span>
+            </div>
+            <div className="wz-yn-b">
+              <button type="button" className="pick-tile" aria-pressed={(d.share ?? "portrait") === "portrait"} onClick={() => setD({ ...d, share: "portrait" })}>
+                Phones (upright)
+              </button>
+              <button type="button" className="pick-tile" aria-pressed={d.share === "landscape"} onClick={() => setD({ ...d, share: "landscape" })}>
+                YouTube and TV (wide)
+              </button>
+            </div>
+          </div>
+        )}
         <div className="wz-yn">
           <div className="wz-yn-q">
             <strong>GPS distances in</strong>
@@ -956,6 +973,7 @@ function SafeStep({ d, setD, me, onDone }: { d: Draft; setD: (x: Draft) => void;
       extras: { feed: d.extras.feed !== false, ai: d.extras.ai !== false, video: d.extras.video !== false },
       theme: d.theme ?? "spring",
       units: d.units ?? "yards",
+      share: d.share ?? "portrait",
     };
     const r = await fetch("/api/tournaments", {
       method: "POST",

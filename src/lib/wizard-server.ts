@@ -71,6 +71,7 @@ export function cleanWizard(raw: unknown): Wizard {
     draw: w.draw === "random" ? "random" : "myself",
     extras: { feed: w.extras?.feed !== false, ai: w.extras?.ai !== false, video: w.extras?.video !== false },
     units: w.units === "metres" ? "metres" : "yards",
+    share: w.share === "landscape" ? "landscape" : "portrait",
     theme: THEMES.some((t) => t.id === w.theme) && w.theme !== "custom" ? (w.theme as ThemeId) : "spring",
   };
   const problems = drawProblems(out);
@@ -158,12 +159,19 @@ export async function createFromWizard(w: Wizard, opts: { pin?: string | null })
     video_enabled: w.extras.video,
     auto_bulletins: w.extras.ai,
   };
-  const phaseC = { standings, feed_on: w.extras.feed, ai_on: w.extras.ai, units: w.units ?? "yards" };
+  const phaseC = { standings, feed_on: w.extras.feed, ai_on: w.extras.ai, units: w.units ?? "yards", share_shape: w.share ?? "portrait" };
   let { data: t, error } = await db.from("tournaments").insert({ ...base, ...phaseC }).select("id,slug").single();
+  if (error && /share_shape/.test(error.message)) {
+    // The video shape needs the latest database update; everything else saves
+    const { share_shape: _s, ...rest } = phaseC;
+    void _s;
+    ({ data: t, error } = await db.from("tournaments").insert({ ...base, ...rest }).select("id,slug").single());
+  }
   if (error && /units/.test(error.message)) {
     // GPS units need the latest database update; everything else saves
-    const { units: _u, ...rest } = phaseC;
+    const { units: _u, share_shape: _s2, ...rest } = phaseC;
     void _u;
+    void _s2;
     ({ data: t, error } = await db.from("tournaments").insert({ ...base, ...rest }).select("id,slug").single());
   }
   if (error && /standings|feed_on|ai_on/.test(error.message)) {

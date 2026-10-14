@@ -118,6 +118,8 @@ export interface Wizard {
   theme: ThemeId;
   /** GPS distances in yards (default) or metres */
   units?: "yards" | "metres";
+  /** Where the videos will mostly be shared: upright for phones (default), wide for YouTube and TV */
+  share?: "portrait" | "landscape";
 }
 
 /** Running totals when everyone plays the same Stableford or stroke-play format; points otherwise. */

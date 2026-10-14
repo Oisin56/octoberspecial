@@ -117,11 +117,14 @@ export function ReelFeed({
   api,
   refresh,
   startId,
+  filmHref,
 }: {
   items: FeedItem[];
   state: TournamentState;
   tournamentName: string;
   backHref: string;
+  /** The organiser's way to the film (shown as a button beside Awards) */
+  filmHref?: string | null;
   api: (path: string, body: Record<string, unknown>) => Promise<{ ok: boolean; j: Record<string, unknown> }>;
   refresh: () => void;
   startId?: string | null;
@@ -258,6 +261,11 @@ export function ReelFeed({
     return (
       <div className="reel-empty">
         <p>No videos yet. Clips posted from the course and the highlights films appear here.</p>
+        {filmHref && (
+          <Link href={filmHref} className="btn">
+            About the film
+          </Link>
+        )}
       </div>
     );
 
@@ -340,6 +348,11 @@ export function ReelFeed({
               {I.back}
               <span>{tournamentName}</span>
             </Link>
+            {filmHref && (
+              <Link href={filmHref} className="reel-awards-btn reel-film-btn">
+                Film
+              </Link>
+            )}
             <button className="reel-awards-btn" onClick={() => setSheet("awards")}>
               Awards
             </button>
@@ -383,6 +396,11 @@ export function ReelFeed({
               {I.back}
             </Link>
             <span className="reel-heading">Highlights</span>
+            {filmHref && (
+              <Link href={filmHref} className="reel-awards-btn reel-film-btn">
+                Film
+              </Link>
+            )}
             <button className="reel-awards-btn" onClick={() => setSheet("awards")}>
               Awards
             </button>

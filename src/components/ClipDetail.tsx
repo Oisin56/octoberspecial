@@ -10,11 +10,16 @@ import { flushShots, saveShot } from "@/lib/shotQueue";
 import { flushClips, queueClip } from "@/lib/trimmer";
 import { readScorePos } from "@/lib/scorePos";
 import { HoldToTalk } from "./HoldToTalk";
+import { CLIP_TYPES } from "@/lib/film";
+import type { ClipType } from "@/lib/types";
 
-type Step = "trim" | "who" | "shot" | "result" | "club" | "done" | "another";
+type Step = "trim" | "type" | "people" | "who" | "shot" | "result" | "club" | "done" | "another";
+type Aside = Exclude<ClipType, "shot">;
 /** Recordings longer than this can have more than one shot cut from them */
 const MULTI_SECONDS = 25;
 const ORDER: Step[] = ["trim", "who", "shot", "result", "club", "done"];
+/** An interview, a prediction, scene-setting: just who's in it */
+const ASIDE_ORDER: Step[] = ["trim", "type", "people", "done"];
 const t1 = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, "0")}`;
 
 /**
@@ -31,8 +36,16 @@ export function ClipDetail({
   onDone,
   onCancel,
   backLabel = "Scorecard",
+  clipType,
+  clipWhen,
+  typeChoices,
 }: {
   blob: Blob;
+  /** Chosen on the camera before filming (no round being played) */
+  clipType?: Aside;
+  clipWhen?: "pre" | "post";
+  /** Picked from the camera roll with no round being played: ask what it is */
+  typeChoices?: { order: Aside[]; when: "pre" | "post"; roundId: string | null } | null;
   /** Where the first Back goes */
   backLabel?: string;
   roundId: string | null;
@@ -64,6 +77,10 @@ export function ClipDetail({
   /** For the highlights film only: kept out of the feed */
   const [filmOnly, setFilmOnly] = useState(false);
   const [busy, setBusy] = useState(false);
+  /** Not a shot (an interview, a prediction…): set on the camera, from the list, or by "Not a shot?" during play */
+  const [aside, setAside] = useState<Aside | null>(clipType ?? null);
+  const asking = !!typeChoices && !clipType;
+  const order = aside || asking ? ASIDE_ORDER.filter((x) => x !== "type" || asking) : ORDER;
 
   const players = useMemo(() => {
     if (!state || !roundId) return state?.players ?? [];
@@ -85,9 +102,14 @@ export function ClipDetail({
 
   const go = (s: Step) => setStep(s);
   const back = () => {
-    const i = ORDER.indexOf(step);
+    if (aside && !asking && step === "people" && !clipType) {
+      // "Not a shot?" during play: back to the shot questions
+      setAside(null);
+      return setStep("shot");
+    }
+    const i = order.indexOf(step);
     if (i === 0) return used.length ? setStep("another") : onCancel();
-    let prev = ORDER[i - 1];
+    let prev = order[i - 1];
     if (prev === "club" && shot === "putt") prev = "result";
     setStep(prev);
   };
@@ -95,18 +117,20 @@ export function ClipDetail({
   async function post() {
     setBusy(true);
     const names = who.map((id) => state?.players.find((p) => p.id === id)?.name ?? id);
-    const summary = [names.join(" & "), shot ? KIND_LABEL[shot].toLowerCase() : null, result?.toLowerCase()].filter(Boolean).join(" · ");
+    const summary = aside ? [names.join(" & "), CLIP_TYPES[aside].name.toLowerCase()].filter(Boolean).join(" · ") : [names.join(" & "), shot ? KIND_LABEL[shot].toLowerCase() : null, result?.toLowerCase()].filter(Boolean).join(" · ");
+    const when = aside ? clipWhen ?? typeChoices?.when ?? "post" : undefined;
+    const postRound = aside && asking ? (when === "post" ? typeChoices!.roundId : null) : roundId;
     // The clip is a shot: link it to the one logged, or log it now (one player, a shot and how it finished)
     const unchanged = complete && who[0] === prefill!.playerId && shot === prefill!.kind && result === prefill!.outcome;
-    let shotId = unchanged ? prefill!.shotClientId : undefined;
-    if (!shotId && roundId && hole && who.length === 1 && shot && result) {
+    let shotId = unchanged && !aside ? prefill!.shotClientId : undefined;
+    if (!aside && !shotId && roundId && hole && who.length === 1 && shot && result) {
       shotId = crypto.randomUUID();
       saveShot(slug, shotId, { roundId, hole, playerId: who[0], kind: shot, outcome: result, club, distance: null, loggedAt: new Date().toISOString(), author: session?.name ?? "" });
       flushShots(slug);
     }
     // Where it was filmed: the distance for the shot, if nobody measured it
     const at = takeClipFix();
-    if (at && roundId && hole && who.length === 1) {
+    if (at && !aside && roundId && hole && who.length === 1) {
       saveReading(slug, {
         id: "",
         round_id: roundId,
@@ -142,18 +166,19 @@ export function ClipDetail({
       filename: `clip-${Date.now()}.${ext}`,
       at: Date.now(),
       meta: {
-        roundId,
-        hole,
+        roundId: postRound,
+        hole: aside ? null : hole,
         body: caption.trim() || summary,
-        tags: shot && result ? tagsFor(shot, result) : [],
+        tags: !aside && shot && result ? tagsFor(shot, result) : [],
         playerIds: who,
         trimIn: whole ? null : Math.round(range[0] * 10) / 10,
         trimOut: whole ? null : Math.round(range[1] * 10) / 10,
         details: {
-          ...(shot ? { shot: KIND_LABEL[shot] } : {}),
-          ...(result ? { result } : {}),
-          ...(club ? { club } : {}),
+          ...(!aside && shot ? { shot: KIND_LABEL[shot] } : {}),
+          ...(!aside && result ? { result } : {}),
+          ...(!aside && club ? { club } : {}),
           ...(shotId ? { shotId } : {}),
+          ...(aside ? { clipType: aside, when } : {}),
           ...(shape ? { shape } : {}),
           ...(dur ? { dur: Math.round(dur * 10) / 10 } : {}),
         },
@@ -185,11 +210,14 @@ export function ClipDetail({
     setClub(null);
     setCaption("");
     setFilmOnly(false);
+    if (!clipType) setAside(null);
     setStep("trim");
   }
 
   const title: Record<Step, string> = {
     trim: "Trim the clip",
+    type: "What's this?",
+    people: "Who's in it?",
     who: "Who's playing the shot?",
     shot: "What shot?",
     result: "How did it finish?",
@@ -197,7 +225,7 @@ export function ClipDetail({
     done: "Ready to post",
     another: "Saved. Another shot in this clip?",
   };
-  const n = ORDER.indexOf(step);
+  const n = order.indexOf(step);
 
   return (
     <div className="cd" role="dialog" aria-label={title[step]}>
@@ -210,7 +238,7 @@ export function ClipDetail({
           <span />
         )}
         <div className="cd-dots" aria-hidden="true">
-          {ORDER.map((s, i) => (
+          {order.map((s, i) => (
             <span key={s} className={i <= n ? "on" : ""} />
           ))}
         </div>
@@ -265,6 +293,31 @@ export function ClipDetail({
         </div>
       )}
 
+      {step === "type" && typeChoices && (
+        <div className="cd-body">
+          <div className="cd-grid two">
+            {typeChoices.order.map((k) => (
+              <button key={k} className="cd-tile" onClick={() => (setAside(k), go("people"))}>
+                {CLIP_TYPES[k].name}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {step === "people" && (
+        <div className="cd-body">
+          <div className="cd-grid two">
+            {(state?.players ?? []).map((p) => (
+              <button key={p.id} className="cd-tile" aria-pressed={who.includes(p.id)} onClick={() => setWho((w) => (w.includes(p.id) ? w.filter((x) => x !== p.id) : [...w, p.id]))}>
+                {p.name}
+              </button>
+            ))}
+          </div>
+          <p className="cd-note">Tap everyone in it, then Next.</p>
+        </div>
+      )}
+
       {step === "who" && (
         <div className="cd-body">
           <div className="cd-grid two">
@@ -291,6 +344,9 @@ export function ClipDetail({
               </button>
             ))}
           </div>
+          <button type="button" className="linklike cd-notshot" onClick={() => (setAside("interview"), setShot(null), setResult(null), setClub(null), go("people"))}>
+            Not a shot? An interview or a chat
+          </button>
         </div>
       )}
 
@@ -334,8 +390,10 @@ export function ClipDetail({
       {step === "done" && (
         <div className="cd-body cd-done">
           <p className="cd-summary">
-            {[who.map((id) => state?.players.find((p) => p.id === id)?.name).join(" & "), shot ? KIND_LABEL[shot] : null, result, club].filter(Boolean).join(" · ")}
-            {hole ? ` · hole ${hole}` : ""}
+            {aside
+              ? [who.map((id) => state?.players.find((p) => p.id === id)?.name).join(" & "), CLIP_TYPES[aside].name].filter(Boolean).join(" · ")
+              : [who.map((id) => state?.players.find((p) => p.id === id)?.name).join(" & "), shot ? KIND_LABEL[shot] : null, result, club].filter(Boolean).join(" · ")}
+            {hole && !aside ? ` · hole ${hole}` : ""}
           </p>
           <HoldToTalk onText={(t) => setCaption((c) => (c ? `${c} ${t}` : t))} />
           <label className="cd-cap">
@@ -368,7 +426,12 @@ export function ClipDetail({
 
       <div className="cd-foot" hidden={step === "another"}>
         {step === "trim" && (
-          <button className="btn block cd-primary" disabled={!dur} onClick={() => go(complete ? "done" : "who")}>
+          <button className="btn block cd-primary" disabled={!dur} onClick={() => go(asking && !aside ? "type" : aside ? "people" : complete ? "done" : "who")}>
+            Next
+          </button>
+        )}
+        {step === "people" && (
+          <button className="btn block cd-primary" onClick={() => go("done")}>
             Next
           </button>
         )}
@@ -377,7 +440,7 @@ export function ClipDetail({
             {busy ? "Saving…" : filmOnly ? "Save for the film" : "Post the clip"}
           </button>
         )}
-        {step !== "trim" && step !== "done" && (
+        {step !== "trim" && step !== "done" && step !== "people" && step !== "type" && (
           <button className="btn secondary block cd-primary" onClick={() => go("done")}>
             Skip the rest and post
           </button>

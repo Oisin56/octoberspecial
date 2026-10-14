@@ -1,4 +1,6 @@
 /** The AI director's edit plan. Shared by the server and the review screen. */
+import type { ClipType } from "./types";
+import type { Seat, Sound } from "./film";
 
 export type Aspect = "16:9" | "9:16";
 
@@ -13,6 +15,10 @@ interface Base {
   voiceSec?: number;
   /** The line was shortened automatically to fit */
   voiceAuto?: boolean;
+  /** Who says each line: 1 the commentator, 2 the pundit (unset: the usual split) */
+  seats?: Partial<Record<LinePart, Seat>>;
+  /** Lines the organiser recorded in their own voice (the recording is theirs: never re-recorded by the AI) */
+  own?: Partial<Record<LinePart, boolean>>;
 }
 
 export interface CardSegment extends Base {
@@ -47,6 +53,12 @@ export interface ClipSegment extends Base {
   finishes?: boolean;
   /** Filmed upright (read by the browser). A clip of the other shape gets a blurred fill behind it */
   portrait?: boolean;
+  /** Where the golfer is across a wide clip (0 left to 1 right): an upright film keeps the slice around them */
+  focusX?: number;
+  /** Not a shot: an interview, a prediction, scene-setting (no score panel; its own sound) */
+  clipType?: ClipType;
+  /** The line is said before the footage starts, over a still, so the clip plays with its own sound */
+  leadIn?: boolean;
   /**
    * Clips have two lines: `voice` is the set-up, read from the start and never giving away the result;
    * `payoff` is a short reaction timed to end just before the clip does, once the result is on screen.
@@ -90,8 +102,10 @@ export const MOODS: { id: Mood; name: string; prompt: string }[] = [
 ];
 
 export interface PlanMusic {
-  /** made = composed for this film; upload = the tournament's uploaded track; none = no music */
-  source: "made" | "upload" | "none";
+  /** track = one of the site's tracks; made = composed (older films); upload = the tournament's own track; none */
+  source: "track" | "made" | "upload" | "none";
+  /** The site's track (source "track") */
+  trackId?: string;
   mood: Mood;
   /** The composed track and the film length it was made for */
   src?: string;
@@ -107,6 +121,14 @@ export interface Plan {
   music?: PlanMusic;
   /** ElevenLabs voice for the commentary (default narrator when unset) */
   voiceId?: string;
+  /** The pundit's voice, when there are two in the booth */
+  voice2Id?: string;
+  /** Two in the booth: a commentator and a pundit */
+  booth?: 1 | 2;
+  /** What you hear: the commentary, the clips' own sound, or both */
+  sound?: Sound;
+  /** Wide clips in an upright film: kept around the golfer (default) */
+  reframe?: boolean;
   segments: Segment[];
 }
 
@@ -158,7 +180,7 @@ export const COMMENTARY: { id: CommentaryStyle; name: string; note: string; pers
 
 export interface Brief {
   roundNumber: number | null; // null = whole tournament
-  length: 60 | 180 | 300;
+  length: number;
   aspect: Aspect;
   voice: boolean;
   veo: boolean;
@@ -166,6 +188,14 @@ export interface Brief {
   style?: CommentaryStyle;
   amount?: "light" | "full";
   voiceId?: string;
+  /** The film flow (Phase E) */
+  sound?: Sound;
+  booth?: 1 | 2;
+  voice2Id?: string;
+  /** One of the site's music tracks; null = no music */
+  trackId?: string | null;
+  /** Clips filmed the other way: fitted in (reframed or blurred sides) or left out */
+  otherShape?: "fit" | "leave";
 }
 
 /** Key for a recorded line: re-record when the words or the voice change. */
@@ -214,11 +244,36 @@ export function recordingOf(s: Segment, part: LinePart): Rec {
     : { src: s.replaySrc, key: s.replayFor, sec: s.replaySec, auto: s.replayAuto };
 }
 
+/** Who says a line: the pundit reacts (payoffs), talks over the replays and sums up each round; the commentator calls the rest. */
+export function seatOf(s: Segment, part: LinePart): Seat {
+  const set = s.seats?.[part];
+  if (set === 1 || set === 2) return set;
+  if (s.kind === "clip") return part === "voice" ? 1 : 2;
+  return s.kind === "card" && s.card === "result" ? 2 : 1;
+}
+
+export const OWN_VOICE = "own";
+
+/** The voice a line is recorded in: the organiser's own, the pundit's (two in the booth), or the commentator's. */
+export function lineVoice(p: Pick<Plan, "voiceId" | "voice2Id" | "booth">, s: Segment, part: LinePart): string | undefined {
+  if (s.own?.[part]) return OWN_VOICE;
+  return p.booth === 2 && seatOf(s, part) === 2 ? p.voice2Id : p.voiceId;
+}
+
+/** Is the line's recording up to date (the organiser's own recordings always are)? */
+export function lineRecorded(p: Pick<Plan, "voiceId" | "voice2Id" | "booth">, s: Segment, part: LinePart): boolean {
+  const r = recordingOf(s, part);
+  if (s.own?.[part]) return !!r.src;
+  const text = lineText(s, part);
+  return !!text && !!r.src && r.key === voiceKey(text, lineVoice(p, s, part));
+}
+
 /** Seconds the line takes: measured once recorded (same words), estimated before. */
 export function lineSeconds(s: Segment, part: LinePart): number {
   const text = lineText(s, part);
   if (!text) return 0;
   const r = recordingOf(s, part);
+  if (s.own?.[part] && r.src && r.sec != null) return r.sec;
   if (r.key && r.sec != null && r.key.slice(r.key.indexOf("|") + 1) === text) return r.sec;
   return voiceSeconds(text);
 }
@@ -239,7 +294,10 @@ export function clipParts(s: ClipSegment) {
   // More footage after the chosen end? Hold on that; otherwise the last moments play at half speed
   const spare = s.duration != null ? Math.max(0, s.duration - (s.in + real)) : 0;
   const replay = s.replay ? Math.round(2 * Math.min(3, real) * 100) / 100 : 0;
-  return { real, hold, spare, replay };
+  // Said before the footage, over a still: as long as the line, and a beat either side
+  const said = s.leadIn ? lineSeconds(s, "voice") : 0;
+  const lead = said ? Math.round((said + LEAD_IN + 0.5) * 100) / 100 : 0;
+  return { real, hold, spare, replay, lead };
 }
 
 /** Timing inside a clip: when each line starts, and the most each may take. */
@@ -259,6 +317,7 @@ export function lineFits(s: Segment, part: LinePart): { fits: boolean; sec: numb
   const len = segmentSeconds(s);
   if (s.kind === "veo") return { fits: sec <= len - LEAD_IN, sec, max: len - LEAD_IN };
   const p = clipParts(s);
+  if (part === "voice" && s.leadIn) return { fits: sec <= 14, sec, max: 14 };
   if (part === "replay") return { fits: sec <= p.replay - LEAD_IN - 0.3 + 0.15, sec, max: p.replay - LEAD_IN - 0.3 };
   const L = clipLayout(p.real, p.hold, lineSeconds(s, "voice"), lineSeconds(s, "payoff"));
   const max = part === "voice" ? L.setupMax : Math.min(L.payoffMax, p.real + (p.hold ? INTO_HOLD : 0) - LEAD_IN);
@@ -270,7 +329,7 @@ export function segmentSeconds(s: Segment): number {
   if (s.kind === "card") return Math.max(s.seconds, lineSeconds(s, "voice") ? lineSeconds(s, "voice") + LEAD_IN + 0.7 : 0);
   if (s.kind === "veo") return s.status === "done" ? s.seconds : 0;
   const p = clipParts(s);
-  return Math.round((p.real + p.hold + p.replay) * 100) / 100;
+  return Math.round((p.lead + p.real + p.hold + p.replay) * 100) / 100;
 }
 
 export function planSeconds(p: Plan) {

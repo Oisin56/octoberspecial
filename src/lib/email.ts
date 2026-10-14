@@ -141,6 +141,20 @@ export function accountLinkEmail(link: string) {
   return { subject: "Sign in to MyGolfSpecial", html, text };
 }
 
+/** The organiser's film is ready. */
+export function filmReadyEmail(t: Pick<TournamentRow, "name">, link: string) {
+  const html = `<!doctype html><html><body style="margin:0;background:#e4e9e5;font-family:Georgia,serif;color:#18231d">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:20px 12px">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;background:#fff;border-radius:8px;overflow:hidden">
+<tr><td style="background:#1f3d2b;color:#f7f7f2;padding:18px 24px;font-family:Arial Narrow,Arial,sans-serif;font-size:24px;font-weight:bold">${esc(t.name)}</td></tr>
+<tr><td style="padding:22px 24px;font-size:17px;line-height:1.55">
+<p>Your film is ready. It's in Highlights for everyone, and you can share it from there.</p>
+<p style="margin:26px 0"><a href="${esc(link)}" style="display:inline-block;background:#1f3d2b;color:#f7f7f2;text-decoration:none;font-family:Arial,sans-serif;font-weight:bold;font-size:19px;padding:16px 28px;border-radius:10px">Watch the film</a></p>
+</td></tr></table></td></tr></table></body></html>`;
+  const text = `Your film of ${t.name} is ready. It's in Highlights for everyone, and you can share it from there:\n\n${link}\n`;
+  return { subject: `Your film is ready: ${t.name}`, html, text };
+}
+
 export async function sendOne(t: Pick<TournamentRow, "name">, to: string, msg: { subject: string; html: string; text: string }, unsubscribe?: string) {
   await transport().sendMail({
     from: fromHeader(t),

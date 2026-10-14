@@ -8,13 +8,13 @@ import { ReelFeed, feedItems } from "@/components/ReelFeed";
 
 /** Highlights: every film and clip as a phone-style video feed. */
 function Feed() {
-  const { state, api, refresh, href } = useT();
+  const { state, api, refresh, href, session } = useT();
   const sp = useSearchParams();
   const round = sp.get("round");
   const start = sp.get("v");
   const items = useMemo(() => (state ? feedItems(state, round) : []), [state, round]);
   if (!state) return <Loading />;
-  return <ReelFeed items={items} state={state} tournamentName={state.tournament.name} backHref={href("/")} api={api} refresh={refresh} startId={start} />;
+  return <ReelFeed items={items} state={state} tournamentName={state.tournament.name} backHref={href("/")} api={api} refresh={refresh} startId={start} filmHref={session?.role === "organiser" ? href("/film") : null} />;
 }
 
 export default function Highlights() {

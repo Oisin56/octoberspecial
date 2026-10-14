@@ -15,8 +15,7 @@ import {
   useAdmin,
   type AdminData,
 } from "@/components/editors";
-import { ReelBuilder } from "@/components/ReelBuilder";
-import { DirectorPanel } from "@/components/DirectorPanel";
+import { filmUnlock } from "@/lib/film";
 import { EmailTab, useSubscribers } from "@/components/EmailAdmin";
 import { Writer, WRITE_TYPES, type WriteType } from "@/components/Writer";
 import { useCountdown } from "@/components/visual";
@@ -94,9 +93,8 @@ export default function Admin() {
       {s === "email" && <EmailTab />}
       {s === "film" && (
         <>
+          <FilmCard data={data} />
           <BroadcastSettings />
-          <DirectorPanel />
-          <ReelBuilder />
         </>
       )}
       {s === "posts" && <Moderate data={data} onSaved={reload} />}
@@ -151,6 +149,10 @@ function OrganiserHome({ data }: { data: AdminData }) {
       to: "#rounds",
     });
   if (st.players.length < 2) todo.push({ text: "Add the players.", action: "Add players", to: "#players" });
+  // The tournament is over: the film is the last thing to do
+  const filmReady = t.video_enabled !== false && filmUnlock(st).ok;
+  const filmMade = st.posts.some((p) => p.author_name === "AI director");
+  if (filmReady && !filmMade) todo.unshift({ text: "The tournament is over. Time for the film.", action: "Make the film", to: href("/film"), external: true });
   if (flagged.length) todo.push({ text: `${flagged[0].info.flag!.by} says something's not right on a round ${flagged[0].round.number} card.`, action: "Check the cards", to: "#cards" });
   if (live) todo.push({ text: `Round ${live.number} at ${live.course_name} is under way.`, action: "Enter scores", to: href(`/score?round=${live.number}`), external: true });
   const lastDone = complete[complete.length - 1];
@@ -182,7 +184,7 @@ function OrganiserHome({ data }: { data: AdminData }) {
     ["players", st.players.length ? `${st.players.length} players${noPin.length ? `, ${noPin.length} without a PIN` : ", all with PINs"}` : "None yet"],
     ["write", drafts.length ? `${drafts.length} draft${drafts.length === 1 ? "" : "s"} waiting` : published.length ? `${published.length} published` : "Previews and reports"],
     ["email", !subs.list ? "" : !subs.configured ? "Not switched on yet" : `${subs.active} ${subs.active === 1 ? "person" : "people"} signed up`],
-    ["film", clips ? `${clips} clip${clips === 1 ? "" : "s"} so far` : "Build a recap film"],
+    ["film", filmMade ? "The film is made" : filmReady ? "Ready to make the film" : clips ? `${clips} clip${clips === 1 ? "" : "s"} so far` : "The film comes at the end"],
     ["posts", posts ? `${posts} post${posts === 1 ? "" : "s"}, ${st.comments.length} comment${st.comments.length === 1 ? "" : "s"}` : "Nothing posted yet"],
     ["sides", sides ? `${sides} running` : "Closest the pin and more"],
     ["look", `${theme}, ${tone.toLowerCase()} tone`],
@@ -251,6 +253,36 @@ function OrganiserHome({ data }: { data: AdminData }) {
         <a href="#settings">Settings and test data</a>
       </p>
     </div>
+  );
+}
+
+/** The end-of-tournament film: made from its own page; the studio for changes. */
+function FilmCard({ data }: { data: AdminData }) {
+  const { href } = useT();
+  const st = data.state;
+  const unlock = filmUnlock(st);
+  const made = st.posts.filter((p) => p.author_name === "AI director");
+  return (
+    <section className="panel stack">
+      <h2>The film</h2>
+      {made.length ? (
+        <p>Your film is in Highlights. Share it, change something in the film studio, or make another version.</p>
+      ) : unlock.ok ? (
+        <p>The tournament is over: everything&apos;s ready for the film.</p>
+      ) : (
+        <>
+          <p>One film of the whole tournament, made once it&apos;s over. Still to do:</p>
+          <ul>
+            {unlock.missing.map((m) => (
+              <li key={m}>{m}</li>
+            ))}
+          </ul>
+        </>
+      )}
+      <Link className="btn block" href={href("/film")}>
+        {made.length ? "See the film" : unlock.ok ? "Make the film" : "About the film"}
+      </Link>
+    </section>
   );
 }
 

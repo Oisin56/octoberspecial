@@ -3,6 +3,9 @@ import { checkOwnerPin, isOwner, setOwner, setSession } from "@/lib/auth";
 import { organiserSession } from "@/lib/accounts";
 import { bad, json } from "@/lib/server-data";
 import { clientIp, tooFast } from "@/lib/social";
+import { mediaUrl } from "@/lib/supabase";
+import { brandPack, filmLimits, filmSpend, musicTracks, setSetting } from "@/lib/site";
+import { BRAND_SLOTS, MAX_TRACKS, type BrandPack, type BrandSlot, type MusicTrack, type Shape } from "@/lib/film";
 
 export const maxDuration = 60;
 
@@ -39,8 +42,17 @@ export async function GET() {
     return out;
   };
   const [players, rounds, posts] = await Promise.all([count("players"), count("rounds"), count("posts")]);
+  const [brand, music, limits, spend] = await Promise.all([brandPack(), musicTracks(), filmLimits(), filmSpend()]);
   return json({
     owner: true,
+    films: {
+      brand: Object.fromEntries(
+        Object.entries(brand).map(([slot, shapes]) => [slot, Object.fromEntries(Object.entries(shapes ?? {}).map(([shape, c]) => [shape, c ? { ...c, src: mediaUrl(c.path) } : null]))]),
+      ),
+      music: music.map((m) => ({ ...m, src: mediaUrl(m.path) })),
+      limits,
+      spend,
+    },
     tournaments: (ts ?? []).map((t) => ({ ...t, players: players[t.id] ?? 0, rounds: rounds[t.id] ?? 0, posts: posts[t.id] ?? 0 })),
   });
 }
@@ -61,6 +73,64 @@ export async function POST(req: Request) {
     return json({ ok: true });
   }
   if (!(await isOwner())) return bad("Site owner only", 401);
+
+  // ---- films: the brand pack, the music, the spending limits
+  const removeFile = async (path?: string) => {
+    if (path) await db.storage.from("media").remove([path]).catch(() => null);
+  };
+  if (b.action === "setBrand") {
+    const slot = BRAND_SLOTS.find((x) => x.id === b.slot)?.id as BrandSlot | undefined;
+    const shape = b.shape === "portrait" || b.shape === "landscape" ? (b.shape as Shape) : null;
+    if (!slot || !shape) return bad("Which clip?");
+    const path = b.path ? String(b.path) : null;
+    if (path && !/^video\/site\/[\w-]+\.(mp4|mov|webm)$/.test(path)) return bad("Bad video");
+    const sec = Math.max(0.3, Math.min(30, Number(b.sec) || 0));
+    if (path && !(Number(b.sec) > 0)) return bad("That video's length couldn't be read. Try an MP4.");
+    const brand: BrandPack = await brandPack();
+    await removeFile(brand[slot]?.[shape]?.path);
+    brand[slot] = { ...(brand[slot] ?? {}), [shape]: path ? { path, sec } : undefined };
+    try {
+      await setSetting("brand", JSON.parse(JSON.stringify(brand)));
+    } catch (e) {
+      return bad(e instanceof Error ? e.message : "Didn't save", 500);
+    }
+    return json({ ok: true });
+  }
+  if (b.action === "addTrack") {
+    const path = String(b.path ?? "");
+    if (!/^audio\/site\/[\w-]+\.(mp3|m4a|wav|aac|mpeg)$/.test(path)) return bad("Bad music file");
+    const music = await musicTracks();
+    if (music.length >= MAX_TRACKS) return bad(`Up to ${MAX_TRACKS} tracks. Remove one first.`);
+    const name = String(b.name ?? "").trim().slice(0, 40);
+    if (!name) return bad("Give the track a name");
+    const track: MusicTrack = { id: crypto.randomUUID().slice(0, 8), name, mood: String(b.mood ?? "").trim().slice(0, 60), path, sec: Math.max(5, Math.min(1200, Number(b.sec) || 0)) };
+    if (!(Number(b.sec) > 0)) return bad("That track's length couldn't be read. Try an MP3.");
+    try {
+      await setSetting("music", [...music, track]);
+    } catch (e) {
+      return bad(e instanceof Error ? e.message : "Didn't save", 500);
+    }
+    return json({ ok: true });
+  }
+  if (b.action === "removeTrack") {
+    const music = await musicTracks();
+    const gone = music.find((m) => m.id === b.trackId);
+    await removeFile(gone?.path);
+    await setSetting("music", music.filter((m) => m.id !== b.trackId));
+    return json({ ok: true });
+  }
+  if (b.action === "setLimits") {
+    const monthly = Math.round(Number(b.monthlyDollars) * 100);
+    const per = Math.round(Number(b.perTournament));
+    if (!(monthly >= 0 && monthly <= 100000) || !(per >= 0 && per <= 50)) return bad("Check the numbers");
+    try {
+      await setSetting("films", { monthlyCents: monthly, perTournament: per });
+    } catch (e) {
+      return bad(e instanceof Error ? e.message : "Didn't save", 500);
+    }
+    return json({ ok: true });
+  }
+
   const { data: t } = await db.from("tournaments").select("*").eq("id", String(b.id ?? "")).maybeSingle();
   if (!t) return bad("Tournament not found", 404);
 

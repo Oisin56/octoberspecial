@@ -9,6 +9,8 @@ import { ClipDetail } from "@/components/ClipDetail";
 import { setPendingClip, takePendingClip } from "@/lib/pendingClip";
 import { mergeShots } from "@/lib/shotQueue";
 import { getCamera, isHomeScreenApp, isIPhone, nativeZoom, releaseCamera, setNativeZoom } from "@/lib/camera";
+import { CLIP_TYPES, cameraChoices } from "@/lib/film";
+import type { ClipType } from "@/lib/types";
 
 /** In-app recordings up to 3 minutes (several shots can be cut from one) */
 const MAX_SECONDS = 180;
@@ -58,6 +60,24 @@ function RecordInner() {
     const hh = round && hole ? round.holes.find((x) => x.number === hole) : null;
     return hh ? { par: hh.par, yards: hh.yards, note: round?.course_guide?.holes?.[String(hole)] ?? "" } : undefined;
   }, [round, hole]);
+
+  // No round being played: what are you filming? (asked before filming, so the screen can help)
+  // (Opened for a particular round and hole, from the scorecard or the shot card: that's a shot, no question)
+  const choices = useMemo(() => (state && !prefill && !(sp.get("round") && hole) ? cameraChoices(state) : null), [state, prefill, sp, hole]);
+  const [kind, setKind] = useState<Exclude<ClipType, "shot"> | null>(null);
+  // The tournament's films are upright (phones) or wide (YouTube, TV): ask for the phone to be held that way
+  const share = state?.tournament.share_shape ?? null;
+  const [landscape, setLandscape] = useState(false);
+  const [anyway, setAnyway] = useState(false);
+  useEffect(() => {
+    const on = () => setLandscape(window.innerWidth > window.innerHeight);
+    const t = setTimeout(on, 0);
+    window.addEventListener("resize", on);
+    return () => {
+      clearTimeout(t);
+      window.removeEventListener("resize", on);
+    };
+  }, []);
 
   const preview = useRef<HTMLVideoElement>(null);
   const stream = useRef<MediaStream | null>(null);
@@ -256,7 +276,10 @@ function RecordInner() {
     return (
       <ClipDetail
         blob={clip}
-        roundId={round?.id ?? null}
+        roundId={choices ? (kind ? (choices.when === "post" ? choices.roundId : null) : round?.id ?? null) : round?.id ?? null}
+        clipType={kind ?? undefined}
+        clipWhen={choices?.when}
+        typeChoices={choices && !kind ? choices : null}
         hole={hole}
         holeInfo={holeInfo}
         prefill={prefill}
@@ -271,6 +294,8 @@ function RecordInner() {
     );
 
   const recording = phase === "recording";
+  const wrongWay = !!share && !anyway && phase === "ready" && (share === "landscape") !== landscape;
+  const asking = !!choices && !kind && phase !== "failed" && !recording;
   return (
     <div className={`cam${recording ? " recording" : ""}`} {...pinchHandlers}>
       <video
@@ -292,9 +317,33 @@ function RecordInner() {
             ‹ Scorecard
           </button>
           <span className="cam-where">
-            {round ? `R${round.number}` : ""}
-            {hole ? ` · Hole ${hole}` : ""}
+            {kind ? CLIP_TYPES[kind].name : `${round ? `R${round.number}` : ""}${hole ? ` · Hole ${hole}` : ""}`}
           </span>
+        </div>
+      )}
+      {kind && CLIP_TYPES[kind].prompt && phase !== "failed" && <p className="cam-prompt">{CLIP_TYPES[kind].prompt}</p>}
+      {wrongWay && !asking && (
+        <div className="cam-turn" role="status">
+          <span className={`cam-turn-ico${share === "landscape" ? " side" : ""}`} aria-hidden="true" />
+          <p>{share === "landscape" ? "Turn your phone sideways: this tournament's videos are wide, for YouTube and TV." : "Turn your phone upright: this tournament's videos are for phones."}</p>
+          <button className="btn secondary" onClick={() => setAnyway(true)}>
+            Film anyway
+          </button>
+        </div>
+      )}
+      {asking && (
+        <div className="cam-ask" role="dialog" aria-label="What are you filming?">
+          <p className="cam-ask-q">What are you filming?</p>
+          <div className="cam-ask-tiles">
+            {choices!.order.map((k) => (
+              <button key={k} className="cam-ask-tile" onClick={() => setKind(k)}>
+                {CLIP_TYPES[k].name}
+              </button>
+            ))}
+          </div>
+          <button className="cam-btn" onClick={() => (stopCamera(), router.push(href(fromFeed ? "/feed" : "/")))}>
+            ‹ Back
+          </button>
         </div>
       )}
 

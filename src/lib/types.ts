@@ -51,6 +51,8 @@ export interface TournamentRow {
   ai_on?: boolean | null;
   /** Distances shown in yards (default) or metres */
   units?: "yards" | "metres" | null;
+  /** Where the videos are mostly shared: upright (phones) or wide (YouTube and TV); sets the film's shape */
+  share_shape?: "portrait" | "landscape" | null;
   /** What's still being got ready after the setup wizard (course guides, photos, the first preview) */
   setup_jobs?: SetupJob[] | null;
 }
@@ -209,7 +211,13 @@ export interface ClipDetails {
   dur?: string;
   /** The logged shot this clip shows */
   shotId?: string;
+  /** Not a shot: an interview, a prediction, scene-setting or something else (absent = a shot) */
+  clipType?: ClipType;
+  /** Filmed before the first round ("pre") or after a round ("post": the post's round is the one just played) */
+  when?: "pre" | "post";
 }
+
+export type ClipType = "shot" | "interview" | "prediction" | "scene" | "other";
 
 export interface CommentRow {
   id: string;
