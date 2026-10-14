@@ -70,7 +70,7 @@ export function pickPullQuote(blocks: { head?: string; text?: string }[]): strin
 
 export function newsletterEmail(d: NewsletterData) {
   const p = d.palette;
-  const gold = "#c9a227";
+  const gold = p.gold && p.onGold !== "#ffffff" ? p.gold : "#c9a227";
   const blocks = articleBlocks(d.body);
   const quote = pickPullQuote(blocks);
   const title = cleanTitle(d.title) || d.label;

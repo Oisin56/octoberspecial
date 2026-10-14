@@ -54,7 +54,7 @@ export async function GET(req: Request) {
     return new Response("Bad card", { status: 400 });
   }
   const base = paletteFor(spec.theme, spec.colors);
-  const p: P = { ...base, gold: mix(base.bracken, "#ffd76a", 0.45), glass: "#0a100d" };
+  const p: P = { ...base, gold: base.gold ?? mix(base.bracken, "#ffd76a", 0.45), glass: "#0a100d" };
   const [b600, b700, i500, i600, i800] = await fonts;
   const W = spec.w;
   const H = spec.ht;
@@ -417,7 +417,7 @@ function Bug({ spec, p, W, H, u, portrait }: CardProps) {
           {side(m.sides[1], true)}
         </div>
         {b.status && b.status !== "ALL SQUARE" && (
-          <div style={{ display: "flex", justifyContent: "center", ...S, fontWeight: 800, fontSize: 20 * u, letterSpacing: 3 * u, color: "#1b1408", padding: `${6 * u}px`, backgroundImage: `linear-gradient(90deg, ${p.gold}, ${p.bracken})` }}>{b.status}</div>
+          <div style={{ display: "flex", justifyContent: "center", ...S, fontWeight: 800, fontSize: 20 * u, letterSpacing: 3 * u, color: p.onGold ?? "#1b1408", padding: `${6 * u}px`, backgroundImage: p.onGold ? `linear-gradient(90deg, ${p.gold}, ${p.gold})` : `linear-gradient(90deg, ${p.gold}, ${p.bracken})` }}>{b.status}</div>
         )}
       </div>
     );
@@ -451,7 +451,7 @@ function Bug({ spec, p, W, H, u, portrait }: CardProps) {
             </div>
           ))}
         </div>
-        {b.status && <div style={{ display: "flex", justifyContent: "center", ...S, fontWeight: 800, fontSize: 20 * u, letterSpacing: 3 * u, color: "#1b1408", padding: `${6 * u}px`, backgroundImage: `linear-gradient(90deg, ${p.gold}, ${p.bracken})` }}>{b.status}</div>}
+        {b.status && <div style={{ display: "flex", justifyContent: "center", ...S, fontWeight: 800, fontSize: 20 * u, letterSpacing: 3 * u, color: p.onGold ?? "#1b1408", padding: `${6 * u}px`, backgroundImage: p.onGold ? `linear-gradient(90deg, ${p.gold}, ${p.gold})` : `linear-gradient(90deg, ${p.gold}, ${p.bracken})` }}>{b.status}</div>}
       </div>
     );
   } else {

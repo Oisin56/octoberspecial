@@ -15,7 +15,7 @@ import type {
 import { ONE_BALL, ballsOfGame } from "./engine";
 
 
-export type ThemeId = "clubhouse" | "links" | "championship" | "teamcup" | "custom";
+export type ThemeId = "clubhouse" | "links" | "championship" | "spring" | "teamcup" | "custom";
 export type Tone = "broadsheet" | "tabloid" | "commentator" | "dry";
 
 export interface TournamentRow {
@@ -445,8 +445,12 @@ export const TONE_LABEL: Record<Tone, string> = {
 
 export const THEMES: { id: ThemeId; name: string; note: string }[] = [
   { id: "clubhouse", name: "Clubhouse", note: "Deep green and white, manual scoreboard tiles" },
-  { id: "links", name: "Links", note: "Navy and sand, a coastal links feel" },
-  { id: "championship", name: "Championship", note: "Navy, red and white, big-event leaderboard" },
-  { id: "teamcup", name: "Team Cup", note: "Two team colours face to face" },
+  { id: "links", name: "Links Championship", note: "Navy and championship yellow, the yellow scoreboard" },
+  { id: "championship", name: "National Open", note: "Navy, red and white, a crisp white board" },
+  { id: "spring", name: "Spring Classic", note: "Rich green, yellow and cream, a white leaderboard" },
+  { id: "teamcup", name: "Team Cup", note: "Navy and gold, each side in its team colours" },
   { id: "custom", name: "Custom", note: "Your own colours" },
 ];
+
+/** Themes whose scoreboard is light (yellow or white) with dark names, rather than a dark board. */
+export const LIGHT_BOARD: ThemeId[] = ["links", "championship", "spring"];

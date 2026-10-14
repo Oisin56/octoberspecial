@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { CardTable } from "@/components/editors";
-import { THEMES, type HoleSet, type ThemeId } from "@/lib/types";
+import { LIGHT_BOARD, THEMES, type HoleSet, type ThemeId } from "@/lib/types";
 import {
   FORMATS,
   MAX_PLAYERS,
@@ -395,7 +395,7 @@ export default function NewTournament() {
           <Screen q="Pick a look" hint="Colours for the whole site and the leaderboards. You can change it later.">
             <div className="wz-themes">
               {THEMES.filter((t) => t.id !== "custom").map((t) => (
-                <button key={t.id} type="button" className="wz-theme" data-theme={t.id} aria-pressed={d.theme === t.id} onClick={() => next({ theme: t.id })}>
+                <button key={t.id} type="button" className="wz-theme" data-theme={t.id} data-board={LIGHT_BOARD.includes(t.id) ? "light" : "dark"} aria-pressed={d.theme === t.id} onClick={() => next({ theme: t.id })}>
                   <span className="wz-mini" aria-hidden>
                     <span className="wz-mini-row lead">
                       <span>Neil</span>

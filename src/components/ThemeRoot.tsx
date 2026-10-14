@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { useT } from "./Providers";
+import { LIGHT_BOARD } from "@/lib/types";
 
 /** Applies the tournament's theme (and custom colours) to everything inside. */
 export function ThemeRoot({ children }: { children: React.ReactNode }) {
@@ -28,7 +29,7 @@ export function ThemeRoot({ children }: { children: React.ReactNode }) {
   }, [t?.name, theme]);
 
   return (
-    <div className="theme-root" data-theme={theme} style={{ ...teamVars, ...style }}>
+    <div className="theme-root" data-theme={theme} data-board={LIGHT_BOARD.includes(theme) ? "light" : "dark"} style={{ ...teamVars, ...style }}>
       {children}
     </div>
   );

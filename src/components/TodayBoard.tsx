@@ -45,7 +45,7 @@ function MatchBoard({ board, m }: { board: RoundBoard; m: MatchState }) {
 
 function Side({ s, lead, right }: { s: MatchState["sides"][number]; lead: boolean; right?: boolean }) {
   return (
-    <div className={`tb-side${lead ? " lead" : ""}${right ? " right" : ""}`}>
+    <div className={`tb-side${lead ? " lead" : ""}${right ? " right" : ""}${s.color ? " has-team" : ""}`} style={s.color ? ({ "--team": s.color } as React.CSSProperties) : undefined}>
       <span className="tb-name">{s.name}</span>
       {s.color && <span className="tb-team" style={{ background: s.color }} aria-hidden="true" />}
     </div>
@@ -62,7 +62,7 @@ function MatchList({ board, selected, onSelect }: { board: RoundBoard; selected?
       {board.session && (
         <div className="tb-session" aria-label="This session, as it stands">
           {board.session.map((t, i) => (
-            <div key={t.teamId} className={`tb-sess-team${i ? " right" : ""}`}>
+            <div key={t.teamId} className={`tb-sess-team${i ? " right" : ""}`} style={{ "--team": t.color } as React.CSSProperties}>
               <span className="tb-team" style={{ background: t.color }} aria-hidden="true" />
               <span className="tb-name">{t.name}</span>
               <span className="tile">{fmtPts(t.pts)}</span>

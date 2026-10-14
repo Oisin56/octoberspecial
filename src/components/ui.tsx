@@ -154,7 +154,7 @@ export function Board() {
         {shown.map((r) => {
           const lead = leaders.length === 1 && leaders[0].id === r.id && best > 0;
           return (
-            <div className={`board-row${lead ? " lead" : ""}`} key={r.id}>
+            <div className={`board-row${lead ? " lead" : ""}${r.color ? " has-team" : ""}`} key={r.id} style={r.color ? ({ "--team": r.color } as React.CSSProperties) : undefined}>
               <span className={`board-name${lead ? " leader" : ""}`} style={{ fontSize: small ? 24 : undefined }}>
                 {r.color && <span aria-hidden className="team-swatch" style={{ background: r.color }} />}
                 {r.name}
