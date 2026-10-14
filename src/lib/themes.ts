@@ -33,5 +33,6 @@ export function paletteFor(theme: ThemeId, custom?: { primary?: string; accent?:
       mist: custom?.background ?? base.mist,
     };
   }
-  return PALETTES[theme] ?? PALETTES.clubhouse;
+  // Clubhouse is retired as a choice: those tournaments are shown in Spring Classic
+  return PALETTES[theme === "clubhouse" ? "spring" : theme] ?? PALETTES.spring;
 }

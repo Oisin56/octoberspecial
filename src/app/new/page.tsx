@@ -939,7 +939,7 @@ function SafeStep({ d, setD, me, onDone }: { d: Draft; setD: (x: Draft) => void;
       teams: d.teams,
       draw: d.draw ?? "myself",
       extras: { feed: d.extras.feed !== false, ai: d.extras.ai !== false, video: d.extras.video !== false },
-      theme: d.theme ?? "clubhouse",
+      theme: d.theme ?? "spring",
     };
     const r = await fetch("/api/tournaments", {
       method: "POST",

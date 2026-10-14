@@ -15,7 +15,10 @@ create table if not exists tournaments (
 );
 alter table tournaments add column if not exists start_date date;
 alter table tournaments add column if not exists end_date date;
-alter table tournaments add column if not exists theme text not null default 'clubhouse';
+alter table tournaments add column if not exists theme text not null default 'spring';
+-- Four themes now: Clubhouse is retired, its tournaments move to Spring Classic
+alter table tournaments alter column theme set default 'spring';
+update tournaments set theme = 'spring' where theme = 'clubhouse';
 alter table tournaments add column if not exists custom_colors jsonb;
 alter table tournaments add column if not exists logo_path text;
 alter table tournaments add column if not exists hero_path text;

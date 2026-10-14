@@ -14,6 +14,7 @@ import {
   SCORING_LABEL,
   SIDE_GAME_LABEL,
   THEMES,
+  tournamentTheme,
   TONE_LABEL,
   toRoundCfg,
   type PlayerRow,
@@ -98,7 +99,7 @@ export function BasicsEditor({ data, onSaved }: { data: AdminData; onSaved: () =
     subtitle: t.subtitle ?? "",
     start_date: t.start_date ?? "",
     end_date: t.end_date ?? "",
-    theme: t.theme,
+    theme: tournamentTheme(t.theme),
     custom_colors: t.custom_colors ?? { primary: "#1f3d2b", accent: "#c8102e", background: "#e4e9e5" },
   });
   const [logo, setLogo] = useState<File | null>(null);
@@ -141,7 +142,7 @@ export function BasicsEditor({ data, onSaved }: { data: AdminData; onSaved: () =
       <div className="field">
         <label>Theme</label>
         <div className="theme-picks">
-          {THEMES.map((th) => (
+          {THEMES.filter((th) => th.id !== "custom" || t.theme === "custom").map((th) => (
             <button
               type="button"
               key={th.id}

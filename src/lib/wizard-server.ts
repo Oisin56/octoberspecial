@@ -70,7 +70,7 @@ export function cleanWizard(raw: unknown): Wizard {
     teams,
     draw: w.draw === "random" ? "random" : "myself",
     extras: { feed: w.extras?.feed !== false, ai: w.extras?.ai !== false, video: w.extras?.video !== false },
-    theme: THEMES.some((t) => t.id === w.theme) && w.theme !== "custom" ? (w.theme as ThemeId) : "clubhouse",
+    theme: THEMES.some((t) => t.id === w.theme) && w.theme !== "custom" ? (w.theme as ThemeId) : "spring",
   };
   const problems = drawProblems(out);
   if (problems.length) throw new WizardError(problems[0]);

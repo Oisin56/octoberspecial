@@ -2,13 +2,13 @@
 
 import { useEffect } from "react";
 import { useT } from "./Providers";
-import { LIGHT_BOARD } from "@/lib/types";
+import { LIGHT_BOARD, tournamentTheme } from "@/lib/types";
 
 /** Applies the tournament's theme (and custom colours) to everything inside. */
 export function ThemeRoot({ children }: { children: React.ReactNode }) {
   const { state } = useT();
   const t = state?.tournament;
-  const theme = t?.theme ?? "clubhouse";
+  const theme = tournamentTheme(t?.theme);
   const custom = theme === "custom" ? t?.custom_colors : null;
   const style = custom
     ? ({
