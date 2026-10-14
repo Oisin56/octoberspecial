@@ -1,5 +1,6 @@
 "use client";
 
+import { grabClipFix } from "@/lib/clipFix";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useT } from "@/components/Providers";
@@ -197,6 +198,7 @@ function RecordInner() {
     };
     rec.current = r;
     r.start(500);
+    grabClipFix();
     buzz(120);
     setSecs(0);
     setPhase("recording");

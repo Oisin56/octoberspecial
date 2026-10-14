@@ -10,7 +10,7 @@ export interface ShotOp {
   op: "save" | "delete";
   slug: string;
   clientId: string;
-  data?: { roundId: string; hole: number; playerId: string; kind: string; outcome: string; club?: string | null; distance?: string | null; loggedAt: string; author: string };
+  data?: { roundId: string; hole: number; playerId: string; kind: string; outcome: string; club?: string | null; distance?: string | null; seq?: number | null; loggedAt: string; author: string; authorPlayerId?: string | null };
   at: number;
 }
 
@@ -81,7 +81,7 @@ export function mergeShots(server: ShotRow[] | undefined, slug: string, tourname
   const out = (server ?? []).filter((s) => !gone.has(s.client_id) && !saves.has(s.client_id));
   for (const o of saves.values()) {
     const d = o.data!;
-    out.push({ id: `local-${o.clientId}`, tournament_id: tournamentId, round_id: d.roundId, hole: d.hole, player_id: d.playerId, kind: d.kind, outcome: d.outcome, club: d.club ?? null, distance: d.distance ?? null, author_name: d.author, client_id: o.clientId, logged_at: d.loggedAt });
+    out.push({ id: `local-${o.clientId}`, tournament_id: tournamentId, round_id: d.roundId, hole: d.hole, player_id: d.playerId, kind: d.kind, outcome: d.outcome, club: d.club ?? null, distance: d.distance ?? null, seq: d.seq ?? null, author_name: d.author, author_player_id: d.authorPlayerId ?? null, client_id: o.clientId, logged_at: d.loggedAt });
   }
   return out.sort((a, b) => a.logged_at.localeCompare(b.logged_at));
 }

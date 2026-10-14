@@ -61,6 +61,7 @@ interface Draft {
   teams: { name: string; color: string }[];
   draw: "myself" | "random" | null;
   extras: { feed: boolean | null; ai: boolean | null; video: boolean | null };
+  units?: "yards" | "metres";
   theme: ThemeId | null;
   keep: "email" | "pin" | null;
   email: string;
@@ -895,6 +896,20 @@ function ExtrasStep({ d, setD, next }: { d: Draft; setD: (x: Draft) => void; nex
         <YesNo q="Live feed" note="Photos, comments and notes from the course, for everyone following" value={e.feed ?? true} onChange={(v) => set({ feed: v })} />
         <YesNo q="AI writing" note="Previews before each round, reports after, and bulletins while you play" value={e.ai ?? true} onChange={(v) => set({ ai: v })} />
         <YesNo q="Video" note="Film clips on the course, and a highlights film at the end" value={e.video ?? true} onChange={(v) => set({ video: v })} />
+        <div className="wz-yn">
+          <div className="wz-yn-q">
+            <strong>GPS distances in</strong>
+            <span>Front, middle and back of the green, and how far each shot was. Anyone can switch on their own phone.</span>
+          </div>
+          <div className="wz-yn-b">
+            <button type="button" className="pick-tile" aria-pressed={(d.units ?? "yards") === "yards"} onClick={() => setD({ ...d, units: "yards" })}>
+              Yards
+            </button>
+            <button type="button" className="pick-tile" aria-pressed={d.units === "metres"} onClick={() => setD({ ...d, units: "metres" })}>
+              Metres
+            </button>
+          </div>
+        </div>
       </div>
       <Next
         onClick={() => next({ extras: { feed: e.feed ?? true, ai: e.ai ?? true, video: e.video ?? true } })}
@@ -940,6 +955,7 @@ function SafeStep({ d, setD, me, onDone }: { d: Draft; setD: (x: Draft) => void;
       draw: d.draw ?? "myself",
       extras: { feed: d.extras.feed !== false, ai: d.extras.ai !== false, video: d.extras.video !== false },
       theme: d.theme ?? "spring",
+      units: d.units ?? "yards",
     };
     const r = await fetch("/api/tournaments", {
       method: "POST",

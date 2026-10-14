@@ -4,7 +4,7 @@
  */
 import type { ShotRow } from "./types";
 
-export type ShotKind = "tee" | "second" | "approach" | "chip" | "bunker" | "putt" | "recovery";
+export type ShotKind = "tee" | "second" | "approach" | "chip" | "bunker" | "putt" | "recovery" | "penalty";
 
 export const KIND_LABEL: Record<ShotKind, string> = {
   tee: "Tee shot",
@@ -14,7 +14,20 @@ export const KIND_LABEL: Record<ShotKind, string> = {
   bunker: "Bunker",
   putt: "Putt",
   recovery: "Recovery",
+  penalty: "Penalty",
 };
+
+/** The less common words, one tap deeper: what any shot can be. */
+export const MORE_WORDS: { group: string; words: string[] }[] = [
+  { group: "Strike", words: ["Duffed", "Chunked", "Thinned", "Topped", "Shanked"] },
+  { group: "Direction", words: ["Sliced", "Hooked", "Pulled", "Pushed"] },
+  { group: "Distance", words: ["Short", "Long", "Bombed it", "Airmailed the green"] },
+  { group: "Trouble", words: ["Water", "Bunker", "Out of bounds", "Trees"] },
+  { group: "Putting", words: ["Lipped out", "Tap-in", "Holed", "Three-putt"] },
+];
+
+/** A close putt and the tap-in, in one go. */
+export const CLOSE_THEN_TAP = "Close, then tap-in";
 
 export const CLUB_GROUPS = ["Driver", "Wood/Hybrid", "Long iron", "Mid iron", "Short iron", "Wedge"] as const;
 export const DISTANCES = ["Under 100", "100–150", "150–200", "200+"] as const;
@@ -61,7 +74,19 @@ export function outcomesFor(kind: ShotKind, h: HoleInfo): string[] {
       return ["Holed, tap-in", "Holed from 10 ft", "Holed from 30 ft+", "Lip-out", "Missed", "Three-putt"];
     case "recovery":
       return ["Great escape", "Back in play", "On the green", "Still in trouble", water ? "Water" : "Unplayable", "Holed"];
+    case "penalty":
+      return ["Penalty stroke"];
   }
+}
+
+/** The likely kind of a stroke from where it was played (yards to the green) and which stroke it is. */
+export function kindFromDistance(from: number | null, seq: number, par: number): ShotKind | null {
+  if (seq === 1) return "tee";
+  if (from == null) return null;
+  if (from <= 15) return "putt";
+  if (from <= 60) return "chip";
+  if (par >= 5 && seq === 2 && from > 200) return "second";
+  return "approach";
 }
 
 const holed = (o: string) => /^Holed/.test(o);
@@ -89,6 +114,8 @@ export function nextKind(shots: { kind: string; outcome: string }[], h: HoleInfo
       return "putt";
     case "recovery":
       return o === "On the green" ? "putt" : o === "Still in trouble" ? "recovery" : "approach";
+    case "penalty":
+      return shots.length >= 2 ? nextKind(shots.slice(0, -1), h) : "approach";
   }
   return null;
 }
@@ -190,6 +217,8 @@ export function tagsFor(kind: string, outcome: string): string[] {
   if (outcome === "Bunker" || outcome === "Still in it" || kind === "bunker") t.push("bunker");
   if (outcome === "Out of bounds") t.push("OB");
   if (outcome === "Great escape") t.push("great recovery");
+  if (outcome === "Shanked") t.push("shank");
+  if (outcome === "Lipped out") t.push("lip-out");
   if (outcome === "Missed" || outcome === "Just short") t.push("near miss");
   return [...new Set(t)].slice(0, 5);
 }

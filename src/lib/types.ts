@@ -49,6 +49,8 @@ export interface TournamentRow {
   feed_on?: boolean | null;
   /** AI writing: previews, reports and bulletins. On unless switched off */
   ai_on?: boolean | null;
+  /** Distances shown in yards (default) or metres */
+  units?: "yards" | "metres" | null;
   /** What's still being got ready after the setup wizard (course guides, photos, the first preview) */
   setup_jobs?: SetupJob[] | null;
 }
@@ -269,6 +271,8 @@ export interface TournamentState {
   votes: VoteRow[];
   /** Shots logged on the course (absent until the database has the table) */
   shots?: ShotRow[];
+  /** GPS readings taken at the ball (no positions: just the distances) */
+  gps?: GpsRow[];
   likes?: LikeRow[];
   /** Submitted and final cards, and who signed them (absent until the database has the tables) */
   cards?: CardRow[];
@@ -296,8 +300,30 @@ export interface CardSignatureRow {
   at: string;
 }
 
+export interface GpsRow {
+  id: string;
+  round_id: string;
+  hole: number;
+  player_id: string;
+  client_id: string;
+  accuracy: number | null;
+  to_front: number | null;
+  to_middle: number | null;
+  to_back: number | null;
+  from_tee: number | null;
+  source: "gps" | "clip";
+  seq: number | null;
+  ignored: boolean;
+  author_name: string | null;
+  taken_at: string;
+}
+
 export interface ShotRow {
   id: string;
+  /** Which stroke of the hole (1 = the tee shot); older shots have none and go in the order they were logged */
+  seq?: number | null;
+  /** The player who logged it (they can change it) */
+  author_player_id?: string | null;
   tournament_id: string;
   round_id: string;
   hole: number;

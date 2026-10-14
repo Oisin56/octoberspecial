@@ -342,10 +342,12 @@ alter table tournaments add column if not exists standings text not null default
 alter table tournaments add column if not exists feed_on boolean not null default true;
 alter table tournaments add column if not exists ai_on boolean not null default true;
 alter table tournaments add column if not exists setup_jobs jsonb;
+-- Phase D: distances in yards or metres
+alter table tournaments add column if not exists units text not null default 'yards';
 create view public_tournaments with (security_invoker = false) as
   select id, slug, name, subtitle, start_date, end_date, theme, custom_colors, logo_path, hero_path, tone,
          side_games, side_games_by, teams, auto_bulletins, video_enabled, organiser_player_id, published, created_at, reel_music_path,
-         require_attestation, broadcast_on, broadcast_cap_cents, standings, feed_on, ai_on, setup_jobs
+         require_attestation, broadcast_on, broadcast_cap_cents, standings, feed_on, ai_on, setup_jobs, units
   from tournaments;
 grant select on public_tournaments to anon, authenticated;
 
@@ -446,12 +448,43 @@ alter table account_tokens enable row level security;
 alter table players add column if not exists link_code text;
 create unique index if not exists players_link_code_uniq on players (link_code) where link_code is not null;
 
+-- Phase D: shots in stroke order, and who logged them (they can change them)
+alter table shots add column if not exists seq int;
+alter table shots add column if not exists author_player_id text;
+-- GPS readings: taken when someone taps GPS at their ball. They're matched to the shot played from there.
+create table if not exists gps_readings (
+  id uuid primary key default gen_random_uuid(),
+  tournament_id uuid not null references tournaments(id) on delete cascade,
+  round_id uuid not null references rounds(id) on delete cascade,
+  hole int not null check (hole between 1 and 18),
+  player_id text not null,
+  client_id text not null unique,
+  lat double precision not null,
+  lon double precision not null,
+  accuracy numeric,
+  to_front int, to_middle int, to_back int,    -- yards to the green
+  from_tee int,                                -- yards from the tee (for the drive)
+  source text not null default 'gps',          -- gps | clip
+  seq int,                                     -- placed on this stroke by hand (null: placed automatically)
+  ignored boolean not null default false,      -- taken off the card by hand
+  author_name text,
+  taken_at timestamptz not null default now()
+);
+create index if not exists gps_readings_round_idx on gps_readings (round_id, hole, player_id);
+alter table gps_readings enable row level security;
+-- Public reads leave out where people were standing
+drop view if exists public_gps;
+create view public_gps with (security_invoker = false) as
+  select id, tournament_id, round_id, hole, player_id, client_id, accuracy, to_front, to_middle, to_back, from_tee, source, seq, ignored, author_name, taken_at
+  from gps_readings;
+
 -- ------------------------------------------------------------ access (explicit, for projects that don't grant by default)
 grant usage on schema public to anon, authenticated, service_role;
 grant all on all tables in schema public to service_role;
 grant all on all sequences in schema public to service_role;
 grant select on rounds, hole_entries, attestations, posts, comments, ai_pieces, votes, shots, likes, cards, card_signatures to anon, authenticated;
-grant select on public_tournaments, public_players to anon, authenticated;
+grant select on public_tournaments, public_players, public_gps to anon, authenticated;
+revoke all on gps_readings from anon, authenticated;
 revoke all on reels from anon, authenticated;
 revoke all on subscribers from anon, authenticated;
 revoke all on fans from anon, authenticated;

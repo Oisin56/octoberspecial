@@ -7,6 +7,7 @@ import { ClipQueue } from "@/components/ClipQueue";
 import { SignPrompt } from "@/components/SignPrompt";
 import { LiveStrip } from "@/components/LiveStrip";
 import { TabBar } from "@/components/TabBar";
+import { GpsTab } from "@/components/GpsTab";
 import type { Metadata, Viewport } from "next";
 import { tournamentBySlug } from "@/lib/server-data";
 import { paletteFor } from "@/lib/themes";
@@ -39,6 +40,7 @@ export default async function TournamentLayout({ children, params }: LayoutProps
         <SignPrompt />
         <main className="wrap">{children}</main>
         <TabBar />
+        <GpsTab />
         <footer className="made-with">
           <Link href="/">Made with {BRAND.name}</Link>
         </footer>

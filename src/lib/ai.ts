@@ -16,7 +16,8 @@ import {
   type RoundCfg,
   holeShots,
 } from "./engine";
-import { shotsTimeline } from "./shots";
+import { KIND_LABEL, type ShotKind } from "./shots";
+import { roundTimeline } from "./strokes";
 import { totalsView } from "./live";
 import {
   PLAY_LABEL,
@@ -377,8 +378,13 @@ export async function generatePiece(
         parts.push(`${title.toUpperCase()}\nSTATUS\n${gameStatusText(cfg, g, gs, s.players)}\nHOLE-BY-HOLE\n${scorecardText(cfg, g, gs, entries, s.players)}`);
       }
       parts.push(`NOTES FROM THE COURSE\n${notesText(s, round.id)}`);
-      const log = shotsTimeline(s.shots, round.id, Object.fromEntries(s.players.map((p) => [p.id, p.name])));
-      if (log) parts.push(`SHOTS LOGGED ON THE COURSE (by the players, in the order played; partial, so the scorecard is the truth for scores)\n${log}`);
+      const log = roundTimeline(s, round.id, (k) => KIND_LABEL[k as ShotKind] ?? k);
+      if (log)
+        parts.push(
+          `SHOTS LOGGED ON THE COURSE (by the players, stroke by stroke; partial, so the scorecard is the truth for scores)\n` +
+            `"from N" is how far from the middle of the green that stroke was played (measured by GPS at the ball); "went about N" is the tee shot's length (approximate). ` +
+            `Use the distances freely, but never infer what a player was trying to do (going for the green, laying up) from a distance alone: only from what was logged.\n${log}`,
+        );
     }
   } else if (kind === "preview") {
     // Whole-tournament preview: every round, each course's character, the first forecasts

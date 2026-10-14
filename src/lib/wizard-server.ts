@@ -70,6 +70,7 @@ export function cleanWizard(raw: unknown): Wizard {
     teams,
     draw: w.draw === "random" ? "random" : "myself",
     extras: { feed: w.extras?.feed !== false, ai: w.extras?.ai !== false, video: w.extras?.video !== false },
+    units: w.units === "metres" ? "metres" : "yards",
     theme: THEMES.some((t) => t.id === w.theme) && w.theme !== "custom" ? (w.theme as ThemeId) : "spring",
   };
   const problems = drawProblems(out);
@@ -157,8 +158,14 @@ export async function createFromWizard(w: Wizard, opts: { pin?: string | null })
     video_enabled: w.extras.video,
     auto_bulletins: w.extras.ai,
   };
-  const phaseC = { standings, feed_on: w.extras.feed, ai_on: w.extras.ai };
+  const phaseC = { standings, feed_on: w.extras.feed, ai_on: w.extras.ai, units: w.units ?? "yards" };
   let { data: t, error } = await db.from("tournaments").insert({ ...base, ...phaseC }).select("id,slug").single();
+  if (error && /units/.test(error.message)) {
+    // GPS units need the latest database update; everything else saves
+    const { units: _u, ...rest } = phaseC;
+    void _u;
+    ({ data: t, error } = await db.from("tournaments").insert({ ...base, ...rest }).select("id,slug").single());
+  }
   if (error && /standings|feed_on|ai_on/.test(error.message)) {
     // The database hasn't had this update yet: points tournaments still work; totals need it
     if (standings !== "points") throw new WizardError("Running totals need the latest database update. Run supabase/schema.sql in Supabase, then try again.");

@@ -21,7 +21,7 @@ async function loadAll(slug: string): Promise<TournamentState | null> {
   ]);
   const roundIds = (rounds.data ?? []).map((r) => r.id);
   const likes = await db.from("likes").select("*").eq("tournament_id", tid);
-  const [entries, attestations, shots, cards, signatures] = roundIds.length
+  const [entries, attestations, shots, cards, signatures, gps] = roundIds.length
     ? await Promise.all([
         db.from("hole_entries").select("*").in("round_id", roundIds),
         db.from("attestations").select("*").in("round_id", roundIds),
@@ -29,8 +29,9 @@ async function loadAll(slug: string): Promise<TournamentState | null> {
         db.from("shots").select("*").eq("tournament_id", tid).order("logged_at"),
         db.from("cards").select("*").in("round_id", roundIds),
         db.from("card_signatures").select("*").in("round_id", roundIds),
+        db.from("public_gps").select("*").eq("tournament_id", tid).order("taken_at"),
       ])
-    : [{ data: [] }, { data: [] }, { data: [] }, { data: [] }, { data: [] }];
+    : [{ data: [] }, { data: [] }, { data: [] }, { data: [] }, { data: [] }, { data: [] }];
 
   return {
     tournament,
@@ -43,6 +44,7 @@ async function loadAll(slug: string): Promise<TournamentState | null> {
     pieces: pieces.data ?? [],
     votes: votes.data ?? [],
     shots: shots.error ? [] : (shots.data ?? []),
+    gps: "error" in gps && gps.error ? [] : (gps.data ?? []),
     likes: likes.error ? [] : (likes.data ?? []),
     cards: "error" in cards && cards.error ? [] : (cards.data ?? []),
     signatures: "error" in signatures && signatures.error ? [] : (signatures.data ?? []),

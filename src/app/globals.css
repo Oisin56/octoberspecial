@@ -1548,3 +1548,75 @@ html.has-tabbar .made-with { display: none; }
 [data-theme="spring"] .tabs a[aria-current="page"] { background: var(--board); color: #fff; box-shadow: inset 0 -3px 0 var(--gold); }
 [data-theme="spring"] .role-badge.none { background: var(--board); color: #fff; }
 [data-theme="spring"] .board-title { font-family: var(--font-serif); text-transform: none; letter-spacing: 0.01em; font-size: 18px; font-style: italic; }
+
+/* ---- GPS: a big tab on the right edge during a round, and the panel it opens */
+.gps-tab { position: fixed; right: 0; bottom: calc(var(--oc-h, 0px) + 96px); z-index: 80; appearance: none; border: 0; cursor: pointer;
+  width: 44px; min-height: 104px; padding: 10px 2px; border-radius: 16px 0 0 16px; background: var(--gold); color: var(--on-gold, #1b1408);
+  box-shadow: -4px 6px 18px -6px rgba(0, 0, 0, 0.45); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; font-family: var(--font-display); }
+.gps-tab.hidden { display: none; }
+/* Saying what happened on the hole just played: the tab steps aside until you're on to the next */
+body:has(.shotcard) .gps-tab { display: none; }
+/* Room for the tab on a phone, so it never sits on a button */
+@media (max-width: 700px) { body:has(.gps-tab:not(.hidden)):not(:has(.shotcard)) main.wrap { padding-right: 50px; } }
+.gps-tab-k { writing-mode: vertical-rl; transform: rotate(180deg); font-size: 20px; font-weight: 800; letter-spacing: 0.06em; }
+.gps-tab-v { font-size: 16px; font-weight: 800; line-height: 1; padding: 3px 2px; border-radius: 8px; background: rgba(255, 255, 255, 0.85); color: var(--ink); }
+.gps-tab:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
+.gps-back { position: fixed; inset: 0; z-index: 97; background: rgba(0, 0, 0, 0.35); }
+.gps-panel { position: absolute; top: 0; right: 0; bottom: 0; width: min(92vw, 420px); background: var(--board); color: #fff; display: flex; flex-direction: column; gap: 14px;
+  padding: calc(16px + env(safe-area-inset-top)) 18px calc(16px + env(safe-area-inset-bottom)); box-shadow: -12px 0 32px -8px rgba(0, 0, 0, 0.5); animation: gps-in 0.18s ease-out; overflow-y: auto; }
+@keyframes gps-in { from { transform: translateX(40px); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .gps-panel { animation: none; } }
+.gps-head { display: grid; grid-template-columns: 56px 1fr 56px; align-items: center; gap: 8px; }
+.gps-nav { appearance: none; height: 56px; border-radius: 14px; border: 0; background: rgba(255, 255, 255, 0.12); color: #fff; font-size: 34px; cursor: pointer; }
+.gps-nav:disabled { opacity: 0.3; }
+.gps-hole { text-align: center; font-family: var(--font-display); }
+.gps-hole strong { display: block; font-size: 30px; }
+.gps-hole span { font-size: 17px; opacity: 0.8; }
+.gps-nums { display: grid; gap: 10px; }
+.gps-nums.busy { opacity: 0.6; }
+.gps-n { display: flex; align-items: baseline; justify-content: space-between; padding: 10px 16px; border-radius: 14px; background: rgba(255, 255, 255, 0.08); font-family: var(--font-display); }
+.gps-n span { font-size: 20px; font-weight: 600; opacity: 0.85; }
+.gps-n b { font-size: 48px; font-weight: 800; line-height: 1; }
+.gps-n.mid { background: var(--tile, #fff); color: var(--ink); }
+.gps-n.mid b { font-size: 84px; }
+.gps-unit { margin: 0; text-align: center; font-family: var(--font-display); font-size: 16px; opacity: 0.8; }
+.gps-weak { margin: 0; padding: 8px 12px; border-radius: 10px; background: color-mix(in srgb, var(--gold) 25%, transparent); font-size: 16px; }
+.gps-msg { margin: 0; padding: 12px 14px; border-radius: 12px; background: rgba(255, 255, 255, 0.1); font-size: 17px; line-height: 1.4; }
+.gps-msg ol { margin: 8px 0 0; padding-left: 20px; }
+.gps-again { min-height: 60px; font-size: 21px; background: var(--gold) !important; color: var(--on-gold, #1b1408) !important; }
+.gps-units { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.gps-units .pick-tile { min-height: 48px; font-size: 18px; background: transparent; color: #fff; border-color: rgba(255, 255, 255, 0.35); }
+.gps-units .pick-tile[aria-pressed="true"] { background: var(--gold); color: var(--on-gold, #1b1408); border-color: var(--gold); }
+.gps-tip { margin: 0; font-size: 15px; line-height: 1.4; opacity: 0.9; }
+.gps-tip .linklike { color: var(--gold); }
+.gps-close { appearance: none; margin-top: auto; min-height: 52px; border-radius: 14px; border: 1.5px solid rgba(255, 255, 255, 0.35); background: transparent; color: #fff; font-family: var(--font-display); font-size: 20px; font-weight: 700; cursor: pointer; }
+.gps-close small { font-weight: 500; font-size: 14px; opacity: 0.75; margin-left: 6px; }
+
+/* ---- What happened: each stroke in order */
+.sc-strokes { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding-bottom: 6px; -webkit-overflow-scrolling: touch; }
+.sc-hint { margin: 0; font-size: 16px; color: var(--ink-soft); }
+.sc-prompt { display: grid; gap: 8px; background: var(--paper); border: 1.5px solid var(--rule); border-radius: 14px; padding: 12px; }
+.sc-prompt .sc-grid, .sc-edit .sc-grid { flex: none; grid-auto-rows: minmax(54px, auto); }
+.sc-rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.sc-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 6px; background: var(--paper); border: 1.5px solid var(--rule); border-radius: 14px; padding: 4px 6px 4px 4px; }
+.sc-row.open { border-color: var(--board); box-shadow: inset 0 0 0 1px var(--board); }
+.sc-row-main { appearance: none; border: 0; background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; display: grid; grid-template-columns: 40px minmax(0, 1fr) auto auto; align-items: center; gap: 10px; min-height: 52px; padding: 0 4px; }
+.sc-row-main:disabled { cursor: default; }
+.sc-seq { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; background: var(--mist); font-family: var(--font-display); font-size: 19px; font-weight: 800; }
+.sc-row.logged .sc-seq { background: var(--board); color: var(--tile); }
+.sc-what { font-family: var(--font-display); font-size: 19px; font-weight: 600; line-height: 1.15; overflow-wrap: anywhere; }
+.sc-by { display: block; font-family: var(--font-serif); font-size: 13px; font-weight: 400; color: var(--ink-soft); }
+.sc-cam, .sc-lock { font-size: 18px; }
+.sc-dist { appearance: none; border: 0; border-radius: 999px; padding: 6px 12px; min-height: 40px; background: color-mix(in srgb, var(--gold) 30%, var(--paper)); color: var(--ink); font-family: var(--font-display); font-size: 17px; font-weight: 700; white-space: nowrap; cursor: pointer; }
+.sc-dist:disabled { cursor: default; }
+.sc-move, .sc-edit { grid-column: 1 / -1; display: grid; gap: 8px; padding: 6px 4px 6px; }
+.sc-move > span { font-family: var(--font-display); font-size: 17px; font-weight: 600; }
+.sc-move-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(52px, 1fr)); gap: 6px; }
+.sc-move-tiles .pick-tile { min-height: 50px; }
+.sc-move-tiles .wide { grid-column: span 3; }
+.sc-tile.small { font-size: 17px; min-height: 48px; }
+.sc-tile.more { background: var(--mist); }
+.sc-more { display: grid; gap: 10px; }
+.sc-more-g > span { display: block; font-family: var(--font-display); font-size: 15px; font-weight: 700; color: var(--ink-soft); margin-bottom: 4px; }
+.sc-more-w { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 6px; }
+.sc-said { margin: 0; color: var(--board); font-weight: 600; }

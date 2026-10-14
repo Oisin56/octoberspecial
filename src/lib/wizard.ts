@@ -116,6 +116,8 @@ export interface Wizard {
   draw: "myself" | "random";
   extras: { feed: boolean; ai: boolean; video: boolean };
   theme: ThemeId;
+  /** GPS distances in yards (default) or metres */
+  units?: "yards" | "metres";
 }
 
 /** Running totals when everyone plays the same Stableford or stroke-play format; points otherwise. */

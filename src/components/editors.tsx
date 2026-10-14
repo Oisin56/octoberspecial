@@ -1414,14 +1414,23 @@ export function ContentEditor({ data, onSaved }: { data: AdminData; onSaved: () 
   const [video, setVideo] = useState(t.video_enabled);
   const [feed, setFeed] = useState(t.feed_on !== false);
   const [ai, setAi] = useState(t.ai_on !== false);
+  const [units, setUnits] = useState<"yards" | "metres">(t.units === "metres" ? "metres" : "yards");
   const s = useSave();
   async function save() {
-    const r = await s.run({ action: "updateTournament", patch: { tone, auto_bulletins: ai && auto, video_enabled: video, feed_on: feed, ai_on: ai } });
+    const r = await s.run({ action: "updateTournament", patch: { tone, auto_bulletins: ai && auto, video_enabled: video, feed_on: feed, ai_on: ai, units } });
     if (r.ok) onSaved();
   }
   return (
     <section className="panel stack">
-      <h2>Writing, feed and video</h2>
+      <h2>Writing, feed, video and GPS</h2>
+      <div className="row" style={{ gap: 10, alignItems: "center" }}>
+        <span className="display" style={{ fontSize: 18 }}>GPS distances in</span>
+        {(["yards", "metres"] as const).map((u) => (
+          <button key={u} type="button" className="pick-tile" style={{ minHeight: 44, minWidth: 96 }} aria-pressed={units === u} onClick={() => setUnits(u)}>
+            {u === "yards" ? "Yards" : "Metres"}
+          </button>
+        ))}
+      </div>
       <label className="row display" style={{ fontSize: 18 }}>
         <input type="checkbox" checked={feed} onChange={(e) => setFeed(e.target.checked)} style={{ width: 22, height: 22 }} />
         Live feed: photos, comments and notes for everyone following

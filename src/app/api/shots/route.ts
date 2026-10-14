@@ -1,4 +1,4 @@
-import { isCrew } from "@/lib/auth";
+import { isCrew, isOrganiser, type Session } from "@/lib/auth";
 import { adminClient } from "@/lib/admin";
 import { bad, context, json } from "@/lib/server-data";
 import { CLUB_GROUPS, DISTANCES, KIND_LABEL } from "@/lib/shots";
@@ -15,12 +15,18 @@ export async function POST(req: Request) {
   if (!/^[\w-]{8,64}$/.test(clientId)) return bad("Bad shot id");
   const db = adminClient();
 
+  // Changing or removing a shot already logged: whoever logged it, the player, his scorer, or the organiser
+  const { data: existing } = await db.from("shots").select("player_id,round_id,author_name,author_player_id").eq("client_id", clientId).eq("tournament_id", t.id).maybeSingle();
+  if (existing && !(await mayChange(existing, session))) return bad(`Only the player, his scorer or whoever logged it can change this shot`, 403);
+
   if (b.op === "delete") {
     const { error } = await db.from("shots").delete().eq("client_id", clientId).eq("tournament_id", t.id);
     if (error) return bad(missing(error.message), 500);
     return json({ ok: true });
   }
 
+  const seq = b.seq == null || b.seq === "" ? null : Math.round(Number(b.seq));
+  if (seq != null && !(seq >= 1 && seq <= 15)) return bad("Bad stroke");
   const kind = String(b.kind ?? "");
   const outcome = String(b.outcome ?? "");
   if (!(kind in KIND_LABEL) || !OUTCOME.test(outcome)) return bad("Bad shot");
@@ -38,16 +44,43 @@ export async function POST(req: Request) {
   if (!player) return bad("Player not found", 404);
   const loggedAt = b.loggedAt && !Number.isNaN(Date.parse(b.loggedAt)) ? new Date(b.loggedAt).toISOString() : new Date().toISOString();
 
-  const { data, error } = await db
-    .from("shots")
-    .upsert(
-      { tournament_id: t.id, round_id: round.id, hole, player_id: player.id, kind, outcome, club, distance, author_name: session.name, client_id: clientId, logged_at: loggedAt },
-      { onConflict: "client_id" },
-    )
-    .select()
-    .single();
+  const row: Record<string, unknown> = {
+        tournament_id: t.id,
+        round_id: round.id,
+        hole,
+        player_id: player.id,
+        kind,
+        outcome,
+        club,
+        distance,
+        seq,
+        // A change keeps the original author (they still own it)
+        author_name: existing?.author_name ?? session.name,
+        author_player_id: existing ? existing.author_player_id : (session.playerId ?? null),
+        client_id: clientId,
+        logged_at: loggedAt,
+      };
+  let { data, error } = await db.from("shots").upsert(row, { onConflict: "client_id" }).select().single();
+  if (error && /seq|author_player_id/.test(error.message)) {
+    // Database not updated yet: the shot still saves, just without its stroke number
+    delete row.seq;
+    delete row.author_player_id;
+    ({ data, error } = await db.from("shots").upsert(row, { onConflict: "client_id" }).select().single());
+  }
   if (error) return bad(missing(error.message), 500);
   return json({ shot: data });
 }
 
-const missing = (m: string) => (/relation .*shots|shots.*does not exist|schema cache/i.test(m) ? "The shot log needs the latest database update: re-run supabase/schema.sql in Supabase." : m);
+const missing = (m: string) => (/relation .*shots|shots.*does not exist|schema cache|seq|author_player_id/i.test(m) ? "The shot log needs the latest database update: re-run supabase/schema.sql in Supabase." : m);
+
+/** Whoever logged a shot owns it; the player and his group's scorer can change any of his; the organiser can change anything. */
+async function mayChange(shot: { player_id: string; round_id: string; author_name: string; author_player_id: string | null }, s: Session) {
+  if (isOrganiser(s)) return true;
+  if (s.playerId && (shot.player_id === s.playerId || shot.author_player_id === s.playerId)) return true;
+  if (!shot.author_player_id && shot.author_name === s.name) return true;
+  if (!s.playerId) return false;
+  const { data } = await adminClient().from("rounds").select("games,scorer_id").eq("id", shot.round_id).maybeSingle();
+  const games = (data?.games ?? []) as { scorerId?: string | null; sides: { playerIds: string[] }[] }[];
+  if (!games.length) return data?.scorer_id === s.playerId;
+  return games.some((g) => g.scorerId === s.playerId && g.sides.some((x) => x.playerIds.includes(shot.player_id)));
+}

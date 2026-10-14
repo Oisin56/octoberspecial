@@ -1,5 +1,7 @@
 "use client";
 
+import { takeClipFix } from "@/lib/clipFix";
+import { flushGps, saveReading } from "@/lib/gpsQueue";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useT } from "./Providers";
 import { groupPlayers } from "@/lib/courseCards";
@@ -101,6 +103,30 @@ export function ClipDetail({
       shotId = crypto.randomUUID();
       saveShot(slug, shotId, { roundId, hole, playerId: who[0], kind: shot, outcome: result, club, distance: null, loggedAt: new Date().toISOString(), author: session?.name ?? "" });
       flushShots(slug);
+    }
+    // Where it was filmed: the distance for the shot, if nobody measured it
+    const at = takeClipFix();
+    if (at && roundId && hole && who.length === 1) {
+      saveReading(slug, {
+        id: "",
+        round_id: roundId,
+        hole,
+        player_id: who[0],
+        client_id: crypto.randomUUID(),
+        accuracy: at.accuracy,
+        to_front: null,
+        to_middle: null,
+        to_back: null,
+        from_tee: null,
+        source: "clip",
+        seq: null,
+        ignored: false,
+        author_name: session?.name ?? "",
+        taken_at: new Date(at.at).toISOString(),
+        lat: at.lat,
+        lon: at.lon,
+      });
+      flushGps(slug);
     }
     const ext = /mp4/.test(blob.type) ? "mp4" : /quicktime/.test(blob.type) ? "mov" : "webm";
     const whole = range[0] <= 0.05 && (!dur || range[1] >= dur - 0.05);
