@@ -1,6 +1,6 @@
 import { after } from "next/server";
 import { adminClient } from "@/lib/admin";
-import { bad, context, json, loadServerState, type TournamentPrivate } from "@/lib/server-data";
+import { bad, context, json, loadServerState, type TournamentPrivate, DEMO_READONLY } from "@/lib/server-data";
 import { hashPin, isOrganiser, safeEqual, type Session } from "@/lib/auth";
 import { cardInfo, roundStage } from "@/lib/scorecards";
 import { clientIp, tooFast } from "@/lib/social";
@@ -19,8 +19,9 @@ export const maxDuration = 60;
  */
 export async function POST(req: Request) {
   const b = await req.json().catch(() => ({}));
-  const { t, session } = await context(req, b);
+  const { t, session, demo } = await context(req, b);
   if (!t) return bad("Tournament not found", 404);
+  if (demo) return bad(DEMO_READONLY, 403);
   if (!session) return bad("Log in first", 401);
   const db = adminClient();
   const roundId = String(b.roundId ?? "");

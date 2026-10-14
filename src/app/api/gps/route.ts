@@ -3,7 +3,7 @@ import { isCrew, isOrganiser } from "@/lib/auth";
 import { GolfApiError } from "@/lib/golfapi";
 import { greenYards, type CourseGeo } from "@/lib/gps";
 import { geoFor } from "@/lib/gpsServer";
-import { bad, context, json } from "@/lib/server-data";
+import { bad, context, json, DEMO_READONLY } from "@/lib/server-data";
 
 export const maxDuration = 30;
 
@@ -30,8 +30,9 @@ export async function GET(req: Request) {
  */
 export async function POST(req: Request) {
   const b = await req.json().catch(() => ({}));
-  const { t, session } = await context(req, b);
+  const { t, session, demo } = await context(req, b);
   if (!t) return bad("Tournament not found", 404);
+  if (demo) return bad(DEMO_READONLY, 403);
   if (!isCrew(session)) return bad("Log in to use GPS", 401);
   const clientId = String(b.clientId ?? "");
   if (!/^[\w-]{8,64}$/.test(clientId)) return bad("Bad reading id");

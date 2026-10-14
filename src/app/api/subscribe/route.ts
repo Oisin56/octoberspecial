@@ -1,12 +1,13 @@
 import { adminClient } from "@/lib/admin";
-import { bad, context, json, siteOrigin } from "@/lib/server-data";
+import { bad, context, json, siteOrigin, DEMO_READONLY } from "@/lib/server-data";
 import { EMAIL_RE, ipHash, mailConfigured, sendOne, welcomeEmail } from "@/lib/email";
 
 /** Follower signs up for previews and reports by email. */
 export async function POST(req: Request) {
   const b = await req.json().catch(() => ({}));
-  const { t } = await context(req, b);
+  const { t, demo } = await context(req, b);
   if (!t) return bad("Tournament not found", 404);
+  if (demo) return bad(DEMO_READONLY, 403);
   if (b.website) return json({ ok: true }); // bots fill in the hidden field
   const email = String(b.email ?? "").trim().toLowerCase().slice(0, 200);
   const name = String(b.name ?? "").trim().slice(0, 60) || null;

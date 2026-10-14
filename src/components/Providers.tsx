@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { useTournament, type LiveTournament } from "@/lib/useTournament";
+import { rememberTournament } from "@/lib/recent";
 
 export interface ClientSession {
   role: "organiser" | "player" | "fan";
@@ -11,6 +12,8 @@ export interface ClientSession {
 }
 
 interface Ctx extends LiveTournament {
+  /** The front page's example tournament: look, don't touch */
+  demo: boolean;
   session: ClientSession | null;
   /** Logged in as a player or the organiser (not a fan) */
   crew: boolean;
@@ -25,8 +28,13 @@ interface Ctx extends LiveTournament {
 
 const TournamentContext = createContext<Ctx | null>(null);
 
-export function Providers({ slug, children }: { slug: string; children: React.ReactNode }) {
+export function Providers({ slug, demo = false, children }: { slug: string; demo?: boolean; children: React.ReactNode }) {
   const live = useTournament(slug);
+  // Remembered on this phone, for the front page (not the example tournament)
+  const tname = live.state?.tournament.name;
+  useEffect(() => {
+    if (tname && !demo) rememberTournament(slug, tname);
+  }, [slug, tname, demo]);
   const [session, setSession] = useState<ClientSession | null>(null);
   const [sessionReady, setReady] = useState(false);
 
@@ -60,7 +68,7 @@ export function Providers({ slug, children }: { slug: string; children: React.Re
   );
 
   return (
-    <TournamentContext.Provider value={{ ...live, session, sessionReady, crew: !!session && session.role !== "fan", reloadSession, href, api }}>{children}</TournamentContext.Provider>
+    <TournamentContext.Provider value={{ ...live, demo, session, sessionReady, crew: !!session && session.role !== "fan", reloadSession, href, api }}>{children}</TournamentContext.Provider>
   );
 }
 

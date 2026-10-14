@@ -4,7 +4,11 @@ import { organiserSession } from "@/lib/accounts";
 import { bad, json } from "@/lib/server-data";
 import { clientIp, tooFast } from "@/lib/social";
 import { mediaUrl } from "@/lib/supabase";
-import { brandPack, filmLimits, filmSpend, musicTracks, setSetting } from "@/lib/site";
+import { brandPack, demoSlug, filmLimits, filmSpend, musicTracks, setSetting } from "@/lib/site";
+import { approveInvite, listInvites } from "@/lib/invites";
+import { inviteApprovedEmail, mailConfigured, sendOne } from "@/lib/email";
+import { siteOrigin } from "@/lib/server-data";
+import { BRAND } from "@/lib/brand";
 import { BRAND_SLOTS, MAX_TRACKS, type BrandPack, type BrandSlot, type MusicTrack, type Shape } from "@/lib/film";
 
 export const maxDuration = 60;
@@ -42,9 +46,11 @@ export async function GET() {
     return out;
   };
   const [players, rounds, posts] = await Promise.all([count("players"), count("rounds"), count("posts")]);
-  const [brand, music, limits, spend] = await Promise.all([brandPack(), musicTracks(), filmLimits(), filmSpend()]);
+  const [brand, music, limits, spend, invites, demo] = await Promise.all([brandPack(), musicTracks(), filmLimits(), filmSpend(), listInvites(), demoSlug()]);
   return json({
     owner: true,
+    invites,
+    demo,
     films: {
       brand: Object.fromEntries(
         Object.entries(brand).map(([slot, shapes]) => [slot, Object.fromEntries(Object.entries(shapes ?? {}).map(([shape, c]) => [shape, c ? { ...c, src: mediaUrl(c.path) } : null]))]),
@@ -62,6 +68,8 @@ export async function GET() {
  *   open    {id}             run any tournament as its organiser
  *   export  {id}             everything in a tournament, as one file to keep
  *   delete  {id, name}       the tournament and everything in it, files too (the name typed to confirm)
+ *   approveInvite / declineInvite {inviteId}   a request to run a tournament
+ *   setDemo {slug | null}    the example tournament on the front page
  */
 export async function POST(req: Request) {
   const b = await req.json().catch(() => ({}));
@@ -125,6 +133,38 @@ export async function POST(req: Request) {
     if (!(monthly >= 0 && monthly <= 100000) || !(per >= 0 && per <= 50)) return bad("Check the numbers");
     try {
       await setSetting("films", { monthlyCents: monthly, perTournament: per });
+    } catch (e) {
+      return bad(e instanceof Error ? e.message : "Didn't save", 500);
+    }
+    return json({ ok: true });
+  }
+
+  // ---- invitation-only: requests to run a tournament
+  if (b.action === "approveInvite") {
+    if (!mailConfigured()) return bad("Email isn't set up, so the invite can't be sent", 500);
+    const done = await approveInvite(String(b.inviteId ?? ""));
+    if (!done) return bad("That request has been used already, or is gone", 404);
+    const link = `${siteOrigin(req)}/new?invite=${done.token}`;
+    try {
+      await sendOne({ name: BRAND.name }, done.invite.email, inviteApprovedEmail(done.invite.name, link));
+    } catch {
+      return bad("Approved, but the email didn't send. Try Approve again.", 502);
+    }
+    return json({ ok: true });
+  }
+  if (b.action === "declineInvite") {
+    await db.from("invite_requests").update({ status: "declined", token_hash: null }).eq("id", String(b.inviteId ?? "")).is("used_at", null);
+    return json({ ok: true });
+  }
+  // ---- the example tournament on the front page (null: none, the tile says "coming soon")
+  if (b.action === "setDemo") {
+    const slug = b.slug ? String(b.slug) : null;
+    if (slug) {
+      const { data: ok } = await db.from("tournaments").select("id").eq("slug", slug).maybeSingle();
+      if (!ok) return bad("Tournament not found", 404);
+    }
+    try {
+      await setSetting("demo", { slug });
     } catch (e) {
       return bad(e instanceof Error ? e.message : "Didn't save", 500);
     }

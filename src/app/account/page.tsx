@@ -50,7 +50,7 @@ function AccountInner() {
         <div className="mgs-wrap mgs-bar">
           <Link href="/" className="mgs-mark" aria-label={`${BRAND.name} home`}>
             <span>
-              My<b>Golf</b>Special
+              {BRAND.mark[0]}<b>{BRAND.mark[1]}</b>{BRAND.mark[2]}
             </span>
           </Link>
         </div>
@@ -120,7 +120,7 @@ function AccountInner() {
                 <h2 style={{ margin: 0 }}>Add a tournament you run</h2>
                 <div className="field">
                   <label htmlFor="tl">Its link or name in the link</label>
-                  <input id="tl" value={link} onChange={(e) => setLink(e.target.value)} placeholder="e.g. mygolfspecial.com/t/october-special-2026" required />
+                  <input id="tl" value={link} onChange={(e) => setLink(e.target.value)} placeholder="e.g. the link to your tournament" required />
                 </div>
                 <div className="field">
                   <label htmlFor="op">Its organiser PIN</label>

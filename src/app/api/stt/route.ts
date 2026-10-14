@@ -1,7 +1,7 @@
 import { isCrew } from "@/lib/auth";
 import Anthropic from "@anthropic-ai/sdk";
 import { adminClient } from "@/lib/admin";
-import { bad, context, json } from "@/lib/server-data";
+import { bad, context, json, DEMO_READONLY } from "@/lib/server-data";
 import { GOLF_TERMS } from "@/lib/golfTerms";
 
 export const maxDuration = 60;
@@ -14,8 +14,9 @@ const MODEL = process.env.AI_MODEL || "claude-sonnet-5-5";
 export async function POST(req: Request) {
   const form = await req.formData().catch(() => null);
   if (!form) return bad("Bad request");
-  const { t, session } = await context(req, { t: String(form.get("t") ?? "") });
+  const { t, session, demo } = await context(req, { t: String(form.get("t") ?? "") });
   if (!t) return bad("Tournament not found", 404);
+  if (demo) return bad(DEMO_READONLY, 403);
   if (!isCrew(session)) return bad("Log in to use voice notes", 401);
   if (!process.env.ELEVENLABS_API_KEY) return bad("Voice notes aren't set up (no ElevenLabs key)", 500);
   const audio = form.get("file");

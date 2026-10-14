@@ -1,6 +1,8 @@
+import { BRAND } from "@/lib/brand";
 import { adminClient } from "@/lib/admin";
 import { checkOwnerPin, getAccount, hashPin, isOwner, setOwner, setSession } from "@/lib/auth";
 import { linkTournament } from "@/lib/accounts";
+import { inviteFor, spendInvite } from "@/lib/invites";
 import { bad, json, siteOrigin, slugify } from "@/lib/server-data";
 import { WizardError, cleanWizard, createFromWizard } from "@/lib/wizard-server";
 import { LINK_MINUTES, newToken, tokenHash } from "@/lib/accounts";
@@ -11,11 +13,14 @@ export const maxDuration = 60;
 /** Create a new tournament. Only the site owner can (owner PIN = ORGANISER_PIN env). */
 export async function POST(req: Request) {
   const b = await req.json().catch(() => ({}));
-  if (!(await isOwner())) {
+  // Invitation-only: the site owner, or someone with an approved invite link (good for one tournament)
+  const invite = !(await isOwner()) && b.invite && b.wizard ? await inviteFor(String(b.invite)) : null;
+  if (!(await isOwner()) && !invite) {
+    if (b.invite) return bad("That invite link has been used or has expired. Ask for a new one.", 410);
     if (!b.ownerPin || !checkOwnerPin(String(b.ownerPin))) return bad("Site owner PIN needed to create a tournament", 401);
     await setOwner();
   }
-  if (b.wizard) return fromWizard(req, b);
+  if (b.wizard) return fromWizard(req, b, invite?.id ?? null);
   const name = String(b.name ?? "").trim().slice(0, 80);
   if (!name) return bad("Give the tournament a name");
   const organiserPin = String(b.organiserPin ?? "").trim();
@@ -44,11 +49,12 @@ export async function POST(req: Request) {
   return json({ slug: data.slug });
 }
 
-export async function GET() {
-  const { data } = await adminClient()
-    .from("public_tournaments")
-    .select("slug,name,subtitle,start_date,end_date,published")
-    .order("created_at", { ascending: false });
+/** Published tournaments, newest first; ?q= finds them by name (Join my tournament on the front page). */
+export async function GET(req: Request) {
+  const q = (new URL(req.url).searchParams.get("q") ?? "").trim().slice(0, 60);
+  let query = adminClient().from("public_tournaments").select("slug,name,subtitle,start_date,end_date").eq("published", true);
+  if (q) query = query.or(`name.ilike.%${q.replace(/[%_,().*\\]/g, " ").trim()}%,subtitle.ilike.%${q.replace(/[%_,().*\\]/g, " ").trim()}%`);
+  const { data } = await query.order("created_at", { ascending: false }).limit(q ? 8 : 50);
   return json({ tournaments: data ?? [] });
 }
 
@@ -56,7 +62,7 @@ export async function GET() {
  * The setup wizard's "Create my tournament". Keeping it safe: the organiser's email (it goes into My tournaments,
  * with a sign-in link emailed) or an organiser PIN. Signed in already: it simply joins My tournaments.
  */
-async function fromWizard(req: Request, b: Record<string, unknown>) {
+async function fromWizard(req: Request, b: Record<string, unknown>, inviteId: string | null) {
   const email = String(b.email ?? "").trim().toLowerCase().slice(0, 200);
   const pin = String(b.pin ?? "").trim();
   const account = await getAccount();
@@ -72,6 +78,7 @@ async function fromWizard(req: Request, b: Record<string, unknown>) {
     return bad("Couldn't create the tournament just now. Try again.", 500);
   }
   const db = adminClient();
+  if (inviteId) await spendInvite(inviteId, created.id).catch(() => {});
   await setSession(created.id, { role: "organiser", name: created.organiser.name, playerId: created.organiser.playerId });
   let emailed = false;
   if (account) await linkTournament(account.id, created.id).catch(() => {});
@@ -84,7 +91,7 @@ async function fromWizard(req: Request, b: Record<string, unknown>) {
       const token = newToken();
       const { error } = await db.from("account_tokens").insert({ token_hash: tokenHash(token), email, expires_at: new Date(Date.now() + LINK_MINUTES * 60e3).toISOString() });
       if (!error)
-        emailed = await sendOne({ name: "MyGolfSpecial" }, email, accountLinkEmail(`${siteOrigin(req)}/account/in?token=${token}`))
+        emailed = await sendOne({ name: BRAND.name }, email, accountLinkEmail(`${siteOrigin(req)}/account/in?token=${token}`))
           .then(() => true)
           .catch(() => false);
     }

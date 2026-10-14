@@ -8,9 +8,9 @@ import { toRoundCfg } from "@/lib/types";
 
 /** A player whose card is waiting for their signature sees it on every page until they sign. */
 export function SignPrompt() {
-  const { state, session, href } = useT();
+  const { state, session, href, demo } = useT();
   const path = usePathname();
-  if (!state || !session?.playerId || /\/(card|score|record)$/.test(path)) return null;
+  if (demo || !state || !session?.playerId || /\/(card|score|record)$/.test(path)) return null;
   for (const round of state.rounds) {
     if (round.status === "complete") continue;
     for (const g of toRoundCfg(round, state.players).games) {

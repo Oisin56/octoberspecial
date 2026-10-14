@@ -1,12 +1,13 @@
 import { adminClient } from "@/lib/admin";
-import { bad, context, json } from "@/lib/server-data";
+import { bad, context, json, DEMO_READONLY } from "@/lib/server-data";
 import { DEVICE, clientIp, likerKey, tooFast } from "@/lib/social";
 
 /** Like or unlike a post: anyone, no sign-in, one like per post per phone. */
 export async function POST(req: Request) {
   const b = await req.json().catch(() => ({}));
-  const { t } = await context(req, b);
+  const { t, demo } = await context(req, b);
   if (!t) return bad("Tournament not found", 404);
+  if (demo) return bad(DEMO_READONLY, 403);
   const postId = String(b.postId ?? "");
   const device = String(b.device ?? "");
   if (!/^[0-9a-f-]{36}$/i.test(postId) || !DEVICE.test(device)) return bad("Bad like");

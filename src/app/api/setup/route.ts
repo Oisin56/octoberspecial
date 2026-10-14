@@ -2,7 +2,7 @@ import { adminClient } from "@/lib/admin";
 import { isOrganiser } from "@/lib/auth";
 import { generatePiece } from "@/lib/ai";
 import { guideFrom, guideStep, newGuideWork, type GuideWork } from "@/lib/guide";
-import { bad, context, json } from "@/lib/server-data";
+import { bad, context, json, DEMO_READONLY } from "@/lib/server-data";
 import type { RoundRow, SetupJob } from "@/lib/types";
 import { normalizeRound } from "@/lib/types";
 
@@ -17,8 +17,9 @@ const LOCK_MS = 70_000;
  */
 export async function POST(req: Request) {
   const b = await req.json().catch(() => ({}));
-  const { t, session } = await context(req, b);
+  const { t, session, demo } = await context(req, b);
   if (!t) return bad("Tournament not found", 404);
+  if (demo) return bad(DEMO_READONLY, 403);
   if (!isOrganiser(session)) return bad("Organiser only", 403);
   const db = adminClient();
   const jobs: SetupJob[] = Array.isArray(t.setup_jobs) ? t.setup_jobs : [];

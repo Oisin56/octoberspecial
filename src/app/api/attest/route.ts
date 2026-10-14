@@ -1,11 +1,12 @@
 import { adminClient } from "@/lib/admin";
-import { bad, context, json } from "@/lib/server-data";
+import { bad, context, json, DEMO_READONLY } from "@/lib/server-data";
 
 /** A player confirms the card for a nine. */
 export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
-  const { t, session } = await context(req, body);
+  const { t, session, demo } = await context(req, body);
   if (!t) return bad("Tournament not found", 404);
+  if (demo) return bad(DEMO_READONLY, 403);
   if (!session?.playerId) return bad("Log in as a player to sign the card", 401);
   const segment = body.segment === "back" ? "back" : body.segment === "front" ? "front" : null;
   if (!segment || !body.roundId) return bad("Bad request");

@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { adminClient } from "@/lib/admin";
 import { hashPin, isOrganiser } from "@/lib/auth";
-import { bad, context, json, loadServerState, siteOrigin, slugify } from "@/lib/server-data";
+import { bad, context, json, loadServerState, siteOrigin, slugify, DEMO_READONLY } from "@/lib/server-data";
 import { EMAIL_RE, emailPiece, mailConfigured } from "@/lib/email";
 import { draftGuide, generatePiece, type PieceKind } from "@/lib/ai";
 import { cleanGuide, normalizeRound, type RoundRow, type Tone } from "@/lib/types";
@@ -62,8 +62,9 @@ function cleanGames(games: unknown, playerIds: Set<string>, teamIds: Set<string>
 
 export async function POST(req: Request) {
   const b = await req.json().catch(() => ({}));
-  const { t, session } = await context(req, b);
+  const { t, session, demo } = await context(req, b);
   if (!t) return bad("Tournament not found", 404);
+  if (demo) return bad(DEMO_READONLY, 403);
   if (!isOrganiser(session)) return bad("Organiser only", 403);
   const db = adminClient();
 

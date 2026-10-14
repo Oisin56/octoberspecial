@@ -1,3 +1,4 @@
+import { BRAND } from "./brand";
 import "server-only";
 import nodemailer from "nodemailer";
 import { createHash } from "node:crypto";
@@ -131,14 +132,49 @@ export function accountLinkEmail(link: string) {
   const html = `<!doctype html><html><body style="margin:0;background:#e4e9e5;font-family:Georgia,serif;color:#18231d">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:20px 12px">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;background:#fff;border-radius:8px;overflow:hidden">
-<tr><td style="background:#1f3d2b;color:#f7f7f2;padding:18px 24px;font-family:Arial Narrow,Arial,sans-serif;font-size:24px;font-weight:bold">MyGolfSpecial</td></tr>
+<tr><td style="background:#1f3d2b;color:#f7f7f2;padding:18px 24px;font-family:Arial Narrow,Arial,sans-serif;font-size:24px;font-weight:bold">${BRAND.name}</td></tr>
 <tr><td style="padding:22px 24px;font-size:17px;line-height:1.55">
 <p>Tap the button to sign in and see your tournaments.</p>
 <p style="margin:26px 0"><a href="${esc(link)}" style="display:inline-block;background:#1f3d2b;color:#f7f7f2;text-decoration:none;font-family:Arial,sans-serif;font-weight:bold;font-size:19px;padding:16px 28px;border-radius:10px">Sign in</a></p>
 <p style="font-size:13px;color:#666;font-family:Arial,sans-serif">The button works once, for 30 minutes. Didn't ask for this? Ignore this email and nothing happens.</p>
 </td></tr></table></td></tr></table></body></html>`;
-  const text = `Open this link to sign in to MyGolfSpecial and see your tournaments:\n\n${link}\n\nIt works once, for 30 minutes. Didn't ask for this? Ignore this email and nothing happens.\n`;
-  return { subject: "Sign in to MyGolfSpecial", html, text };
+  const text = `Open this link to sign in to ${BRAND.name} and see your tournaments:\n\n${link}\n\nIt works once, for 30 minutes. Didn't ask for this? Ignore this email and nothing happens.\n`;
+  return { subject: `Sign in to ${BRAND.name}`, html, text };
+}
+
+/** A plain brand email: a heading, a few paragraphs and one big button. */
+function brandEmail(paras: string[], button: { label: string; href: string } | null, foot?: string) {
+  return `<!doctype html><html><body style="margin:0;background:#e4e9e5;font-family:Georgia,serif;color:#18231d">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:20px 12px">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;background:#fff;border-radius:8px;overflow:hidden">
+<tr><td style="background:#1f3d2b;color:#f7f7f2;padding:18px 24px;font-family:Arial Narrow,Arial,sans-serif;font-size:24px;font-weight:bold">${BRAND.name}</td></tr>
+<tr><td style="padding:22px 24px;font-size:17px;line-height:1.55">
+${paras.map((x) => `<p>${esc(x)}</p>`).join("\n")}
+${button ? `<p style="margin:26px 0"><a href="${esc(button.href)}" style="display:inline-block;background:#1f3d2b;color:#f7f7f2;text-decoration:none;font-family:Arial,sans-serif;font-weight:bold;font-size:19px;padding:16px 28px;border-radius:10px">${esc(button.label)}</a></p>` : ""}
+${foot ? `<p style="font-size:13px;color:#666;font-family:Arial,sans-serif">${esc(foot)}</p>` : ""}
+</td></tr></table></td></tr></table></body></html>`;
+}
+
+/** Someone asked to run their own tournament: a note to the site owner. */
+export function inviteRequestEmail(r: { name: string; email: string; about: string | null }, ownerLink: string) {
+  const lines = [`${r.name} (${r.email}) would like to run a tournament.`, r.about ? `About it: ${r.about}` : "They didn't say anything about it."];
+  return {
+    subject: `Invite request: ${r.name}`,
+    html: brandEmail(lines, { label: "See requests", href: ownerLink }),
+    text: `${lines.join("\n\n")}\n\nApprove or decline on the owner page: ${ownerLink}\n`,
+  };
+}
+
+/** The site owner said yes: a link that opens the setup wizard, for one tournament. */
+export function inviteApprovedEmail(name: string, link: string) {
+  const first = name.split(" ")[0];
+  const lines = [`Hi ${first},`, `You're in. Tap the button to set up your tournament: a few quick questions, and your site is ready to share with your players.`];
+  const foot = "The link works for one tournament. Keep this email until you've used it.";
+  return {
+    subject: `You're invited to ${BRAND.name}`,
+    html: brandEmail(lines, { label: "Set up my tournament", href: link }, foot),
+    text: `${lines.join("\n\n")}\n\n${link}\n\n${foot}\n`,
+  };
 }
 
 /** The organiser's film is ready. */

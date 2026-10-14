@@ -1,0 +1,35 @@
+import { adminClient } from "@/lib/admin";
+import { EMAIL_RE, inviteRequestEmail, mailConfigured, sendOne } from "@/lib/email";
+import { inviteFor, ownerEmail } from "@/lib/invites";
+import { bad, json, siteOrigin } from "@/lib/server-data";
+import { clientIp, tooFast } from "@/lib/social";
+import { BRAND } from "@/lib/brand";
+
+/**
+ *   request  {name, email, about}   ask to run a tournament (the site owner is told by email)
+ *   check    {token}                is this invite link still good? (the wizard asks before it starts)
+ */
+export async function POST(req: Request) {
+  const b = await req.json().catch(() => ({}));
+  if (b.action === "check") {
+    const inv = await inviteFor(String(b.token ?? ""));
+    return inv ? json({ ok: true, name: inv.name, email: inv.email }) : bad("That invite link has been used or has expired. Ask for a new one.", 410);
+  }
+  if (b.action !== "request") return bad("Unknown action");
+  if (tooFast(`invite:${clientIp(req)}`, 5, 3600e3)) return bad("Too many requests from here. Try again later.", 429);
+  const name = String(b.name ?? "").trim().slice(0, 80);
+  const email = String(b.email ?? "").trim().toLowerCase().slice(0, 200);
+  const about = String(b.about ?? "").trim().slice(0, 600) || null;
+  if (!name) return bad("Add your name");
+  if (!EMAIL_RE.test(email)) return bad("That email address doesn't look right");
+  const db = adminClient();
+  // Asked already and still waiting: no second request
+  const { data: open } = await db.from("invite_requests").select("id").eq("email", email).eq("status", "new").maybeSingle();
+  if (!open) {
+    const { error } = await db.from("invite_requests").insert({ name, email, about });
+    if (error) return bad(/invite_requests/.test(error.message) ? "Requests aren't open just yet. Try again soon." : "Couldn't send that just now. Try again.", 500);
+    const to = ownerEmail();
+    if (to && mailConfigured()) await sendOne({ name: BRAND.name }, to, inviteRequestEmail({ name, email, about }, `${siteOrigin(req)}/owner`)).catch(() => {});
+  }
+  return json({ ok: true });
+}

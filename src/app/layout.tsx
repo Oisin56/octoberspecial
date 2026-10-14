@@ -1,3 +1,4 @@
+import { BRAND } from "@/lib/brand";
 import type { Metadata, Viewport } from "next";
 import "@fontsource/barlow-condensed/500.css";
 import "@fontsource/barlow-condensed/600.css";
@@ -8,9 +9,9 @@ import "@fontsource/newsreader/600.css";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: { default: "MyGolfSpecial", template: "%s | MyGolfSpecial" },
+  title: { default: BRAND.name, template: `%s | ${BRAND.name}` },
   description: "Live scores, previews, match reports and a highlights film for your golf trip.",
-  applicationName: "MyGolfSpecial",
+  applicationName: BRAND.name,
 };
 
 export const viewport: Viewport = {

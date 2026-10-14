@@ -1,6 +1,6 @@
 import { after } from "next/server";
 import { adminClient } from "@/lib/admin";
-import { bad, context, json, siteOrigin } from "@/lib/server-data";
+import { bad, context, json, siteOrigin, DEMO_READONLY } from "@/lib/server-data";
 import { isOrganiser } from "@/lib/auth";
 import { finishRender, monthSpend, signBroadcast, sweep } from "@/lib/broadcast";
 import { safeEqual } from "@/lib/auth";
@@ -24,8 +24,9 @@ export async function POST(req: Request) {
   }
 
   const b = await req.json().catch(() => ({}));
-  const { t, session } = await context(req, b);
+  const { t, session, demo } = await context(req, b);
   if (!t) return bad("Tournament not found", 404);
+  if (demo) return bad(DEMO_READONLY, 403);
 
   if (b.action === "sweep") {
     const origin = siteOrigin(req);

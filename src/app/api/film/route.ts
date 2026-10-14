@@ -1,7 +1,7 @@
 import { after } from "next/server";
 import { adminClient } from "@/lib/admin";
 import { isOrganiser } from "@/lib/auth";
-import { bad, context, json, loadServerState, siteOrigin } from "@/lib/server-data";
+import { bad, context, json, loadServerState, siteOrigin, DEMO_READONLY } from "@/lib/server-data";
 import { mediaUrl } from "@/lib/supabase";
 import { configured, defaultVoices, listVoices, speak } from "@/lib/director";
 import { COMMENTARY, type Brief } from "@/lib/director-types";
@@ -24,8 +24,9 @@ const REEL_FIELDS = "id,status,stage,error,brief,plan,video_path,post_id,created
 /** The organiser's film: what's ready, the questions' answers, making it, its progress. */
 export async function POST(req: Request) {
   const b = await req.json().catch(() => ({}));
-  const { t, session } = await context(req, b);
+  const { t, session, demo } = await context(req, b);
   if (!t) return bad("Tournament not found", 404);
+  if (demo) return bad(DEMO_READONLY, 403);
   if (!isOrganiser(session)) return bad("Only the organiser can make the film", 403);
   const db = adminClient();
   const origin = siteOrigin(req);

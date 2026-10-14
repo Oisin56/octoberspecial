@@ -1,6 +1,6 @@
 import { adminClient } from "@/lib/admin";
 import { after } from "next/server";
-import { bad, context, json, siteOrigin } from "@/lib/server-data";
+import { bad, context, json, siteOrigin, DEMO_READONLY } from "@/lib/server-data";
 import { sweep } from "@/lib/broadcast";
 import { isCrew, isOrganiser } from "@/lib/auth";
 import { fanAllowed, tooFast } from "@/lib/social";
@@ -15,8 +15,9 @@ const DETAIL = /^[\w '&-]{1,30}$/;
 
 export async function POST(req: Request) {
   const b = await req.json().catch(() => ({}));
-  const { t, session } = await context(req, b);
+  const { t, session, demo } = await context(req, b);
   if (!t) return bad("Tournament not found", 404);
+  if (demo) return bad(DEMO_READONLY, 403);
   if (!session) return bad("Log in to post", 401);
 
   // Delete your own post (the organiser can delete any)

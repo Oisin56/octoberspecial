@@ -546,7 +546,7 @@ main.wrap { padding-top: 28px; padding-bottom: 72px; }
 @media (max-width: 759px) { .org-tile-write { grid-column: span 2; min-height: 0; } }
 .org-foot { display: flex; flex-wrap: wrap; gap: 8px 24px; }
 
-/* ---- MyGolfSpecial front page */
+/* ---- The brand's front page */
 .mgs { background: var(--mist); min-height: 100vh; }
 .mgs-wrap { max-width: 1080px; margin: 0 auto; padding: 0 20px; }
 .mgs-head { background: var(--board-deep); color: #fff; }
@@ -1740,3 +1740,89 @@ body:has(.shotcard) .gps-tab { display: none; }
 .owner-tracks li > div { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
 .owner-tracks small { color: var(--ink-soft); }
 .owner-tracks audio { width: 100%; }
+
+/* ---- Front page: the way in (three tiles, tournaments on this phone, the four-step story) */
+.fr-tiles { display: grid; gap: 12px; margin-top: 8px; }
+.fr-tile { display: grid; gap: 4px; min-height: 84px; align-content: center; padding: 16px 20px; border-radius: 16px; text-decoration: none;
+  background: #fff; color: var(--board); box-shadow: 0 14px 30px -18px rgba(0, 0, 0, 0.7); border: 2px solid transparent; }
+.fr-tile strong { font: 700 26px/1.05 var(--font-display); }
+.fr-tile span { font: 17px/1.35 var(--font-serif); color: var(--ink-soft, #4a574f); }
+.fr-tile:hover, .fr-tile:focus-visible { border-color: var(--gold); outline: none; }
+.fr-tile.is-soon { background: rgba(255, 255, 255, 0.1); color: rgba(255, 255, 255, 0.75); box-shadow: none; border: 2px dashed rgba(255, 255, 255, 0.3); }
+.fr-tile.is-soon span { color: rgba(255, 255, 255, 0.7); }
+@media (min-width: 700px) { .fr-tiles { grid-template-columns: repeat(3, 1fr); } .fr-tile { min-height: 120px; } }
+@media (min-width: 860px) { .mgs-hero-grid .fr-tiles { grid-template-columns: 1fr; } .mgs-hero-grid .fr-tile { min-height: 84px; } }
+.mgs-hero .fr-hero-phone { display: none; }
+@media (min-width: 860px) { .mgs-hero .fr-hero-phone { display: block; } .mgs-hero-copy { padding-bottom: 72px; } }
+.mgs-hero-copy { padding-bottom: 40px; }
+
+.fr-recent { margin: 4px 0 16px; }
+.fr-recent h2 { font: 600 18px var(--font-display); color: color-mix(in srgb, var(--gold) 80%, white); margin: 0 0 8px; }
+.fr-recent-list { display: grid; gap: 8px; }
+.fr-recent-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 64px; padding: 10px 18px; border-radius: 14px;
+  background: var(--gold); color: var(--on-gold, #1b1408); text-decoration: none; }
+.fr-recent-name { font: 700 22px/1.1 var(--font-display); }
+.fr-recent-go { font: 700 18px var(--font-display); padding: 6px 14px; border-radius: 999px; background: rgba(255, 255, 255, 0.55); }
+
+.fr-story { display: grid; gap: 72px; padding-top: 96px; padding-bottom: 72px; }
+.fr-step { display: grid; gap: 28px; align-items: center; justify-items: center; }
+.fr-step-copy { max-width: 44ch; justify-self: start; }
+.fr-step-n { display: flex; align-items: center; gap: 10px; margin: 0 0 8px; font: 700 18px var(--font-display); color: var(--bracken); letter-spacing: 0.02em; }
+.fr-step-n .num { display: inline-grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; background: var(--board); color: #fff; font-size: 19px; }
+.fr-step h2 { font-size: clamp(30px, 5vw, 40px); line-height: 1.05; color: var(--board); }
+.fr-step p { font-size: 19px; line-height: 1.55; margin: 12px 0 0; }
+.fr-step .fr-step-n { margin: 0 0 8px; }
+.fr-step-link { margin-top: 18px; }
+.mgs-btn-dark { background: var(--board); color: #fff; }
+@media (min-width: 860px) {
+  .fr-step { grid-template-columns: 1fr 1fr; gap: 64px; }
+  .fr-step:nth-child(even) .fr-step-copy { order: 2; }
+}
+.mgs-foot-links { display: flex; gap: 20px; }
+.mgs-foot-links a { color: var(--ink-soft); }
+
+/* The brand's own pages: join, invite, privacy */
+.fr-page { padding-top: 36px; padding-bottom: 64px; max-width: 680px; }
+.fr-page h1 { font-size: clamp(36px, 7vw, 52px); color: var(--board); line-height: 1; }
+.fr-lead { font-size: 19px; line-height: 1.5; margin: 12px 0 24px; }
+.fr-label { display: block; font: 600 19px var(--font-display); color: var(--board); margin-bottom: 6px; }
+.fr-input { width: 100%; font: 20px var(--font-serif); padding: 14px 16px; border-radius: 12px; border: 2px solid var(--rule); background: #fff; color: var(--ink); }
+.fr-input:focus { outline: none; border-color: var(--board); }
+textarea.fr-input { resize: vertical; }
+.fr-quiet { color: var(--ink-soft); font-size: 16px; }
+.fr-hits { list-style: none; padding: 0; margin: 16px 0 0; display: grid; gap: 10px; }
+.fr-hit { display: grid; gap: 2px; min-height: 72px; align-content: center; padding: 14px 18px; border-radius: 14px; background: #fff; border: 2px solid var(--rule); color: var(--board); text-decoration: none; }
+.fr-hit strong { font: 700 24px/1.1 var(--font-display); }
+.fr-hit span { font-size: 16px; color: var(--ink-soft); }
+.fr-hit:hover, .fr-hit:focus-visible { border-color: var(--board); outline: none; }
+.fr-form { display: grid; gap: 18px; }
+.fr-form .btn { font-size: 20px; padding: 16px; }
+.fr-done { background: #fff; border-radius: 16px; padding: 24px; display: grid; gap: 10px; justify-items: start; }
+.fr-done h2 { color: var(--board); font-size: 32px; }
+.fr-prose h2 { font-size: 26px; color: var(--board); margin: 28px 0 6px; }
+.fr-prose p, .fr-prose li { font-size: 18px; line-height: 1.6; }
+.fr-prose ul { padding-left: 1.2em; display: grid; gap: 8px; }
+
+/* The example tournament: look, don't touch */
+.demo-banner { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 6px 14px; padding: 8px 16px; background: var(--gold); color: var(--on-gold, #1b1408);
+  font: 600 17px var(--font-display); text-align: center; }
+.demo-banner a { color: inherit; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
+
+/* Try the scorecard: three holes, nothing saved */
+.try-bar { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 16px; background: var(--board); color: #fff; font: 600 17px var(--font-display); }
+.try-bar a { color: #fff; }
+.try-main { padding-top: 14px; padding-bottom: 40px; display: grid; gap: 12px; max-width: 560px; }
+.try-standing { margin: 0; text-align: center; font: 600 19px var(--font-display); color: var(--ink-soft); }
+.try-next { margin-top: 6px; }
+.try-end { margin-top: 24px; }
+.try .hole-pick { cursor: default; }
+
+/* Wizard: invitation-only gate, owner's way past it */
+.wz-owner-skip { margin-top: 18px; font-size: 16px; color: var(--ink-soft); }
+
+/* Owner page: invite requests */
+.owner-invites { margin: 20px 0 28px; display: grid; gap: 10px; }
+.owner-count { display: inline-block; margin-left: 8px; padding: 2px 10px; border-radius: 999px; background: var(--gold); color: var(--on-gold, #1b1408); font-size: 16px; vertical-align: middle; }
+.owner-about { margin: 4px 0; font-style: italic; }
+.owner-earlier ul { padding-left: 1.2em; display: grid; gap: 6px; }
+.mgs > main:not(.fr-page) { padding: 0; }

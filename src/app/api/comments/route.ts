@@ -1,5 +1,5 @@
 import { adminClient } from "@/lib/admin";
-import { bad, context, json } from "@/lib/server-data";
+import { bad, context, json, DEMO_READONLY } from "@/lib/server-data";
 import { isOrganiser } from "@/lib/auth";
 import { fanAllowed, tooFast } from "@/lib/social";
 
@@ -11,8 +11,9 @@ const UUID = /^[0-9a-f-]{36}$/i;
  */
 export async function POST(req: Request) {
   const b = await req.json().catch(() => ({}));
-  const { t, session } = await context(req, b);
+  const { t, session, demo } = await context(req, b);
   if (!t) return bad("Tournament not found", 404);
+  if (demo) return bad(DEMO_READONLY, 403);
   if (!session) return bad("Join the conversation to comment", 401);
   const db = adminClient();
 

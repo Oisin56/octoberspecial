@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { BRAND } from "@/lib/brand";
 import { useRouter } from "next/navigation";
 import { CardTable } from "@/components/editors";
 import { LIGHT_BOARD, THEMES, type HoleSet, type ThemeId } from "@/lib/types";
@@ -70,6 +71,7 @@ interface Draft {
 }
 
 const KEY = "mgs-wizard-v1";
+const INVITE_KEY = "mgb-invite";
 const TEAM_COLOURS = ["#c8102e", "#1d4f91", "#2e7d4f", "#a8741f", "#5b3f8c", "#1b1b1b"];
 
 const fresh = (): Draft => ({
@@ -152,7 +154,9 @@ export default function NewTournament() {
   const [d, setD] = useState<Draft>(fresh);
   const [loaded, setLoaded] = useState(false);
   const [hasOld, setHasOld] = useState(false);
-  const [me, setMe] = useState<{ owner: boolean; email: string | null } | null>(null);
+  const [me, setMe] = useState<{ owner: boolean; email: string | null; invite: string | null } | null>(null);
+  // Invitation-only: no invite and not the site owner → a gate first (the owner can carry on past it)
+  const [pastGate, setPastGate] = useState(false);
 
   // Pick up where you left off
   useEffect(() => {
@@ -171,9 +175,24 @@ export default function NewTournament() {
       }
       setLoaded(true);
     }, 0);
-    Promise.all([fetch("/api/owner").then((r) => r.json()).catch(() => ({})), fetch("/api/account").then((r) => r.json()).catch(() => ({}))]).then(([o, a]) =>
-      setMe({ owner: !!o.owner, email: a.account?.email ?? null }),
-    );
+    // An approved invite: the link in the email (kept on the phone in case they come back to the wizard later)
+    let invite: string | null = null;
+    try {
+      invite = new URLSearchParams(window.location.search).get("invite") || localStorage.getItem(INVITE_KEY);
+      if (invite) localStorage.setItem(INVITE_KEY, invite);
+    } catch {}
+    const checkInvite = invite
+      ? fetch("/api/invites", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "check", token: invite }) })
+          .then((r) => r.ok)
+          .catch(() => false)
+      : Promise.resolve(false);
+    Promise.all([fetch("/api/owner").then((r) => r.json()).catch(() => ({})), fetch("/api/account").then((r) => r.json()).catch(() => ({})), checkInvite]).then(([o, a, okInvite]) => {
+      if (invite && !okInvite)
+        try {
+          localStorage.removeItem(INVITE_KEY);
+        } catch {}
+      setMe({ owner: !!o.owner, email: a.account?.email ?? null, invite: okInvite ? invite : null });
+    });
     return () => clearTimeout(t);
   }, []);
 
@@ -220,6 +239,21 @@ export default function NewTournament() {
   };
 
   if (!loaded) return <Shell>{null}</Shell>;
+  if (me && !me.owner && !me.invite && !pastGate && !hasOld)
+    return (
+      <Shell>
+        <div className="wz">
+          <Screen q="It's invitation-only for now" hint="Ask for an invite and we'll email you a link to set up your tournament.">
+            <Link className="btn glow block wz-next" href="/invite">
+              Request an invite
+            </Link>
+            <button type="button" className="linklike wz-owner-skip" onClick={() => setPastGate(true)}>
+              I run this site
+            </button>
+          </Screen>
+        </div>
+      </Shell>
+    );
 
   return (
     <Shell>
@@ -440,7 +474,7 @@ function Shell({ children }: { children: React.ReactNode }) {
       <header className="site-head">
         <div className="wrap" style={{ padding: "18px 16px" }}>
           <Link href="/" className="site-title">
-            MyGolfSpecial
+            {BRAND.name}
           </Link>
         </div>
       </header>
@@ -937,12 +971,12 @@ function ExtrasStep({ d, setD, next }: { d: Draft; setD: (x: Draft) => void; nex
 
 // ------------------------------------------------------------------ create
 
-function SafeStep({ d, setD, me, onDone }: { d: Draft; setD: (x: Draft) => void; me: { owner: boolean; email: string | null } | null; onDone: (slug: string) => void }) {
+function SafeStep({ d, setD, me, onDone }: { d: Draft; setD: (x: Draft) => void; me: { owner: boolean; email: string | null; invite: string | null } | null; onDone: (slug: string) => void }) {
   const [ownerPin, setOwnerPin] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const signedIn = me?.email;
-  const needOwner = me && !me.owner;
+  const needOwner = me && !me.owner && !me.invite;
   const okKeep = signedIn || (d.keep === "email" && /\S+@\S+\.\S+/.test(d.email)) || (d.keep === "pin" && /^\d{4,8}$/.test(d.pin));
 
   async function create() {
@@ -978,11 +1012,14 @@ function SafeStep({ d, setD, me, onDone }: { d: Draft; setD: (x: Draft) => void;
     const r = await fetch("/api/tournaments", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ wizard, email: !signedIn && d.keep === "email" ? d.email : "", pin: d.keep === "pin" ? d.pin : "", ownerPin }),
+      body: JSON.stringify({ wizard, email: !signedIn && d.keep === "email" ? d.email : "", pin: d.keep === "pin" ? d.pin : "", ownerPin, invite: me?.invite ?? undefined }),
     }).catch(() => null);
     const j = r ? await r.json().catch(() => ({})) : {};
     setBusy(false);
     if (!r?.ok) return setErr(j.error ?? "Couldn't create it just now. Check the signal and try again.");
+    try {
+      localStorage.removeItem(INVITE_KEY);
+    } catch {}
     onDone(j.slug);
   }
 

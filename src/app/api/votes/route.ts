@@ -1,12 +1,13 @@
 import { adminClient } from "@/lib/admin";
-import { bad, context, json } from "@/lib/server-data";
+import { bad, context, json, DEMO_READONLY } from "@/lib/server-data";
 import { AWARDS } from "@/lib/types";
 
 /** Followers vote for awards (one vote per award per device; can change it). */
 export async function POST(req: Request) {
   const b = await req.json().catch(() => ({}));
-  const { t } = await context(req, b);
+  const { t, demo } = await context(req, b);
   if (!t) return bad("Tournament not found", 404);
+  if (demo) return bad(DEMO_READONLY, 403);
   const award = String(b.award ?? "");
   if (!AWARDS.some((a) => a.id === award)) return bad("Unknown award");
   const voter = String(b.voter ?? "").slice(0, 64);

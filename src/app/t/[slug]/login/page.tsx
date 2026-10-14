@@ -10,7 +10,7 @@ type Mode = "player" | "organiser" | "follow" | null;
 
 /** Three big choices: playing, organising, or following. Players with a link from the organiser don't need this. */
 function LoginInner() {
-  const { state, session, reloadSession, api, href, slug } = useT();
+  const { state, session, reloadSession, api, href, slug, demo } = useT();
   const router = useRouter();
   const sp = useSearchParams();
   const next = sp.get("next");
@@ -50,6 +50,20 @@ function LoginInner() {
         <button className="btn secondary block" onClick={logout}>
           Log out
         </button>
+      </div>
+    );
+
+  if (demo)
+    return (
+      <div className="panel stack login" style={{ maxWidth: 460 }}>
+        <h1>This is an example</h1>
+        <p>It shows what a tournament looks like, so nobody can log in or join here. Have a look around, or start your own.</p>
+        <Link className="btn block big" href="/invite">
+          Start your own
+        </Link>
+        <Link className="btn secondary block" href={href("/")}>
+          Keep looking
+        </Link>
       </div>
     );
 

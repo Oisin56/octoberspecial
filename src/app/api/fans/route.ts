@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { adminClient } from "@/lib/admin";
-import { bad, context, json, siteOrigin } from "@/lib/server-data";
+import { bad, context, json, siteOrigin, DEMO_READONLY } from "@/lib/server-data";
 import { EMAIL_RE, fanLinkEmail, mailConfigured, sendOne } from "@/lib/email";
 import { isCrew, setSession } from "@/lib/auth";
 import { clientIp, tooFast } from "@/lib/social";
@@ -15,8 +15,9 @@ const LINK_HOURS = 48;
  */
 export async function POST(req: Request) {
   const b = await req.json().catch(() => ({}));
-  const { t, session } = await context(req, b);
+  const { t, session, demo } = await context(req, b);
   if (!t) return bad("Tournament not found", 404);
+  if (demo) return bad(DEMO_READONLY, 403);
   const db = adminClient();
 
   if (b.action === "verify") {

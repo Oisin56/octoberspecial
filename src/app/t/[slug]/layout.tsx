@@ -11,6 +11,7 @@ import { GpsTab } from "@/components/GpsTab";
 import type { Metadata, Viewport } from "next";
 import { tournamentBySlug } from "@/lib/server-data";
 import { paletteFor } from "@/lib/themes";
+import { isDemo } from "@/lib/site";
 
 export async function generateMetadata({ params }: LayoutProps<"/t/[slug]">): Promise<Metadata> {
   const { slug } = await params;
@@ -31,9 +32,16 @@ export async function generateViewport({ params }: LayoutProps<"/t/[slug]">): Pr
 
 export default async function TournamentLayout({ children, params }: LayoutProps<"/t/[slug]">) {
   const { slug } = await params;
+  const demo = await isDemo(slug).catch(() => false);
   return (
-    <Providers slug={slug}>
+    <Providers slug={slug} demo={demo}>
       <ThemeRoot>
+        {demo && (
+          <div className="demo-banner" role="note">
+            <span>This is an example tournament.</span>
+            <Link href="/invite">Start your own</Link>
+          </div>
+        )}
         <SiteHeader />
         <LiveStrip />
         <ClipQueue />

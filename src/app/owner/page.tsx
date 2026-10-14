@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { BRAND } from "@/lib/brand";
 import { useRouter } from "next/navigation";
 import { BRAND_SLOTS, MAX_TRACKS, dollars, type BrandSlot, type Shape } from "@/lib/film";
 import { mediaSeconds, uploadBlob } from "@/lib/upload";
@@ -26,6 +27,17 @@ interface Row {
   posts: number;
 }
 
+interface Invite {
+  id: string;
+  name: string;
+  email: string;
+  about: string | null;
+  status: "new" | "approved" | "declined";
+  approved_at: string | null;
+  used_at: string | null;
+  created_at: string;
+}
+
 const day = (d: string) => new Date(d).toLocaleDateString("en-IE", { day: "numeric", month: "short", year: "numeric" });
 
 /** The site owner's page: every tournament, open any as organiser, keep a copy, delete. */
@@ -34,6 +46,8 @@ export default function OwnerPage() {
   const [owner, setOwner] = useState<boolean | null>(null);
   const [rows, setRows] = useState<Row[]>([]);
   const [films, setFilms] = useState<Films | null>(null);
+  const [invites, setInvites] = useState<Invite[]>([]);
+  const [demo, setDemo] = useState<string | null>(null);
   const [pin, setPin] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -46,6 +60,8 @@ export default function OwnerPage() {
     setOwner(!!j.owner);
     setRows(j.tournaments ?? []);
     setFilms(j.films ?? null);
+    setInvites(j.invites ?? []);
+    setDemo(j.demo ?? null);
   }, []);
   useEffect(() => {
     const t = setTimeout(load, 0);
@@ -101,7 +117,7 @@ export default function OwnerPage() {
       <header className="site-head">
         <div className="wrap" style={{ padding: "18px 16px" }}>
           <Link href="/" className="site-title">
-            MyGolfSpecial
+            {BRAND.name}
           </Link>
         </div>
       </header>
@@ -126,6 +142,11 @@ export default function OwnerPage() {
             </p>
             {done && <p className="notice">{done}</p>}
             {err && !del && <p className="error">{err}</p>}
+            <Invites invites={invites} post={post} reload={load} />
+            <h2>Tournaments</h2>
+            <p className="small">
+              The example on the front page: <strong>{demo ? rows.find((r) => r.slug === demo)?.name ?? demo : "none yet (the tile says coming soon)"}</strong>. It can be looked at but not changed, except by you.
+            </p>
             <div className="owner-list">
               {rows.map((t) => (
                 <article className="owner-t" key={t.id}>
@@ -134,6 +155,7 @@ export default function OwnerPage() {
                       <strong>{t.name}</strong>
                     </Link>
                     <span className={`owner-pub${t.published ? " on" : ""}`}>{t.published ? "Public" : "Not public yet"}</span>
+                    {demo === t.slug && <span className="owner-pub on">Front page example</span>}
                   </div>
                   <p className="owner-meta">
                     {t.start_date ? (t.end_date && t.end_date !== t.start_date ? `${day(t.start_date)} to ${day(t.end_date)}` : day(t.start_date)) : "No dates yet"} · {t.players} player{t.players === 1 ? "" : "s"} · {t.rounds} round
@@ -145,6 +167,17 @@ export default function OwnerPage() {
                     </button>
                     <button className="btn secondary" onClick={() => exportCopy(t)} disabled={!!busy}>
                       {busy === `export-${t.id}` ? "Making the copy…" : "Download a copy"}
+                    </button>
+                    <button
+                      className="btn secondary"
+                      disabled={!!busy}
+                      onClick={async () => {
+                        const r = await post({ action: "setDemo", slug: demo === t.slug ? null : t.slug });
+                        if (!r.ok) setErr(String(r.j.error ?? "Didn't save"));
+                        load();
+                      }}
+                    >
+                      {demo === t.slug ? "Stop using as the example" : "Use as the front page example"}
                     </button>
                     <button
                       className="btn secondary owner-del"
@@ -197,6 +230,67 @@ export default function OwnerPage() {
         </div>
       )}
     </div>
+  );
+}
+
+/** Requests to run a tournament while it's invitation-only: approve (emails them a link) or decline. */
+function Invites({ invites, post, reload }: { invites: Invite[]; post: Post; reload: () => void }) {
+  const [busy, setBusy] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+  const waiting = invites.filter((i) => i.status === "new");
+  const rest = invites.filter((i) => i.status !== "new").slice(0, 20);
+  async function act(i: Invite, action: "approveInvite" | "declineInvite") {
+    setBusy(i.id);
+    setMsg(null);
+    const r = await post({ action, inviteId: i.id });
+    setBusy(null);
+    setMsg(r.ok ? (action === "approveInvite" ? `Invite emailed to ${i.email}` : "Declined") : String(r.j.error ?? "Didn't work"));
+    reload();
+  }
+  return (
+    <section className="owner-invites" aria-label="Invite requests">
+      <h2>Invite requests {waiting.length ? <span className="owner-count">{waiting.length} waiting</span> : null}</h2>
+      {msg && <p className="notice">{msg}</p>}
+      {!invites.length && <p className="small">None yet. People ask from the front page.</p>}
+      {waiting.map((i) => (
+        <article className="owner-t" key={i.id}>
+          <div className="owner-h">
+            <strong>{i.name}</strong>
+            <span className="owner-meta">{i.email}</span>
+          </div>
+          {i.about && <p className="owner-about">{i.about}</p>}
+          <p className="owner-meta">Asked {day(i.created_at)}</p>
+          <div className="owner-acts">
+            <button className="btn" disabled={!!busy} onClick={() => act(i, "approveInvite")}>
+              {busy === i.id ? "Sending…" : "Approve and email the link"}
+            </button>
+            <button className="btn secondary" disabled={!!busy} onClick={() => act(i, "declineInvite")}>
+              Decline
+            </button>
+          </div>
+        </article>
+      ))}
+      {rest.length > 0 && (
+        <details className="owner-earlier">
+          <summary>Earlier requests</summary>
+          <ul>
+            {rest.map((i) => (
+              <li key={i.id}>
+                <strong>{i.name}</strong> ({i.email}): {i.used_at ? "set up a tournament" : i.status === "approved" ? `invited ${day(i.approved_at ?? i.created_at)}` : "declined"}
+                {i.status === "approved" && !i.used_at && (
+                  <>
+                    {" "}
+                    <button className="linklike" disabled={!!busy} onClick={() => act(i, "approveInvite")}>
+                      Send the link again
+                    </button>
+                  </>
+                )}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </section>
   );
 }
 

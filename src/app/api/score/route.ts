@@ -1,6 +1,6 @@
 import { after } from "next/server";
 import { adminClient } from "@/lib/admin";
-import { bad, context, json, siteOrigin } from "@/lib/server-data";
+import { bad, context, json, siteOrigin, DEMO_READONLY } from "@/lib/server-data";
 import { sweep } from "@/lib/broadcast";
 import { ballsOfGame, type BallHole } from "@/lib/engine";
 import { toRoundCfg, type PlayerRow, type RoundRow } from "@/lib/types";
@@ -12,8 +12,9 @@ export const maxDuration = 60;
 export async function POST(req: Request) {
   const body = await req.json().catch(() => null);
   if (!body) return bad("Bad request");
-  const { t, session } = await context(req, body);
+  const { t, session, demo } = await context(req, body);
   if (!t) return bad("Tournament not found", 404);
+  if (demo) return bad(DEMO_READONLY, 403);
   if (!session) return bad("Log in to score", 401);
 
   const roundId = String(body.roundId ?? "");

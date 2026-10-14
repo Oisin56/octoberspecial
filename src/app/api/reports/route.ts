@@ -1,5 +1,5 @@
 import { adminClient } from "@/lib/admin";
-import { bad, context, json } from "@/lib/server-data";
+import { bad, context, json, DEMO_READONLY } from "@/lib/server-data";
 import { REPORTS_TO_HIDE, clientIp, reporterKey, tooFast } from "@/lib/social";
 
 const UUID = /^[0-9a-f-]{36}$/i;
@@ -7,8 +7,9 @@ const UUID = /^[0-9a-f-]{36}$/i;
 /** Anyone can report a post or comment. Three reports from different people hide it until the organiser looks. */
 export async function POST(req: Request) {
   const b = await req.json().catch(() => ({}));
-  const { t, session } = await context(req, b);
+  const { t, session, demo } = await context(req, b);
   if (!t) return bad("Tournament not found", 404);
+  if (demo) return bad(DEMO_READONLY, 403);
   const table = b.commentId ? "comments" : "posts";
   const id = String(b.commentId ?? b.postId ?? "");
   if (!UUID.test(id)) return bad("Bad report");

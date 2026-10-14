@@ -1,3 +1,4 @@
+import { BRAND } from "@/lib/brand";
 import { adminClient } from "@/lib/admin";
 import { checkOwnerPin, clearAccount, getAccount, getSession, hashPin, safeEqual, setAccount, setSession } from "@/lib/auth";
 import { LINK_MINUTES, accountTournaments, linkTournament, newToken, organiserSession, organiserSessions, tokenHash } from "@/lib/accounts";
@@ -32,7 +33,7 @@ export async function POST(req: Request) {
     if (error) return bad(/account_tokens/.test(error.message) ? "Sign-in needs the latest database update (schema.sql)" : "Couldn't send just now. Try again.", 500);
     const next = typeof b.next === "string" && /^\/[\w/-]*$/.test(b.next) ? `&next=${encodeURIComponent(b.next)}` : "";
     try {
-      await sendOne({ name: "MyGolfSpecial" }, email, accountLinkEmail(`${siteOrigin(req)}/account/in?token=${token}${next}`));
+      await sendOne({ name: BRAND.name }, email, accountLinkEmail(`${siteOrigin(req)}/account/in?token=${token}${next}`));
     } catch {
       return bad("Couldn't send the email just now. Check the address and try again.", 502);
     }

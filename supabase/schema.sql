@@ -509,5 +509,22 @@ revoke all on reports from anon, authenticated;
 revoke all on score_changes from anon, authenticated;
 revoke all on accounts, account_tournaments, account_tokens from anon, authenticated;
 
+-- Phase F: people asking to run their own tournament, while it's invitation-only. Approving one emails them a
+-- link that opens the setup wizard; it works for one tournament.
+create table if not exists invite_requests (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  email text not null,
+  about text,
+  status text not null default 'new' check (status in ('new', 'approved', 'declined')),
+  token_hash text,
+  approved_at timestamptz,
+  used_at timestamptz,
+  tournament_id uuid references tournaments(id) on delete set null,
+  created_at timestamptz not null default now()
+);
+alter table invite_requests enable row level security;               -- server only
+revoke all on invite_requests from anon, authenticated;
+
 -- Tell the API about the new tables straight away
 notify pgrst, 'reload schema';

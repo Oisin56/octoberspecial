@@ -1,6 +1,6 @@
 import { adminClient } from "@/lib/admin";
 import { checkOwnerPin, clearSession, getSession, hashPin, isOwner, safeEqual, setOwner, setSession } from "@/lib/auth";
-import { bad, context, json } from "@/lib/server-data";
+import { bad, context, json, DEMO_READONLY } from "@/lib/server-data";
 
 export async function GET(req: Request) {
   const { t, session } = await context(req);
@@ -25,8 +25,9 @@ export async function POST(req: Request) {
     return json({ ok: true });
   }
 
-  const { t } = await context(req, body);
+  const { t, demo } = await context(req, body);
   if (!t) return bad("Tournament not found", 404);
+  if (demo) return bad(DEMO_READONLY, 403);
 
   if (mode === "organiser") {
     const ok = checkOwnerPin(pin) || (!!t.organiser_pin_hash && safeEqual(hashPin(pin), t.organiser_pin_hash));

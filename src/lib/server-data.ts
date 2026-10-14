@@ -1,7 +1,8 @@
+import { isDemo } from "./site";
 import "server-only";
 import { adminClient } from "./admin";
 import { normalizeRound, type TournamentRow, type TournamentState, type RoundRow } from "./types";
-import { getSession, type Session } from "./auth";
+import { getSession, isOwner, type Session } from "./auth";
 
 export interface TournamentPrivate extends TournamentRow {
   organiser_pin_hash: string | null;
@@ -25,8 +26,12 @@ export async function context(req: Request, body?: Record<string, unknown>) {
   const slug = String(body?.t ?? url.searchParams.get("t") ?? "");
   const t = await tournamentBySlug(slug);
   const session: Session | null = t ? await getSession(t.id) : null;
-  return { t, session };
+  // The example tournament on the front page can be looked at, never changed (except by the site owner)
+  const demo = !!t && req.method !== "GET" && (await isDemo(t.slug)) && !(await isOwner());
+  return { t, session: demo ? null : session, demo };
 }
+
+export const DEMO_READONLY = "This is an example tournament, so nothing can be changed here. Start your own to try it for real.";
 
 /** Full state including hidden/report-only posts and drafts. Server only. */
 export async function loadServerState(tournamentId: string): Promise<TournamentState> {

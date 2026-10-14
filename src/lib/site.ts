@@ -12,7 +12,7 @@ async function getSetting<T>(key: string, fallback: T): Promise<T> {
   return (data.value as T) ?? fallback;
 }
 
-export async function setSetting(key: "brand" | "music" | "films", value: unknown) {
+export async function setSetting(key: "brand" | "music" | "films" | "demo", value: unknown) {
   const { error } = await adminClient().from("site_settings").upsert({ key, value, updated_at: new Date().toISOString() });
   if (error) throw new Error(/site_settings/.test(error.message) ? "This needs the latest database update (run supabase/schema.sql)" : error.message);
 }
@@ -54,3 +54,10 @@ export async function tournamentFilms(tournamentId: string): Promise<{ made: num
     inProgress: (data ?? []).some((r) => r.stage && r.stage !== "done" && r.status !== "failed" && r.status !== "draft"),
   };
 }
+
+/** The example tournament shown from the front page (read-only for everyone but the site owner), if one is set. */
+export async function demoSlug(): Promise<string | null> {
+  const v = await getSetting<{ slug?: string | null }>("demo", {});
+  return typeof v?.slug === "string" && v.slug ? v.slug : null;
+}
+export const isDemo = async (slug: string | null | undefined) => !!slug && (await demoSlug()) === slug;
