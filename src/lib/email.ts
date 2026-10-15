@@ -25,7 +25,7 @@ export function mailSetup() {
   return {
     host: process.env.SMTP_HOST || "smtp.mail.me.com (default)",
     port: Number(process.env.SMTP_PORT || 587),
-    from: process.env.MAIL_FROM || process.env.SMTP_USER || null,
+    from: fromAddress(),
     login: !!process.env.SMTP_USER,
     password: !!process.env.SMTP_PASS,
   };
@@ -52,9 +52,19 @@ function transport() {
   });
 }
 
+/** The address emails come from: MAIL_FROM (tidied of stray quotes and spaces), else the login if that's an address. */
+export function fromAddress(): string | null {
+  const clean = (v?: string) => (v ?? "").trim().replace(/^["'<]+|["'>]+$/g, "").trim();
+  const from = clean(process.env.MAIL_FROM);
+  if (from) return from;
+  const login = clean(process.env.SMTP_USER);
+  return login.includes("@") ? login : null;
+}
+
 function fromHeader(t: Pick<TournamentRow, "name">) {
-  // iCloud only sends from your own address, so the name carries the branding
-  const addr = process.env.MAIL_FROM || process.env.SMTP_USER!;
+  // The tournament's name carries the branding; the address is the site's
+  const addr = fromAddress();
+  if (!addr) throw new Error("No sending address: set MAIL_FROM in Vercel (for example hello@mygolfbroadcast.com)");
   return { name: t.name, address: addr };
 }
 
