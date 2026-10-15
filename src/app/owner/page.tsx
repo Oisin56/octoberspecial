@@ -27,6 +27,15 @@ interface Row {
   posts: number;
 }
 
+interface Mail {
+  host: string;
+  port: number;
+  from: string | null;
+  login: boolean;
+  password: boolean;
+  ownerEmail: string | null;
+}
+
 interface Invite {
   id: string;
   name: string;
@@ -48,6 +57,7 @@ export default function OwnerPage() {
   const [films, setFilms] = useState<Films | null>(null);
   const [invites, setInvites] = useState<Invite[]>([]);
   const [demo, setDemo] = useState<string | null>(null);
+  const [mail, setMail] = useState<Mail | null>(null);
   const [pin, setPin] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -62,6 +72,7 @@ export default function OwnerPage() {
     setFilms(j.films ?? null);
     setInvites(j.invites ?? []);
     setDemo(j.demo ?? null);
+    setMail(j.mail ?? null);
   }, []);
   useEffect(() => {
     const t = setTimeout(load, 0);
@@ -195,6 +206,7 @@ export default function OwnerPage() {
                 </article>
               ))}
             </div>
+            {mail && <MailCheck mail={mail} post={post} />}
             {films && <FilmSettings films={films} post={post} reload={load} />}
           </>
         )}
@@ -230,6 +242,46 @@ export default function OwnerPage() {
         </div>
       )}
     </div>
+  );
+}
+
+/** How the site sends email, and a test that shows exactly what happens. */
+function MailCheck({ mail, post }: { mail: Mail; post: Post }) {
+  const [to, setTo] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  async function send() {
+    setBusy(true);
+    setMsg(null);
+    const r = await post({ action: "testEmail", to: to.trim() });
+    setBusy(false);
+    setMsg(r.ok ? { ok: true, text: `Sent to ${String(r.j.to)}. Check that inbox (and spam).` } : { ok: false, text: String(r.j.error ?? "Didn't send") });
+  }
+  const row = (k: string, v: string, good: boolean) => (
+    <li>
+      <span>{k}</span> <strong className={good ? "" : "error"}>{v}</strong>
+    </li>
+  );
+  return (
+    <section className="owner-mail" aria-label="Email">
+      <h2>Email</h2>
+      <ul className="owner-mail-list">
+        {row("Sending through", `${mail.host}, port ${mail.port}`, true)}
+        {row("From", mail.from ?? "not set (MAIL_FROM)", !!mail.from)}
+        {row("Login and password", mail.login && mail.password ? "set" : "missing (SMTP_USER, SMTP_PASS)", mail.login && mail.password)}
+        {row("Invite requests go to", mail.ownerEmail ?? "not set (OWNER_EMAIL)", !!mail.ownerEmail)}
+      </ul>
+      <div className="row" style={{ gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
+        <div className="field" style={{ flex: "1 1 220px", margin: 0 }}>
+          <label htmlFor="mail-to">Send a test to</label>
+          <input id="mail-to" type="email" value={to} onChange={(e) => setTo(e.target.value)} placeholder={mail.ownerEmail ?? "an email address"} />
+        </div>
+        <button className="btn" disabled={busy} onClick={send}>
+          {busy ? "Sending…" : "Send a test email"}
+        </button>
+      </div>
+      {msg && <p className={msg.ok ? "notice" : "error"}>{msg.text}</p>}
+    </section>
   );
 }
 

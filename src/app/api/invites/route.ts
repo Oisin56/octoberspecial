@@ -29,7 +29,11 @@ export async function POST(req: Request) {
     const { error } = await db.from("invite_requests").insert({ name, email, about });
     if (error) return bad(/invite_requests/.test(error.message) ? "Requests aren't open just yet. Try again soon." : "Couldn't send that just now. Try again.", 500);
     const to = ownerEmail();
-    if (to && mailConfigured()) await sendOne({ name: BRAND.name }, to, inviteRequestEmail({ name, email, about }, `${siteOrigin(req)}/owner`)).catch(() => {});
+    if (!to || !mailConfigured()) console.error("[invites] no owner email to notify (set OWNER_EMAIL and the SMTP settings)");
+    else
+      await sendOne({ name: BRAND.name }, to, inviteRequestEmail({ name, email, about }, `${siteOrigin(req)}/owner`)).catch((e) =>
+        console.error("[invites] couldn't email the owner:", e instanceof Error ? e.message : e),
+      );
   }
   return json({ ok: true });
 }

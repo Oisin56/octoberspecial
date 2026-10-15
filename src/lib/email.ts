@@ -20,6 +20,23 @@ import { SIDE_GAME_LABEL, formatLabel, sideLabel, toEntries, toRoundCfg, toTourn
  * over SMTP (iCloud by default: smtp.mail.me.com with an app-specific password).
  */
 
+/** What the site sends email through (no passwords or keys): for the owner page and the setup check. */
+export function mailSetup() {
+  return {
+    host: process.env.SMTP_HOST || "smtp.mail.me.com (default)",
+    port: Number(process.env.SMTP_PORT || 587),
+    from: process.env.MAIL_FROM || process.env.SMTP_USER || null,
+    login: !!process.env.SMTP_USER,
+    password: !!process.env.SMTP_PASS,
+  };
+}
+
+/** A plain test message, so the site owner can see sending work (or the exact reason it doesn't). */
+export function testEmail(site: string) {
+  const text = `This is a test from ${BRAND.name}. If you can read it, the site can send email.\n\n${site}\n`;
+  return { subject: `Test email from ${BRAND.name}`, html: brandEmail([`This is a test from ${BRAND.name}. If you can read it, the site can send email.`], { label: "Open the site", href: site }), text };
+}
+
 export function mailConfigured() {
   return !!(process.env.SMTP_USER && process.env.SMTP_PASS);
 }

@@ -62,4 +62,8 @@ export async function spendInvite(id: string, tournamentId: string) {
   await adminClient().from("invite_requests").update({ used_at: new Date().toISOString(), tournament_id: tournamentId }).eq("id", id);
 }
 
-export const ownerEmail = () => (process.env.OWNER_EMAIL || process.env.SMTP_USER || "").trim();
+/** Where the site owner's notes go: OWNER_EMAIL, or the sending address if that's all there is. */
+export const ownerEmail = () => {
+  const v = (process.env.OWNER_EMAIL || process.env.MAIL_FROM || process.env.SMTP_USER || "").trim();
+  return v.includes("@") ? v : "";
+};

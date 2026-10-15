@@ -5,8 +5,8 @@ import { bad, json } from "@/lib/server-data";
 import { clientIp, tooFast } from "@/lib/social";
 import { mediaUrl } from "@/lib/supabase";
 import { brandPack, demoSlug, filmLimits, filmSpend, musicTracks, setSetting } from "@/lib/site";
-import { approveInvite, listInvites } from "@/lib/invites";
-import { inviteApprovedEmail, mailConfigured, sendOne } from "@/lib/email";
+import { approveInvite, listInvites, ownerEmail } from "@/lib/invites";
+import { inviteApprovedEmail, mailConfigured, mailSetup, sendOne, testEmail } from "@/lib/email";
 import { siteOrigin } from "@/lib/server-data";
 import { BRAND } from "@/lib/brand";
 import { BRAND_SLOTS, MAX_TRACKS, type BrandPack, type BrandSlot, type MusicTrack, type Shape } from "@/lib/film";
@@ -51,6 +51,7 @@ export async function GET() {
     owner: true,
     invites,
     demo,
+    mail: { ...mailSetup(), ownerEmail: ownerEmail() || null },
     films: {
       brand: Object.fromEntries(
         Object.entries(brand).map(([slot, shapes]) => [slot, Object.fromEntries(Object.entries(shapes ?? {}).map(([shape, c]) => [shape, c ? { ...c, src: mediaUrl(c.path) } : null]))]),
@@ -126,6 +127,19 @@ export async function POST(req: Request) {
     await removeFile(gone?.path);
     await setSetting("music", music.filter((m) => m.id !== b.trackId));
     return json({ ok: true });
+  }
+  // ---- email: send a test and report exactly what happened
+  if (b.action === "testEmail") {
+    const to = String(b.to ?? "").trim() || ownerEmail();
+    if (!to) return bad("No address to send to. Set OWNER_EMAIL in Vercel, or type an address.");
+    if (!mailConfigured()) return bad("Email isn't set up: SMTP_USER and SMTP_PASS are missing in Vercel.");
+    try {
+      await sendOne({ name: BRAND.name }, to, testEmail(siteOrigin(req)));
+      return json({ ok: true, to });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return bad(`Sending failed: ${msg.replace(/re_[A-Za-z0-9_]+/g, "re_…").slice(0, 400)}`, 502);
+    }
   }
   if (b.action === "setLimits") {
     const monthly = Math.round(Number(b.monthlyDollars) * 100);

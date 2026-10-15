@@ -1826,3 +1826,8 @@ textarea.fr-input { resize: vertical; }
 .owner-about { margin: 4px 0; font-style: italic; }
 .owner-earlier ul { padding-left: 1.2em; display: grid; gap: 6px; }
 .mgs > main:not(.fr-page) { padding: 0; }
+
+/* Owner page: how email is sent */
+.owner-mail { margin: 20px 0 28px; display: grid; gap: 10px; }
+.owner-mail-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 4px; }
+.owner-mail-list span { color: var(--ink-soft); }
