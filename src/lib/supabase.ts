@@ -17,6 +17,7 @@ export function publicClient(): SupabaseClient {
 export function mediaUrl(path: string | null | undefined): string | null {
   if (!path) return null;
   if (path.startsWith("http")) return path;
+  if (path.startsWith("/")) return path; // the site's own files (the sample round's clip)
   return `${url}/storage/v1/object/public/media/${path}`;
 }
 

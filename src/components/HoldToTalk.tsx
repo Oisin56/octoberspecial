@@ -16,7 +16,7 @@ function audioType() {
  * A quick tap starts it instead, and a second tap stops it, for anyone who taps rather than holds.
  */
 export function HoldToTalk({ onText, compact }: { onText: (text: string) => void; compact?: boolean }) {
-  const { slug } = useT();
+  const { slug, sample } = useT();
   const [state, setState] = useState<"idle" | "listening" | "writing">("idle");
   const [err, setErr] = useState<string | null>(null);
   const [secs, setSecs] = useState(0);
@@ -43,6 +43,17 @@ export function HoldToTalk({ onText, compact }: { onText: (text: string) => void
 
   async function start() {
     setErr(null);
+    // The sample round: no microphone; it "hears" a sample note
+    if (sample) {
+      setSecs(0);
+      setState("listening");
+      setTimeout(() => setState("writing"), 1600);
+      setTimeout(() => {
+        setState("idle");
+        onText(sample.note);
+      }, 2300);
+      return;
+    }
     const type = audioType();
     if (type === null || !navigator.mediaDevices?.getUserMedia) return setErr("Voice notes don't work in this browser. Type it instead.");
     try {
@@ -65,6 +76,7 @@ export function HoldToTalk({ onText, compact }: { onText: (text: string) => void
   }
 
   function stop() {
+    if (sample) return;
     if (rec.current?.state === "recording") rec.current.stop();
     stream.current?.getTracks().forEach((t) => t.stop());
     stream.current = null;

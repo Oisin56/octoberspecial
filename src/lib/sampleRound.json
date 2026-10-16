@@ -1,0 +1,676 @@
+{
+ "tournament": {
+  "id": "66ff0cf0-dc2b-4f15-b27f-960861270aba",
+  "slug": "sample-round",
+  "name": "Sample round",
+  "subtitle": "Three holes. Nothing is saved.",
+  "start_date": "2026-10-16",
+  "end_date": "2026-10-16",
+  "theme": "spring",
+  "custom_colors": null,
+  "logo_path": null,
+  "hero_path": null,
+  "tone": "broadsheet",
+  "side_games": [
+   {
+    "kind": "ctp",
+    "points": 10,
+    "enabled": true
+   },
+   {
+    "kind": "ld",
+    "points": 10,
+    "enabled": true
+   },
+   {
+    "kind": "gir",
+    "points": 20,
+    "enabled": true
+   },
+   {
+    "kind": "birdies",
+    "points": 0,
+    "enabled": true
+   },
+   {
+    "kind": "eagles",
+    "points": 0,
+    "enabled": true
+   }
+  ],
+  "side_games_by": "player",
+  "teams": [],
+  "auto_bulletins": true,
+  "video_enabled": true,
+  "organiser_player_id": "you-5dxw",
+  "published": true,
+  "created_at": "2026-10-16T15:59:37.957884+01:00",
+  "reel_music_path": null,
+  "require_attestation": false,
+  "broadcast_on": true,
+  "broadcast_cap_cents": 1000,
+  "standings": "stableford",
+  "feed_on": true,
+  "ai_on": true,
+  "setup_jobs": [
+   {
+    "id": "cards",
+    "kind": "photo",
+    "label": "Course cards loaded",
+    "status": "done"
+   },
+   {
+    "id": "guide-1",
+    "kind": "guide",
+    "label": "Hole-by-hole guide: Birr",
+    "status": "todo",
+    "roundId": "aa71d8d3-cddd-4fd8-914c-994088aeb57d"
+   },
+   {
+    "id": "preview",
+    "kind": "preview",
+    "label": "First preview written",
+    "status": "todo",
+    "roundId": "aa71d8d3-cddd-4fd8-914c-994088aeb57d"
+   }
+  ],
+  "units": "yards",
+  "share_shape": "portrait"
+ },
+ "players": [
+  {
+   "id": "you-5dxw",
+   "tournament_id": "66ff0cf0-dc2b-4f15-b27f-960861270aba",
+   "name": "You",
+   "nickname": null,
+   "handicap": 14,
+   "home_club": null,
+   "bio": null,
+   "best_club": null,
+   "worst_club": null,
+   "weakness": null,
+   "quote": null,
+   "photo_path": null,
+   "sort": 0,
+   "team_id": null,
+   "has_pin": false
+  },
+  {
+   "id": "declan-oa55",
+   "tournament_id": "66ff0cf0-dc2b-4f15-b27f-960861270aba",
+   "name": "Declan",
+   "nickname": null,
+   "handicap": 12.4,
+   "home_club": null,
+   "bio": null,
+   "best_club": null,
+   "worst_club": null,
+   "weakness": null,
+   "quote": null,
+   "photo_path": null,
+   "sort": 1,
+   "team_id": null,
+   "has_pin": false
+  },
+  {
+   "id": "marcus-y3zv",
+   "tournament_id": "66ff0cf0-dc2b-4f15-b27f-960861270aba",
+   "name": "Marcus",
+   "nickname": null,
+   "handicap": 8.1,
+   "home_club": null,
+   "bio": null,
+   "best_club": null,
+   "worst_club": null,
+   "weakness": null,
+   "quote": null,
+   "photo_path": null,
+   "sort": 2,
+   "team_id": null,
+   "has_pin": false
+  }
+ ],
+ "rounds": [
+  {
+   "id": "aa71d8d3-cddd-4fd8-914c-994088aeb57d",
+   "tournament_id": "66ff0cf0-dc2b-4f15-b27f-960861270aba",
+   "number": 1,
+   "course_slug": "golfapi:012141520611:Ireland",
+   "course_name": "Birr",
+   "play_date": "2026-10-16",
+   "tee_time": "09:30",
+   "tee": "White",
+   "format": "stableford",
+   "nine_points": 0,
+   "full_points": 0,
+   "shots": {},
+   "holes": [
+    {
+     "si": 5,
+     "par": 4,
+     "yards": 394,
+     "number": 1
+    },
+    {
+     "si": 1,
+     "par": 4,
+     "yards": 416,
+     "number": 2
+    },
+    {
+     "si": 15,
+     "par": 3,
+     "yards": 175,
+     "number": 3
+    },
+    {
+     "si": 9,
+     "par": 5,
+     "yards": 525,
+     "number": 4
+    },
+    {
+     "si": 11,
+     "par": 4,
+     "yards": 383,
+     "number": 5
+    },
+    {
+     "si": 3,
+     "par": 4,
+     "yards": 405,
+     "number": 6
+    },
+    {
+     "si": 17,
+     "par": 3,
+     "yards": 164,
+     "number": 7
+    },
+    {
+     "si": 13,
+     "par": 4,
+     "yards": 372,
+     "number": 8
+    },
+    {
+     "si": 7,
+     "par": 5,
+     "yards": 514,
+     "number": 9
+    },
+    {
+     "si": 6,
+     "par": 4,
+     "yards": 394,
+     "number": 10
+    },
+    {
+     "si": 2,
+     "par": 4,
+     "yards": 416,
+     "number": 11
+    },
+    {
+     "si": 16,
+     "par": 3,
+     "yards": 175,
+     "number": 12
+    },
+    {
+     "si": 10,
+     "par": 5,
+     "yards": 525,
+     "number": 13
+    },
+    {
+     "si": 12,
+     "par": 4,
+     "yards": 383,
+     "number": 14
+    },
+    {
+     "si": 4,
+     "par": 4,
+     "yards": 405,
+     "number": 15
+    },
+    {
+     "si": 18,
+     "par": 3,
+     "yards": 164,
+     "number": 16
+    },
+    {
+     "si": 14,
+     "par": 4,
+     "yards": 372,
+     "number": 17
+    },
+    {
+     "si": 8,
+     "par": 5,
+     "yards": 514,
+     "number": 18
+    }
+   ],
+   "scorer_id": "you-5dxw",
+   "status": "live",
+   "play": "singles",
+   "games": [
+    {
+     "id": "r1g1",
+     "name": "Group 1",
+     "sides": [
+      {
+       "id": "you-5dxw",
+       "teamId": null,
+       "playerIds": [
+        "you-5dxw"
+       ]
+      },
+      {
+       "id": "declan-oa55",
+       "teamId": null,
+       "playerIds": [
+        "declan-oa55"
+       ]
+      },
+      {
+       "id": "marcus-y3zv",
+       "teamId": null,
+       "playerIds": [
+        "marcus-y3zv"
+       ]
+      }
+     ],
+     "scorerId": "you-5dxw"
+    }
+   ],
+   "points_rule": {
+    "back": 0,
+    "full": 0,
+    "front": 0
+   },
+   "handicap_rule": {
+    "pct": 95,
+    "mode": "allowance",
+    "course": {
+     "par": 72,
+     "slope": 128,
+     "rating": 71.2
+    },
+    "relative": false
+   },
+   "course_location": "Ireland",
+   "course_blurb": null,
+   "lat": null,
+   "lon": null,
+   "course_guide": null,
+   "photo_path": null,
+   "hole_set": "front"
+  }
+ ],
+ "geo": {
+  "1": {
+   "green": {
+    "front": [
+     53.0947,
+     -7.894699999999999
+    ],
+    "middle": [
+     53.09485,
+     -7.894699999999999
+    ],
+    "back": [
+     53.095000000000006,
+     -7.894699999999999
+    ]
+   },
+   "tee": [
+    53.091800000000006,
+    -7.8957
+   ]
+  },
+  "2": {
+   "green": {
+    "front": [
+     53.0967,
+     -7.894699999999999
+    ],
+    "middle": [
+     53.096849999999996,
+     -7.894699999999999
+    ],
+    "back": [
+     53.097,
+     -7.894699999999999
+    ]
+   },
+   "tee": [
+    53.0938,
+    -7.8957
+   ]
+  },
+  "3": {
+   "green": {
+    "front": [
+     53.0987,
+     -7.894699999999999
+    ],
+    "middle": [
+     53.09885,
+     -7.894699999999999
+    ],
+    "back": [
+     53.099000000000004,
+     -7.894699999999999
+    ]
+   },
+   "tee": [
+    53.0958,
+    -7.8957
+   ]
+  },
+  "4": {
+   "green": {
+    "front": [
+     53.1007,
+     -7.894699999999999
+    ],
+    "middle": [
+     53.10085,
+     -7.894699999999999
+    ],
+    "back": [
+     53.101000000000006,
+     -7.894699999999999
+    ]
+   },
+   "tee": [
+    53.09780000000001,
+    -7.8957
+   ]
+  },
+  "5": {
+   "green": {
+    "front": [
+     53.1027,
+     -7.894699999999999
+    ],
+    "middle": [
+     53.10285,
+     -7.894699999999999
+    ],
+    "back": [
+     53.103,
+     -7.894699999999999
+    ]
+   },
+   "tee": [
+    53.0998,
+    -7.8957
+   ]
+  },
+  "6": {
+   "green": {
+    "front": [
+     53.0927,
+     -7.894699999999999
+    ],
+    "middle": [
+     53.09285,
+     -7.894699999999999
+    ],
+    "back": [
+     53.093,
+     -7.894699999999999
+    ]
+   },
+   "tee": [
+    53.0898,
+    -7.8957
+   ]
+  },
+  "7": {
+   "green": {
+    "front": [
+     53.0947,
+     -7.8907
+    ],
+    "middle": [
+     53.09485,
+     -7.8907
+    ],
+    "back": [
+     53.095000000000006,
+     -7.8907
+    ]
+   },
+   "tee": [
+    53.091800000000006,
+    -7.8917
+   ]
+  },
+  "8": {
+   "green": {
+    "front": [
+     53.0967,
+     -7.8907
+    ],
+    "middle": [
+     53.096849999999996,
+     -7.8907
+    ],
+    "back": [
+     53.097,
+     -7.8907
+    ]
+   },
+   "tee": [
+    53.0938,
+    -7.8917
+   ]
+  },
+  "9": {
+   "green": {
+    "front": [
+     53.0987,
+     -7.8907
+    ],
+    "middle": [
+     53.09885,
+     -7.8907
+    ],
+    "back": [
+     53.099000000000004,
+     -7.8907
+    ]
+   },
+   "tee": [
+    53.0958,
+    -7.8917
+   ]
+  },
+  "10": {
+   "green": {
+    "front": [
+     53.1007,
+     -7.8907
+    ],
+    "middle": [
+     53.10085,
+     -7.8907
+    ],
+    "back": [
+     53.101000000000006,
+     -7.8907
+    ]
+   },
+   "tee": [
+    53.09780000000001,
+    -7.8917
+   ]
+  },
+  "11": {
+   "green": {
+    "front": [
+     53.1027,
+     -7.8907
+    ],
+    "middle": [
+     53.10285,
+     -7.8907
+    ],
+    "back": [
+     53.103,
+     -7.8907
+    ]
+   },
+   "tee": [
+    53.0998,
+    -7.8917
+   ]
+  },
+  "12": {
+   "green": {
+    "front": [
+     53.0927,
+     -7.8907
+    ],
+    "middle": [
+     53.09285,
+     -7.8907
+    ],
+    "back": [
+     53.093,
+     -7.8907
+    ]
+   },
+   "tee": [
+    53.0898,
+    -7.8917
+   ]
+  },
+  "13": {
+   "green": {
+    "front": [
+     53.0947,
+     -7.886699999999999
+    ],
+    "middle": [
+     53.09485,
+     -7.886699999999999
+    ],
+    "back": [
+     53.095000000000006,
+     -7.886699999999999
+    ]
+   },
+   "tee": [
+    53.091800000000006,
+    -7.8877
+   ]
+  },
+  "14": {
+   "green": {
+    "front": [
+     53.0967,
+     -7.886699999999999
+    ],
+    "middle": [
+     53.096849999999996,
+     -7.886699999999999
+    ],
+    "back": [
+     53.097,
+     -7.886699999999999
+    ]
+   },
+   "tee": [
+    53.0938,
+    -7.8877
+   ]
+  },
+  "15": {
+   "green": {
+    "front": [
+     53.0987,
+     -7.886699999999999
+    ],
+    "middle": [
+     53.09885,
+     -7.886699999999999
+    ],
+    "back": [
+     53.099000000000004,
+     -7.886699999999999
+    ]
+   },
+   "tee": [
+    53.0958,
+    -7.8877
+   ]
+  },
+  "16": {
+   "green": {
+    "front": [
+     53.1007,
+     -7.886699999999999
+    ],
+    "middle": [
+     53.10085,
+     -7.886699999999999
+    ],
+    "back": [
+     53.101000000000006,
+     -7.886699999999999
+    ]
+   },
+   "tee": [
+    53.09780000000001,
+    -7.8877
+   ]
+  },
+  "17": {
+   "green": {
+    "front": [
+     53.1027,
+     -7.886699999999999
+    ],
+    "middle": [
+     53.10285,
+     -7.886699999999999
+    ],
+    "back": [
+     53.103,
+     -7.886699999999999
+    ]
+   },
+   "tee": [
+    53.0998,
+    -7.8877
+   ]
+  },
+  "18": {
+   "green": {
+    "front": [
+     53.0927,
+     -7.886699999999999
+    ],
+    "middle": [
+     53.09285,
+     -7.886699999999999
+    ],
+    "back": [
+     53.093,
+     -7.886699999999999
+    ]
+   },
+   "tee": [
+    53.0898,
+    -7.8877
+   ]
+  }
+ }
+}

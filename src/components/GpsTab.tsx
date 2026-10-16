@@ -34,7 +34,7 @@ interface Fix {
  * middle and back of the green. Each measurement is kept against your next shot on that hole.
  */
 export function GpsTab() {
-  const { state, session, slug } = useT();
+  const { state, session, slug, sample } = useT();
   const path = usePathname();
   const round = state?.rounds.find((r) => r.status === "live") ?? null;
   const crew = session?.role === "player" || session?.role === "organiser";
@@ -52,6 +52,10 @@ export function GpsTab() {
   // The course's greens: once per round
   useEffect(() => {
     if (!round || !crew || !round.course_slug.startsWith("golfapi:")) return;
+    if (sample) {
+      const t = setTimeout(() => setGeo(sample.geo), 0);
+      return () => clearTimeout(t);
+    }
     let stop = false;
     const key = `mgs-geo-${round.id}`;
     const t = setTimeout(async () => {
@@ -74,7 +78,7 @@ export function GpsTab() {
       stop = true;
       clearTimeout(t);
     };
-  }, [round, crew, slug]);
+  }, [round, crew, slug, sample]);
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -120,6 +124,15 @@ export function GpsTab() {
     if (!geo?.[String(h)] || !round) return;
     setBusy(true);
     setErr(null);
+    // The sample round: a spot on the fairway, no location permission asked for
+    if (sample) {
+      const at = sample.spot(h);
+      setTimeout(() => {
+        setBusy(false);
+        if (at) setFix({ hole: h, d: greenYards(at, geo[String(h)]), accuracy: 4, at: Date.now() });
+      }, 450);
+      return;
+    }
     if (!navigator.geolocation) {
       setBusy(false);
       return setErr("unavailable");

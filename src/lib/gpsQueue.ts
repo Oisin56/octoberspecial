@@ -1,4 +1,5 @@
 "use client";
+import { isSample } from "./sampleFlag";
 
 /**
  * GPS readings are kept on the phone the moment they're taken, then sent when there's signal; moving a distance to
@@ -57,6 +58,7 @@ export function placeReading(slug: string, clientId: string, place: { seq: numbe
 
 let busy = false;
 export async function flushGps(slug: string) {
+  if (isSample(slug)) return; // the sample round: kept on the phone
   if (busy) return;
   busy = true;
   try {

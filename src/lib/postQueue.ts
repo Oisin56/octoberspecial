@@ -1,4 +1,5 @@
 "use client";
+import { isSample, SAMPLE_POST_EVENT } from "./sampleFlag";
 
 /** Notes from the course (moments after a hole) wait on the phone when there's no signal, then send. */
 export interface QueuedPost {
@@ -35,6 +36,12 @@ export function queuePost(slug: string, body: Record<string, unknown>) {
 let busy = false;
 /** Send what's waiting. Returns how many are left. */
 export async function flushPosts(slug: string): Promise<number> {
+  // The sample round: the page adds it to its own feed instead
+  if (isSample(slug)) {
+    for (const p of queuedPosts(slug)) window.dispatchEvent(new CustomEvent(SAMPLE_POST_EVENT, { detail: p.body }));
+    write(read().filter((x) => !queuedPosts(slug).some((q) => q.id === x.id)));
+    return 0;
+  }
   if (busy) return queuedPosts(slug).length;
   busy = true;
   try {

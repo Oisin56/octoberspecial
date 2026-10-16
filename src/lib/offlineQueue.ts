@@ -1,5 +1,7 @@
 "use client";
 
+import { isSample } from "./sampleFlag";
+
 /** Scores saved on the course go into a local queue first, then send when
  *  there's signal. Survives page reloads. A later save of the same hole
  *  replaces an earlier unsent one. */
@@ -62,6 +64,11 @@ export async function flush(): Promise<{ left: number; error?: string }> {
   let error: string | undefined;
   try {
     for (const item of read()) {
+      // The front page's sample round: already on the phone's card, nothing to send
+      if (isSample(item.slug)) {
+        write(read().filter((x) => !(same(x, item) && x.at === item.at)));
+        continue;
+      }
       try {
         const r = await fetch("/api/score", {
           method: "POST",

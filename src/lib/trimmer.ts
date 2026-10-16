@@ -1,4 +1,5 @@
 "use client";
+import { isSample } from "./sampleFlag";
 
 /**
  * Cuts a section out of a phone video without re-encoding (fast, full quality).
@@ -278,6 +279,7 @@ let flushing = false;
 
 /** Send any clips waiting for signal. Returns how many are still waiting. */
 export async function flushClips(slug: string): Promise<{ left: number; error?: string }> {
+  if (isSample(slug)) return { left: 0 }; // the sample round never uploads
   if (flushing) return { left: (await pendingClips(slug)).length };
   flushing = true;
   let error: string | undefined;

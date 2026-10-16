@@ -11,19 +11,20 @@ import { useEffect, useRef, useState } from "react";
 
 type Row = { name: string; pts: number; thru: number };
 
+// The Atlantic Cup after 11 holes, then the 12th (a par 3) as it goes in: the same story as the screens below
 const START: Row[] = [
+  { name: "Declan", pts: 24, thru: 11 },
+  { name: "Marcus", pts: 24, thru: 11 },
   { name: "Shane", pts: 24, thru: 11 },
-  { name: "Declan", pts: 22, thru: 11 },
-  { name: "Marcus", pts: 21, thru: 11 },
-  { name: "Ronan", pts: 17, thru: 11 },
+  { name: "Ronan", pts: 19, thru: 11 },
 ];
 
 /** What happens, in order: who scores, how many points, and the caption the graphic shows. */
 const EVENTS: { name: string; add: number; caption: string; who: string }[] = [
   { name: "Declan", add: 3, who: "Declan", caption: "Birdie at the 12th. Takes the lead" },
-  { name: "Shane", add: 2, who: "Shane", caption: "Par at the 12th. Back in front" },
-  { name: "Marcus", add: 3, who: "Marcus", caption: "Birdie at the 12th. Up to third" },
-  { name: "Ronan", add: 4, who: "Ronan", caption: "Eagle at the 12th. The shot of the day" },
+  { name: "Marcus", add: 2, who: "Marcus", caption: "Par at the 12th. One behind" },
+  { name: "Shane", add: 2, who: "Shane", caption: "Par at the 12th. Level with Marcus" },
+  { name: "Ronan", add: 2, who: "Ronan", caption: "A shot on the 12th, and a net par" },
 ];
 
 const STEP_MS = 3400;
@@ -117,7 +118,7 @@ export function BroadcastBoard() {
       </div>
       <div className="bx-board-foot" aria-hidden>
         <span>Stableford points</span>
-        <span>12th hole, par 4</span>
+        <span>12th hole, par 3</span>
       </div>
       <div className="bx-third" aria-hidden key={step}>
         {event ? (
@@ -137,9 +138,9 @@ export function BroadcastBoard() {
 }
 
 const TICKER = [
-  ["Leaderboard", "Shane 26 pts, Declan 25, Marcus 24, Ronan 21"],
-  ["New clip", "Declan's chip at the 9th"],
-  ["Match report", "Round 1 lands in everyone's inbox at 7pm"],
+  ["Longest drive", "Shane, 287 yards at the 5th"],
+  ["New clip", "Declan from thirty feet at the 11th"],
+  ["Round report", "In everyone's inbox at 7pm"],
   ["Photos", "12 new from the 10th tee"],
   ["Weather at Birr", "14 degrees, light westerly"],
   ["Tomorrow", "Round 2 tees off at 9:30"],
@@ -226,7 +227,7 @@ type Step = { title: string; body: string; img: string; alt: string };
  * On a computer: the phone stays put while the steps scroll past beside it, and its screen changes to match the step
  * in the middle of the window. On a phone: each step's text, then its screen.
  */
-export function StepPhone({ steps }: { steps: Step[] }) {
+export function StepPhone({ steps, head }: { steps: Step[]; head?: React.ReactNode }) {
   const [active, setActive] = useState(0);
   const refs = useRef<(HTMLDivElement | null)[]>([]);
   useEffect(() => {
@@ -242,6 +243,7 @@ export function StepPhone({ steps }: { steps: Step[] }) {
   return (
     <div className="bx-steps">
       <div className="bx-steps-text">
+        {head}
         {steps.map((s, i) => (
           <div key={s.title} className={`bx-step${i === active ? " is-on" : ""}`} data-i={i} ref={(el) => void (refs.current[i] = el)}>
             <h3>{s.title}</h3>

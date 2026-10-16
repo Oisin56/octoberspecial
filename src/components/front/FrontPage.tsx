@@ -128,8 +128,8 @@ export async function FrontPage() {
               </ul>
               <div className="bx-email" aria-label="A round report email">
                 <span className="bx-email-from">{BRAND.name}</span>
-                <strong>Round 1: Declan takes it at the last</strong>
-                <span>A birdie at the 12th, thirty feet at the 11th, and Shane one point behind going into tomorrow&hellip;</span>
+                <strong>Round 1: Declan leads at Birr</strong>
+                <span>Thirty feet at the 11th, a birdie at the 12th, and Marcus and Shane a point behind with six to play&hellip;</span>
               </div>
             </div>
             <div className="bx-screens">
@@ -149,11 +149,15 @@ export async function FrontPage() {
         {/* ---------------------------------------------------------------- on the course */}
         <section className="bx-course bx-turf" aria-labelledby="bx-course-h">
           <div className="bx-wrap">
-            <div className="bx-course-head">
-              <h2 id="bx-course-h">Quick on the course.</h2>
-              <p>Big buttons, one hole at a time, and anyone in the group can help.</p>
-            </div>
-            <StepPhone steps={ON_COURSE} />
+            <StepPhone
+              steps={ON_COURSE}
+              head={
+                <div className="bx-course-head">
+                  <h2 id="bx-course-h">Quick on the course.</h2>
+                  <p>Big buttons, one hole at a time, and anyone in the group can help.</p>
+                </div>
+              }
+            />
             <div className="bx-course-foot">
               <Link href="/try" className="bx-btn bx-btn-ghost">
                 Try a sample round
@@ -175,7 +179,7 @@ export async function FrontPage() {
                   </li>
                 ))}
               </ol>
-              <p className="bx-yours-h">And it&apos;s all yours to change:</p>
+              <p className="bx-yours-h">All of it yours to change</p>
               <ul className="bx-yours">
                 {YOURS.map((y) => (
                   <li key={y}>{y}</li>
@@ -202,10 +206,10 @@ export async function FrontPage() {
               <Image src="/home/relive.jpg" width={1280} height={720} alt="The title card from a tournament's highlights film" sizes="(min-width: 1200px) 1120px, 94vw" />
               <div className="bx-film-third" aria-hidden>
                 <b>Declan</b>
-                <span>Champion, The Atlantic Cup</span>
+                <span>Leads after round 1</span>
               </div>
             </InView>
-            <p className="bx-studio-h">Open the studio to change anything:</p>
+            <p className="bx-studio-h">In the studio, change anything</p>
             <dl className="bx-studio">
               {STUDIO.map((s) => (
                 <div key={s.title}>
@@ -241,7 +245,7 @@ export async function FrontPage() {
           <div className="bx-wrap bx-ref-grid">
             <h2 id="bx-prices-h">Prices</h2>
             <div>
-              <p className="bx-ref-lead">Scoring is free. Upgrade when you want the write-ups and the film. Prices to come: nothing is charged while it&apos;s invitation-only.</p>
+              <p className="bx-ref-lead">Scoring is free. Upgrade when you want the write-ups and the film. These are planned prices: nothing is charged while it&apos;s invitation-only.</p>
               <dl className="bx-plans">
                 {PLANS.map((p) => (
                   <div key={p.name} className="bx-plan">
@@ -267,7 +271,8 @@ export async function FrontPage() {
         </section>
 
         {/* ---------------------------------------------------------------- the last call */}
-        <section className="bx-close bx-turf" id="bx-close">
+        <section className="bx-close" id="bx-close">
+          <Image src="/home/photos/hero.jpg" alt="" fill sizes="100vw" className="bx-close-img" />
           <div className="bx-wrap">
             <h2>Ready for your next round?</h2>
             <Link href={cta.href} className="bx-btn">

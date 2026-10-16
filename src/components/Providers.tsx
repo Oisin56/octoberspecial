@@ -3,6 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { useTournament, type LiveTournament } from "@/lib/useTournament";
 import { rememberTournament } from "@/lib/recent";
+import type { CourseGeo } from "@/lib/gps";
 
 export interface ClientSession {
   role: "organiser" | "player" | "fan";
@@ -11,7 +12,18 @@ export interface ClientSession {
   fanId?: string;
 }
 
+/** The front page's sample round: what stands in for the course, the camera and the microphone */
+export interface SampleKit {
+  geo: CourseGeo;
+  /** Where "you" stand on a hole when you tap GPS */
+  spot: (hole: number) => [number, number] | null;
+  /** What the voice note "hears" */
+  note: string;
+}
+
 interface Ctx extends LiveTournament {
+  /** Set only in the sample round */
+  sample?: SampleKit;
   /** The front page's example tournament: look, don't touch */
   demo: boolean;
   session: ClientSession | null;
@@ -71,6 +83,12 @@ export function Providers({ slug, demo = false, children }: { slug: string; demo
     <TournamentContext.Provider value={{ ...live, demo, session, sessionReady, crew: !!session && session.role !== "fan", reloadSession, href, api }}>{children}</TournamentContext.Provider>
   );
 }
+
+/** The sample round: the same screens, given their tournament directly (see SamplePage) */
+export function SampleProviders({ value, children }: { value: Ctx; children: React.ReactNode }) {
+  return <TournamentContext.Provider value={value}>{children}</TournamentContext.Provider>;
+}
+export type TournamentCtx = Ctx;
 
 export function useT() {
   const c = useContext(TournamentContext);

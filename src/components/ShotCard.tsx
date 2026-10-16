@@ -62,7 +62,7 @@ export function ShotCard({
   /** Leaving for the camera */
   onLeave?: () => void;
 }) {
-  const { state, session, slug, href, refresh } = useT();
+  const { state, session, slug, href, refresh, sample } = useT();
   const [, bump] = useState(0);
   useEffect(() => {
     const on = () => bump((n) => n + 1);
@@ -330,7 +330,7 @@ export function ShotCard({
             </button>
           </div>
         )}
-        {!prompt && gross != null && <p className="sc-hint">Tap any shot to say what happened. Everything here is saved as it is.</p>}
+        {!prompt && gross != null && <p className="sc-hint">Tap any shot to say what happened. {sample ? "In the sample, nothing leaves this phone." : "Everything here is saved as it is."}</p>}
 
         <ol className="sc-rows">
           {rows.map((r) => {

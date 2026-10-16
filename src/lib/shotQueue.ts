@@ -1,4 +1,5 @@
 "use client";
+import { isSample } from "./sampleFlag";
 
 /**
  * Shots are saved on the phone the moment they're tapped, then sent when there's signal.
@@ -49,6 +50,7 @@ const removed = new Set<string>();
 let busy = false;
 /** Send what's waiting, in order. Returns how many are left. */
 export async function flushShots(slug: string): Promise<number> {
+  if (isSample(slug)) return pendingShots(slug).length; // the sample round: kept on the phone
   if (busy) return pendingShots(slug).length;
   busy = true;
   try {

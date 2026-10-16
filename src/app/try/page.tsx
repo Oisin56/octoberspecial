@@ -1,8 +1,11 @@
 import type { Metadata } from "next";
-import { TryScorecard } from "@/components/front/TryScorecard";
+import { TryShell } from "@/components/front/TryShell";
 
-export const metadata: Metadata = { title: "Try the scorecard" };
+export const metadata: Metadata = {
+  title: "A sample round",
+  description: "Three holes on the real scorecard, then what everyone at home saw. Nothing is saved.",
+};
 
 export default function Try() {
-  return <TryScorecard />;
+  return <TryShell />;
 }
