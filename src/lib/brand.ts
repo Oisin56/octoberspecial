@@ -6,5 +6,5 @@ export const BRAND = {
   short: "GolfBroadcast",
   /** Shown in the footer once the domain is live (set NEXT_PUBLIC_SITE_DOMAIN) */
   domain: process.env.NEXT_PUBLIC_SITE_DOMAIN || "",
-  tagline: "Your golf, covered like a major.",
+  tagline: "Every round, covered like a major.",
 } as const;

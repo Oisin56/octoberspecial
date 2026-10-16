@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 
 /**
@@ -102,11 +103,13 @@ export function BroadcastBoard() {
           return (
             <div key={s.name} className={`bx-row${moved ? " is-hot" : ""}${i === 0 ? " is-lead" : ""}`} style={{ transform: `translateY(calc(var(--bx-row) * ${i}))` }}>
               <span className="bx-pos">{r.pos}</span>
-              <span className="bx-name">{r.name}</span>
+              <span className="bx-name">
+                {r.name}
+                {moved && was && r.pts > was.pts && <i className="bx-plus">+{r.pts - was.pts}</i>}
+              </span>
               <span className="bx-thru">{r.thru === 18 ? "F" : `Thru ${r.thru}`}</span>
               <span className="bx-pts" key={`${s.name}-${r.pts}`}>
                 {r.pts}
-                {moved && was && r.pts > was.pts && <i className="bx-plus">+{r.pts - was.pts}</i>}
               </span>
             </div>
           );
@@ -213,6 +216,49 @@ export function StickyCta({ href, label }: { href: string; label: string }) {
       <a href={href} className="bx-btn" tabIndex={show ? 0 : -1}>
         {label}
       </a>
+    </div>
+  );
+}
+
+type Step = { title: string; body: string; img: string; alt: string };
+
+/**
+ * On a computer: the phone stays put while the steps scroll past beside it, and its screen changes to match the step
+ * in the middle of the window. On a phone: each step's text, then its screen.
+ */
+export function StepPhone({ steps }: { steps: Step[] }) {
+  const [active, setActive] = useState(0);
+  const refs = useRef<(HTMLDivElement | null)[]>([]);
+  useEffect(() => {
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) if (e.isIntersecting) setActive(Number((e.target as HTMLElement).dataset.i));
+      },
+      { rootMargin: "-45% 0px -45% 0px" },
+    );
+    for (const el of refs.current) if (el) io.observe(el);
+    return () => io.disconnect();
+  }, []);
+  return (
+    <div className="bx-steps">
+      <div className="bx-steps-text">
+        {steps.map((s, i) => (
+          <div key={s.title} className={`bx-step${i === active ? " is-on" : ""}`} data-i={i} ref={(el) => void (refs.current[i] = el)}>
+            <h3>{s.title}</h3>
+            <p>{s.body}</p>
+            <div className="bx-phone bx-step-phone">
+              <Image src={s.img} width={1170} height={1992} alt={s.alt} sizes="62vw" />
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="bx-steps-pin" aria-hidden>
+        <div className="bx-phone">
+          {steps.map((s, i) => (
+            <Image key={s.img} src={s.img} width={1170} height={1992} alt="" sizes="320px" className={i === active ? "is-on" : ""} />
+          ))}
+        </div>
+      </div>
     </div>
   );
 }

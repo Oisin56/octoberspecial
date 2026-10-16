@@ -4,22 +4,24 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { recentTournaments, type Recent } from "@/lib/recent";
 
-/** "Welcome back": the tournaments this phone has opened before, one tap each. Nothing shows for a first visit. */
-export function WelcomeBack() {
-  const [list, setList] = useState<Recent[]>([]);
+/**
+ * The header's one link: "Sign in", or for a phone that has opened a tournament before, straight back to it.
+ */
+export function HeaderLink() {
+  const [last, setLast] = useState<Recent | null>(null);
   useEffect(() => {
-    const t = setTimeout(() => setList(recentTournaments().slice(0, 3)), 0);
+    const t = setTimeout(() => setLast(recentTournaments()[0] ?? null), 0);
     return () => clearTimeout(t);
   }, []);
-  if (!list.length) return null;
+  if (last)
+    return (
+      <Link href={`/t/${last.slug}`} className="bx-bar-link">
+        Back to {last.name}
+      </Link>
+    );
   return (
-    <nav className="bx-back" aria-label="Your tournaments on this phone">
-      <span className="bx-back-hi">Welcome back</span>
-      {list.map((r) => (
-        <Link key={r.slug} href={`/t/${r.slug}`} className="bx-back-link">
-          {r.name}
-        </Link>
-      ))}
-    </nav>
+    <Link href="/account" className="bx-bar-link">
+      Sign in
+    </Link>
   );
 }
