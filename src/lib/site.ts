@@ -12,12 +12,24 @@ async function getSetting<T>(key: string, fallback: T): Promise<T> {
   return (data.value as T) ?? fallback;
 }
 
-export async function setSetting(key: "brand" | "music" | "films" | "demo", value: unknown) {
+export async function setSetting(key: "brand" | "music" | "films" | "demo" | "sample", value: unknown) {
   const { error } = await adminClient().from("site_settings").upsert({ key, value, updated_at: new Date().toISOString() });
   if (error) throw new Error(/site_settings/.test(error.message) ? "This needs the latest database update (run supabase/schema.sql)" : error.message);
 }
 
 export const brandPack = () => getSetting<BrandPack>("brand", {});
+
+/** The front page's sample round: its commentary, recorded once by the site owner in the film's voices */
+export interface SampleFilmSetting {
+  lines: { path: string; sec: number; text: string }[];
+  at: string;
+  /** The recordings before these: removed next time */
+  previous?: string[];
+}
+export const sampleFilm = async () => {
+  const v = await getSetting<SampleFilmSetting | null>("sample", null);
+  return v && Array.isArray(v.lines) ? v : null;
+};
 export const musicTracks = async () => {
   const t = await getSetting<MusicTrack[]>("music", []);
   return Array.isArray(t) ? t : [];

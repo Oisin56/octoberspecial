@@ -632,3 +632,4 @@ function AwardsSheet({ state, api, refresh }: { state: TournamentState; api: (p:
     </div>
   );
 }
+export const soundIcon = I.sound;

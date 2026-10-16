@@ -4,7 +4,9 @@ import { organiserSession } from "@/lib/accounts";
 import { bad, json } from "@/lib/server-data";
 import { clientIp, tooFast } from "@/lib/social";
 import { mediaUrl } from "@/lib/supabase";
-import { brandPack, demoSlug, filmLimits, filmSpend, musicTracks, setSetting } from "@/lib/site";
+import { brandPack, demoSlug, filmLimits, filmSpend, musicTracks, sampleFilm, setSetting } from "@/lib/site";
+import { defaultVoices, speak } from "@/lib/director";
+import { SAMPLE_LINES } from "@/lib/sampleLines";
 import { approveInvite, listInvites, ownerEmail } from "@/lib/invites";
 import { inviteApprovedEmail, mailConfigured, mailSetup, sendOne, testEmail } from "@/lib/email";
 import { siteOrigin } from "@/lib/server-data";
@@ -46,7 +48,7 @@ export async function GET() {
     return out;
   };
   const [players, rounds, posts] = await Promise.all([count("players"), count("rounds"), count("posts")]);
-  const [brand, music, limits, spend, invites, demo] = await Promise.all([brandPack(), musicTracks(), filmLimits(), filmSpend(), listInvites(), demoSlug()]);
+  const [brand, music, limits, spend, invites, demo, sample] = await Promise.all([brandPack(), musicTracks(), filmLimits(), filmSpend(), listInvites(), demoSlug(), sampleFilm()]);
   return json({
     owner: true,
     invites,
@@ -57,6 +59,8 @@ export async function GET() {
         Object.entries(brand).map(([slot, shapes]) => [slot, Object.fromEntries(Object.entries(shapes ?? {}).map(([shape, c]) => [shape, c ? { ...c, src: mediaUrl(c.path) } : null]))]),
       ),
       music: music.map((m) => ({ ...m, src: mediaUrl(m.path) })),
+      sample: sample ? { at: sample.at, lines: sample.lines.map((l) => ({ text: l.text, sec: l.sec, src: mediaUrl(l.path) })) } : null,
+      voice: !!process.env.ELEVENLABS_API_KEY,
       limits,
       spend,
     },
@@ -126,6 +130,33 @@ export async function POST(req: Request) {
     const gone = music.find((m) => m.id === b.trackId);
     await removeFile(gone?.path);
     await setSetting("music", music.filter((m) => m.id !== b.trackId));
+    return json({ ok: true });
+  }
+  // ---- the front page's sample round: record its commentary in the film's two voices
+  if (b.action === "makeSampleFilm") {
+    if (!process.env.ELEVENLABS_API_KEY) return bad("The film's voices aren't set up: ELEVENLABS_API_KEY is missing in Vercel.");
+    const voices = defaultVoices();
+    const stamp = Date.now().toString(36);
+    let lines: { path: string; sec: number; text: string }[];
+    try {
+      lines = [];
+      // One at a time, so the voice service isn't asked for four at once
+      for (const [i, l] of SAMPLE_LINES.entries()) {
+        const path = `audio/site/sample-${stamp}-${i + 1}.mp3`;
+        const r = await speak("site", l.text, voices[l.voice], path);
+        lines.push({ path, sec: r.sec, text: l.text });
+      }
+    } catch (e) {
+      return bad(e instanceof Error ? e.message : "The voices didn't record", 502);
+    }
+    // The last recordings stay a while (pages already open may still be playing them); the ones before go
+    const old = await sampleFilm();
+    try {
+      await setSetting("sample", { lines, at: new Date().toISOString(), previous: (old?.lines ?? []).map((l) => l.path) });
+    } catch (e) {
+      return bad(e instanceof Error ? e.message : "Didn't save", 500);
+    }
+    for (const path of old?.previous ?? []) await removeFile(path);
     return json({ ok: true });
   }
   // ---- email: send a test and report exactly what happened

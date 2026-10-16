@@ -19,6 +19,8 @@ export interface SampleKit {
   spot: (hole: number) => [number, number] | null;
   /** What the voice note "hears" */
   note: string;
+  /** Players whose scores are already in: shown, not changed */
+  locked?: string[];
 }
 
 interface Ctx extends LiveTournament {

@@ -330,7 +330,7 @@ export function ShotCard({
             </button>
           </div>
         )}
-        {!prompt && gross != null && <p className="sc-hint">Tap any shot to say what happened. {sample ? "In the sample, nothing leaves this phone." : "Everything here is saved as it is."}</p>}
+        {!prompt && gross != null && <p className="sc-hint">Tap any shot to say what happened. {sample ? "In the sample, nothing is saved." : "Everything here is saved as it is."}</p>}
 
         <ol className="sc-rows">
           {rows.map((r) => {

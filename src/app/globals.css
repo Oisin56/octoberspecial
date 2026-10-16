@@ -1200,6 +1200,14 @@ table.card.compact .shotdot { display: none; }
 .ss-val small { font-size: 13px; font-weight: 600; letter-spacing: 0.01em; color: var(--ink-soft); }
 .score-step.is-empty .ss-val { border-style: dashed; border-color: var(--rule); background: transparent; }
 .score-step.is-empty .ss-val .v { color: color-mix(in srgb, var(--ink) 32%, transparent); }
+/* The sample round: the others' scores are already in (shown, not changed), so yours stands out */
+.pscore.is-locked { display: flex; align-items: center; gap: 12px; padding-top: 12px; padding-bottom: 12px; }
+.pscore.is-locked .pwho { flex: 1; min-width: 0; }
+.pscore.is-locked .pname { color: var(--ink-soft); display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.already { font: 600 14px/1 var(--font-display); color: var(--ink-soft); padding: 5px 10px; border-radius: 999px; border: 1px solid var(--rule); white-space: nowrap; }
+.score-step.is-locked { display: block; margin: 0; }
+.score-step.is-locked .ss-val { width: 118px; height: 56px; border: 0; background: var(--mist); cursor: default; }
+.score-step.is-locked .ss-val .v { font-size: 28px; }
 .gave-up { margin: 8px 0 0; height: 58px; display: flex; align-items: center; justify-content: center; border-radius: 12px; background: var(--mist); font-family: var(--font-display); font-size: 20px; font-weight: 600; color: var(--ink-soft); }
 .hole-result { text-align: center; font-family: var(--font-display); font-size: 19px; font-weight: 700; margin: 10px 0 0; }
 .hole-sheet .grid.numbers { grid-template-columns: repeat(5, 1fr); }
@@ -1570,16 +1578,18 @@ html.has-tabbar .made-with { display: none; }
 .gps-tab.hidden { display: none; }
 /* Saying what happened on the hole just played: the tab steps aside until you're on to the next */
 body:has(.shotcard) .gps-tab { display: none; }
-/* Room for the tab on a phone, so it never sits on a button */
-@media (max-width: 700px) { body:has(.gps-tab:not(.hidden)):not(:has(.shotcard)) main.wrap { padding-right: 50px; } }
+/* The tab sits over the scorecard: drag it up or down to wherever it's out of the way, or pull it left */
+.gps-tab { touch-action: none; user-select: none; -webkit-user-select: none; }
+.gps-tab.dragging { box-shadow: -6px 10px 26px -6px rgba(0, 0, 0, 0.55); cursor: grabbing; }
 .gps-tab-k { writing-mode: vertical-rl; transform: rotate(180deg); font-size: 20px; font-weight: 800; letter-spacing: 0.06em; }
 .gps-tab-v { font-size: 16px; font-weight: 800; line-height: 1; padding: 3px 2px; border-radius: 8px; background: rgba(255, 255, 255, 0.85); color: var(--ink); }
 .gps-tab:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
 .gps-back { position: fixed; inset: 0; z-index: 97; background: rgba(0, 0, 0, 0.35); }
 .gps-panel { position: absolute; top: 0; right: 0; bottom: 0; width: min(92vw, 420px); background: var(--board); color: #fff; display: flex; flex-direction: column; gap: 14px;
-  padding: calc(16px + env(safe-area-inset-top)) 18px calc(16px + env(safe-area-inset-bottom)); box-shadow: -12px 0 32px -8px rgba(0, 0, 0, 0.5); animation: gps-in 0.18s ease-out; overflow-y: auto; }
-@keyframes gps-in { from { transform: translateX(40px); opacity: 0; } }
-@media (prefers-reduced-motion: reduce) { .gps-panel { animation: none; } }
+  padding: calc(16px + env(safe-area-inset-top)) 18px calc(16px + env(safe-area-inset-bottom)); box-shadow: -12px 0 32px -8px rgba(0, 0, 0, 0.5); overflow-y: auto; touch-action: pan-y; transition: transform 0.2s ease-out; }
+.gps-back { transition: opacity 0.2s ease-out; }
+.gps-panel.dragging, .gps-back.dragging { transition: none; }
+@media (prefers-reduced-motion: reduce) { .gps-panel, .gps-back { transition: none; } }
 .gps-head { display: grid; grid-template-columns: 56px 1fr 56px; align-items: center; gap: 8px; }
 .gps-nav { appearance: none; height: 56px; border-radius: 14px; border: 0; background: rgba(255, 255, 255, 0.12); color: #fff; font-size: 34px; cursor: pointer; }
 .gps-nav:disabled { opacity: 0.3; }
@@ -2103,15 +2113,10 @@ textarea.fr-input { resize: vertical; }
 .sr-root .shotcard, .sr-root .hole-sheet, .sr-root .moments, .sr-root .gps-back, .sr-root .sf-sheet-wrap, .sr-root .sheet-back { top: var(--sr-bar); }
 .sr-main { padding-top: 6px; }
 .sr-root .install-hint { display: none; }
-.sr-record { position: fixed; inset: var(--sr-bar) 0 0 0; z-index: 110; background: #000; display: flex; flex-direction: column; }
-.sr-record-video { flex: 1; min-height: 0; width: 100%; object-fit: cover; }
-.sr-rec { position: absolute; top: 14px; left: 14px; display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px; background: rgba(0, 0, 0, 0.55); color: #fff; font: 700 17px var(--font-display); }
-.sr-rec::before { content: ""; width: 10px; height: 10px; border-radius: 50%; background: var(--red); }
-.sr-record-actions { display: grid; gap: 8px; padding: 12px 14px calc(14px + env(safe-area-inset-bottom)); background: #000; }
-.sr-record-actions .btn.secondary { background: transparent; color: #fff; box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.5); }
-.sr-highlight .sr-next { position: fixed; right: 12px; top: calc(10px + env(safe-area-inset-top)); z-index: 115; font-size: 18px; padding: 9px 18px; border-radius: 999px;
-  background: color-mix(in srgb, #a8741f 70%, #ffd76a); color: #13261a; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45); }
 .sr-feed { padding-top: 16px; padding-bottom: 48px; }
+/* The sample's feed: what would lead to the tournament's other pages isn't offered (the clip plays the film again) */
+.sr-feed .sf-live { pointer-events: none; }
+.sr-feed .sf-live-more, .sr-feed .sf-act.share, .sr-feed .sf-act.read, .sr-feed .sf-all { display: none; }
 .sr-again-big { margin-top: 24px; }
 .sr-fallback { min-height: 100svh; display: grid; place-items: center; align-content: center; gap: 12px; background: #000; color: #fff; padding: 16px; }
 .sr-fallback video { width: min(100%, 420px); max-height: 80svh; border-radius: 16px; }
@@ -2137,3 +2142,71 @@ textarea.fr-input { resize: vertical; }
 .tr-phone { width: 410px; height: min(864px, calc(100svh - 120px)); border-radius: 48px; padding: 10px; background: #0a0f0c;
   box-shadow: 0 50px 90px -40px rgba(0, 0, 0, 0.8), inset 0 0 0 1.5px rgba(255, 255, 255, 0.1); }
 .tr-phone iframe { display: block; width: 100%; height: 100%; border: 0; border-radius: 38px; background: var(--mist); }
+
+/* ---- The sample round's highlight, as it looks in the film. The graphics follow the film's own (api/director/card)
+   at the same sizes and places (broadcastLayout's upright zones), in units of the 1080-wide frame: --u. */
+@font-face { font-family: "Inter Film"; font-weight: 600; font-display: swap; src: url("/fonts/inter-latin-600-normal.woff") format("woff"); }
+@font-face { font-family: "Inter Film"; font-weight: 800; font-display: swap; src: url("/fonts/inter-latin-800-normal.woff") format("woff"); }
+.fm-film { display: flex; align-items: center; justify-content: center; background: #000; --film-body: "Inter Film", system-ui, sans-serif; }
+.fm-frame { position: relative; width: min(100vw, calc(100dvh * 9 / 16)); aspect-ratio: 9 / 16; overflow: hidden; container-type: size; --u: calc(100cqw / 1080); background: #000; cursor: pointer; }
+.fm-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.fm-label { position: fixed; z-index: 3; top: calc(12px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); white-space: nowrap; padding: 6px 12px; border-radius: 999px; background: rgba(0, 0, 0, 0.5); font: 600 15px var(--font-display); color: rgba(255, 255, 255, 0.86); pointer-events: none; }
+.fm-rail { z-index: 4; }
+.fm-frame .fm-hint { top: auto; bottom: calc(250 * var(--u)); }
+.fm-hint.is-fading { animation: fm-hint 4.5s ease forwards; }
+@keyframes fm-hint { 0%, 80% { opacity: 1; } 100% { opacity: 0; visibility: hidden; } }
+.fm-frame .fm-progress { top: 0; bottom: auto; }
+/* The sample's bar stays along the top, so Start again and Close are always there */
+.sr-root .fm-film { top: var(--sr-bar); }
+.sr-root .fm-frame { width: min(100vw, calc((100dvh - var(--sr-bar)) * 9 / 16)); }
+.sr-root .fm-label { top: calc(var(--sr-bar) + 12px); }
+.fm-next { position: fixed; z-index: 4; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom)); transform: translateX(-50%); font-size: 18px; padding: 11px 26px; border-radius: 999px; white-space: nowrap; }
+.fm-end { position: fixed; inset: 0; z-index: 4; display: grid; place-content: center; gap: 12px; background: rgba(0, 0, 0, 0.32); pointer-events: none; }
+.fm-end .btn { pointer-events: auto; min-width: 220px; font-size: 19px; border-radius: 999px; }
+.fm-end .btn.secondary { background: rgba(255, 255, 255, 0.92); }
+
+.fb-bug { position: absolute; left: calc(412 * var(--u)); top: calc(170 * var(--u)); width: calc(620 * var(--u)); border-radius: calc(22 * var(--u)); overflow: hidden; color: #fff;
+  background: rgba(10, 16, 13, 0.84); border: calc(1.5 * var(--u)) solid rgba(255, 255, 255, 0.14); box-shadow: 0 calc(16 * var(--u)) calc(44 * var(--u)) rgba(0, 0, 0, 0.42);
+  opacity: 0; transform: translateX(calc(48 * var(--u))); transition: opacity 0.35s ease, transform 0.5s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.fb-bug.is-in { opacity: 1; transform: none; }
+.fb-head { display: flex; align-items: baseline; padding: calc(10 * var(--u)) calc(22 * var(--u)); background-image: linear-gradient(90deg, rgba(13, 81, 52, 0.95), rgba(13, 81, 52, 0.55)); }
+.fb-hole { font: 700 calc(44 * var(--u)) / 1 var(--font-display); }
+.fb-par { margin-left: calc(14 * var(--u)); font: 600 calc(22 * var(--u)) / 1 var(--film-body); color: rgba(255, 255, 255, 0.8); }
+.fb-kind { margin-left: auto; font: 600 calc(20 * var(--u)) / 1 var(--film-body); letter-spacing: calc(2 * var(--u)); color: #f2cf3c; }
+.fb-rows { display: flex; flex-direction: column; padding: calc(6 * var(--u)) 0 calc(8 * var(--u)); animation: fb-rows 0.5s ease; }
+@keyframes fb-rows { from { opacity: 0.15; } }
+.fb-row { display: flex; align-items: center; height: calc(54 * var(--u)); margin: calc(2 * var(--u)) calc(10 * var(--u)); padding: 0 calc(12 * var(--u)); border-radius: calc(12 * var(--u)); }
+.fb-row.is-cam { background-image: linear-gradient(90deg, #c8102e, #820a1e); }
+.fb-pos { width: calc(58 * var(--u)); font: 700 calc(30 * var(--u)) / 1 var(--font-display); color: #f2cf3c; }
+.fb-row.is-cam .fb-pos { color: #fff; }
+.fb-name { flex: 1; font: 700 calc(34 * var(--u)) / 1 var(--font-display); }
+.fb-val { min-width: calc(120 * var(--u)); text-align: right; font: 700 calc(36 * var(--u)) / 1 var(--font-display); }
+.fb-row.is-lead .fb-val { color: #e17c8c; }
+.fb-thru { width: calc(62 * var(--u)); text-align: right; font: 600 calc(21 * var(--u)) / 1 var(--film-body); color: rgba(255, 255, 255, 0.7); }
+
+.fb-flash { position: absolute; left: calc(90 * var(--u)); top: calc(864 * var(--u)); width: calc(900 * var(--u)); height: calc(120 * var(--u)); display: flex; align-items: center; justify-content: center; pointer-events: none; }
+.fb-flash span { font: 700 calc(66 * var(--u)) / 1 var(--font-display); letter-spacing: calc(3 * var(--u)); color: #fff; padding: calc(12 * var(--u)) calc(38 * var(--u)) calc(10 * var(--u)); border-radius: 999px;
+  background-image: linear-gradient(90deg, #c8102e, #de3a37); box-shadow: 0 calc(10 * var(--u)) calc(30 * var(--u)) rgba(200, 16, 46, 0.45); animation: fb-flash 1.9s cubic-bezier(0.2, 0.9, 0.25, 1.2) both; }
+@keyframes fb-flash { 0% { transform: scale(0.55); opacity: 0; } 14% { transform: scale(1.06); opacity: 1; } 24% { transform: scale(1); } 86% { transform: scale(1); opacity: 1; } 100% { transform: scale(0.97); opacity: 0; } }
+
+.fb-strap { position: absolute; left: calc(60 * var(--u)); width: calc(960 * var(--u)); bottom: calc(420 * var(--u)); display: flex; justify-content: center; pointer-events: none; }
+.fb-strap-card { display: flex; flex-direction: column; border-radius: calc(18 * var(--u)); overflow: hidden; box-shadow: 0 calc(16 * var(--u)) calc(44 * var(--u)) rgba(0, 0, 0, 0.45); animation: fb-strap 0.55s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+@keyframes fb-strap { from { clip-path: inset(0 100% 0 0); transform: translateY(calc(12 * var(--u))); } to { clip-path: inset(0 0 0 0); transform: none; } }
+.fb-strap-rule { display: block; height: calc(7 * var(--u)); background-image: linear-gradient(90deg, #c8102e, #f2cf3c); }
+.fb-strap-body { display: flex; align-items: stretch; }
+.fb-strap-hole { display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: calc(150 * var(--u)); padding: calc(10 * var(--u)) calc(24 * var(--u)); background-image: linear-gradient(160deg, #cf2d47, #820a1e); color: #fff; }
+.fb-strap-hole small { font: 600 calc(22 * var(--u)) / 1.2 var(--film-body); letter-spacing: calc(3 * var(--u)); color: rgba(255, 255, 255, 0.85); }
+.fb-strap-hole b { font: 700 calc(96 * var(--u)) / 0.95 var(--font-display); }
+.fb-strap-text { display: flex; flex-direction: column; justify-content: center; padding: calc(18 * var(--u)) calc(36 * var(--u)) calc(20 * var(--u)); background-image: linear-gradient(90deg, rgba(10, 16, 13, 0.92), rgba(10, 16, 13, 0.72)); color: #fff; }
+.fb-strap-text b { font: 700 calc(76 * var(--u)) / 1 var(--font-display); letter-spacing: calc(0.5 * var(--u)); }
+.fb-strap-text small { margin-top: calc(8 * var(--u)); font: 600 calc(32 * var(--u)) / 1.1 var(--film-body); color: #f2cf3c; }
+@media (prefers-reduced-motion: reduce) { .fb-bug, .fb-rows, .fb-flash span, .fb-strap-card { transition: none; animation: none; } }
+
+/* The sample's Clip button: where the camera would open */
+.sr-cam { position: fixed; inset: var(--sr-bar) 0 0; z-index: 99; display: grid; place-items: end center; background: rgba(0, 0, 0, 0.55); padding: 16px 16px calc(16px + env(safe-area-inset-bottom)); }
+.sr-cam-card { width: min(100%, 440px); background: var(--paper, #fff); color: var(--ink); border-radius: 22px; padding: 22px 20px 18px; display: grid; gap: 14px; box-shadow: 0 20px 50px -10px rgba(0, 0, 0, 0.5); }
+.sr-cam-card h2 { font-size: 26px; }
+.sr-cam-card p { margin: 0; font-size: 18px; line-height: 1.45; }
+.sr-cam-clip { display: grid; grid-template-columns: 74px 1fr; gap: 14px; align-items: center; padding: 10px; border-radius: 14px; background: var(--mist); }
+.sr-cam-clip img { width: 74px; height: 118px; object-fit: cover; border-radius: 10px; display: block; }
+.sr-cam-clip p { font-size: 17px; }

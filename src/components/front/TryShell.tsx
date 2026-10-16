@@ -55,12 +55,12 @@ function Shell() {
   return (
     <div className="theme-root tr" data-theme="clubhouse">
       <header className="tr-bar">
-        <Link href="/preview" className="tr-mark">
+        <Link href="/" className="tr-mark">
           {BRAND.mark[0]}
           <b>{BRAND.mark[1]}</b>
           {BRAND.mark[2]}
         </Link>
-        <Link href="/preview" className="tr-back">
+        <Link href="/" className="tr-back">
           Back to the front page
         </Link>
       </header>

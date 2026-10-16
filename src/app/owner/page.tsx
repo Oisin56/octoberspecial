@@ -10,6 +10,8 @@ import { mediaSeconds, uploadBlob } from "@/lib/upload";
 interface Films {
   brand: Partial<Record<BrandSlot, Partial<Record<Shape, { path: string; sec: number; src: string } | null>>>>;
   music: { id: string; name: string; mood: string; sec: number; src: string }[];
+  sample: { at: string; lines: { text: string; sec: number; src: string }[] } | null;
+  voice: boolean;
   limits: { monthlyCents: number; perTournament: number };
   spend: { cents: number; films: number };
 }
@@ -460,6 +462,43 @@ function FilmSettings({ films, post, reload }: { films: Films; post: Post; reloa
             </div>
           ))}
         </div>
+      </div>
+
+      <div className="panel stack">
+        <h3>Sample round</h3>
+        <p className="small">
+          The commentary on Declan&apos;s putt in the front page&apos;s sample round, in the film&apos;s two voices. Make it once (and again if you change the voices). The music under it is your first track
+          {films.music[0] ? ` (${films.music[0].name})` : ": there are none yet, so it plays without music"}.
+        </p>
+        {films.sample ? (
+          <ul className="owner-tracks">
+            {films.sample.lines.map((l, i) => (
+              <li key={i}>
+                <div>
+                  <strong>{l.text.replace(/\[[a-z ]+\]\s*/gi, "")}</strong>
+                  <small>{l.sec.toFixed(1)}s</small>
+                </div>
+                <audio src={l.src} controls preload="none" />
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="muted">Not made yet. Until it is, the sample plays with the clip&apos;s own sound{films.music[0] ? " and the music" : ""}.</p>
+        )}
+        <button
+          className="btn"
+          disabled={!!busy || !films.voice}
+          onClick={async () => {
+            setBusy("sample");
+            setMsg(null);
+            say(await post({ action: "makeSampleFilm" }), "Saved: the sample commentary is made");
+            setBusy(null);
+          }}
+        >
+          {busy === "sample" ? "Recording the voices…" : films.sample ? "Make the sample commentary again" : "Make the sample commentary"}
+        </button>
+        {!films.voice && <p className="small muted">Needs the film&apos;s voices: ELEVENLABS_API_KEY in Vercel.</p>}
+        {films.sample && <p className="small muted">Made {day(films.sample.at)}.</p>}
       </div>
 
       <div className="panel stack">

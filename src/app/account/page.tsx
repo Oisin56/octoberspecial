@@ -86,7 +86,7 @@ function AccountInner() {
                 {busy ? "Sending…" : "Email me a sign-in link"}
               </button>
               <p className="small muted" style={{ margin: 0 }}>
-                Players and followers don&apos;t need this: use the link the organiser sent you.
+                Players and followers don&apos;t need this: use the link the organiser sent you. <Link href="/join">Lost it?</Link>
               </p>
             </form>
           )

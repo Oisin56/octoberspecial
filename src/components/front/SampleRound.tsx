@@ -19,13 +19,15 @@ import { ThemeRoot } from "@/components/ThemeRoot";
 import { TabBar } from "@/components/TabBar";
 import { GpsTab } from "@/components/GpsTab";
 import ScoreScreen from "@/components/ScoreScreen";
-import { ReelFeed, feedItems } from "@/components/ReelFeed";
 import { SocialFeed } from "@/components/SocialFeed";
+import { SampleFilm } from "./SampleFilm";
 import { toEntries, toTournamentCfg, type TournamentState } from "@/lib/types";
 import { tournamentSummary } from "@/lib/engine";
 import { roundBoard } from "@/lib/live";
 import {
+  SAMPLE_CLIP_HOLE,
   SAMPLE_GEO,
+  SAMPLE_LOCKED,
   SAMPLE_NOTE,
   SAMPLE_POST_EVENT,
   SAMPLE_SLUG,
@@ -35,6 +37,7 @@ import {
   sampleReactions,
   sampleSpot,
   sampleState,
+  yourRoundDone,
 } from "@/lib/sample";
 
 export type SampleStep = "play" | "record" | "highlight" | "feed";
@@ -42,19 +45,19 @@ export type SampleStep = "play" | "record" | "highlight" | "feed";
 export const STEP_HELP: Record<SampleStep, { title: string; body: string }> = {
   play: {
     title: "Score three holes",
-    body: "Enter everyone's score with plus and minus. Tap GPS on the right for distances. After each hole, say what happened, or tap Clip.",
+    body: "You're playing with Declan and Marcus, and their scores are already in. Enter yours with plus and minus. Tap GPS on the right for distances. After each hole, say what happened.",
   },
   record: {
     title: "Film the shot",
-    body: "On the course this opens your camera. Here's one we filmed earlier.",
+    body: "On the course, Clip opens your camera. Marcus filmed Declan's putt on the 3rd.",
   },
   highlight: {
-    title: "The highlight",
-    body: "Your clip, as everyone at home sees it. In a real round, a version with TV graphics follows a few minutes later.",
+    title: "How it looks in the film",
+    body: "Declan's putt with the film's graphics, commentary and music. The leaderboard in the corner comes from the scores you entered.",
   },
   feed: {
     title: "What everyone at home saw",
-    body: "The leaderboard, the clip, a bulletin written from your scores, and what people said.",
+    body: "A bulletin written from your scores, the clip, and what people said. All of it as it happened.",
   },
 };
 
@@ -102,7 +105,6 @@ function Inner({ onStep }: { onStep?: (s: SampleStep) => void }) {
   const embed = sp.get("embed") === "1";
   const [state, setState] = useState<TournamentState | null>(null);
   const [step, setStep] = useState<SampleStep>("play");
-  const [recordHole, setRecordHole] = useState<number | null>(null);
   const [run, setRun] = useState(0);
   const [clipPath, setClipPath] = useState("/home/clips/putt.webm");
 
@@ -110,8 +112,9 @@ function Inner({ onStep }: { onStep?: (s: SampleStep) => void }) {
   useEffect(() => {
     clearLocal();
     const t = setTimeout(() => {
-      setClipPath(sampleClipPath());
-      setState(sampleState());
+      const clip = sampleClipPath();
+      setClipPath(clip);
+      setState(sampleState(clip));
       setStep("play");
     }, 0);
     return () => clearTimeout(t);
@@ -162,61 +165,47 @@ function Inner({ onStep }: { onStep?: (s: SampleStep) => void }) {
   const go = sp.get("go");
   const finish = useCallback(() => {
     patch((s) => {
-      let next = s;
-      // No clip filmed: someone in the group filmed one
-      if (!next.posts.some((p) => p.kind === "video")) {
-        const p = samplePost(next, {
-          kind: "video",
-          hole: 2,
-          body: "thirty feet on the 2nd",
-          mediaPath: clipPath,
-          playerIds: [next.players[1].id],
-        });
-        next = {
-          ...next,
-          posts: [
-            {
-              ...p,
-              author_name: next.players[2].name,
-              author_player_id: next.players[2].id,
-            },
-            ...next.posts,
-          ],
-        };
-      }
-      const cfg = toTournamentCfg(next);
-      const summary = tournamentSummary(cfg, toEntries(next.entries));
-      const field = roundBoard(next, summary, next.rounds[0]).field;
-      const { comments, piece } = sampleReactions(next, field);
+      const cfg = toTournamentCfg(s);
+      const summary = tournamentSummary(cfg, toEntries(s.entries));
+      const field = roundBoard(s, summary, s.rounds[0]).field;
+      const { comments, piece } = sampleReactions(s, field);
+      // The bulletin is the newest thing in the feed: your notes from the round come just before it
+      const before = new Date(Date.now() - 40e3).toISOString();
       return {
-        ...next,
+        ...s,
+        posts: s.posts.map((p) =>
+          p.kind === "note" && p.created_at > before
+            ? { ...p, created_at: before }
+            : p,
+        ),
         comments: [
           ...comments,
-          ...next.comments.filter((c) => !c.id.startsWith("sample-")),
+          ...s.comments.filter((c) => !c.id.startsWith("sample-")),
         ],
         pieces: [piece],
       };
     });
     setStep("highlight");
-  }, [patch, clipPath]);
+  }, [patch]);
   useEffect(() => {
     if (!go) return;
     const where = decodeURIComponent(go);
     const t = setTimeout(() => {
-      if (where.startsWith("/record")) {
-        const h = Number(
-          new URLSearchParams(where.split("?")[1] ?? "").get("hole"),
-        );
-        setRecordHole(Number.isFinite(h) && h > 0 ? h : 1);
+      if (where.startsWith("/highlights")) {
+        // The clip in the feed: the film again
+        if (step === "feed") setStep("highlight");
+      } else if (step === "feed") {
+        // The feed's other links go to pages the sample doesn't have: stay put
+      } else if (where.startsWith("/record")) {
         setStep("record");
       } else if (where.startsWith("/live") || where === "/") {
-        if (state && state.entries.length >= state.rounds[0].holes.length)
-          finish();
+        // The end of the round (only once your score is in on every hole)
+        if (state && yourRoundDone(state)) finish();
       }
       router.replace(base.slice(0, -1), { scroll: false });
     }, 0);
     return () => clearTimeout(t);
-  }, [go, base, router, state, finish]);
+  }, [go, base, router, state, finish, step]);
 
   const value = useMemo<TournamentCtx | null>(() => {
     if (!state) return null;
@@ -239,34 +228,22 @@ function Inner({ onStep }: { onStep?: (s: SampleStep) => void }) {
       sessionReady: true,
       href,
       api: async () => ({ ok: true, status: 200, j: {} }),
-      sample: { geo: SAMPLE_GEO, spot: sampleSpot, note: SAMPLE_NOTE },
+      sample: {
+        geo: SAMPLE_GEO,
+        spot: sampleSpot,
+        note: SAMPLE_NOTE,
+        locked: SAMPLE_LOCKED,
+      },
     };
   }, [state, patch, href]);
 
   if (!value || !state) return <div className="sr-loading" aria-busy="true" />;
 
-  const keepClip = () => {
-    patch((s) => ({
-      ...s,
-      posts: [
-        samplePost(s, {
-          kind: "video",
-          hole: recordHole,
-          body: "from thirty feet",
-          mediaPath: clipPath,
-        }),
-        ...s.posts,
-      ],
-    }));
-    setStep("play");
-  };
-
   return (
     <SampleProviders value={value}>
       <ThemeRoot>
         <div className={`sr-root${embed ? " is-embed" : ""}`}>
-          {/* The highlight is full screen, as in the app: its own button leads on */}
-          {step !== "highlight" && (
+          {(
             <div className="sr-bar" role="note">
               <span>
                 <b>Sample round.</b> Nothing is saved.
@@ -280,7 +257,7 @@ function Inner({ onStep }: { onStep?: (s: SampleStep) => void }) {
               </button>
               {!embed && (
                 <Link
-                  href="/preview"
+                  href="/"
                   className="sr-close"
                   aria-label="Back to the front page"
                 >
@@ -301,24 +278,31 @@ function Inner({ onStep }: { onStep?: (s: SampleStep) => void }) {
           )}
 
           {step === "record" && (
-            <div className="sr-record" role="dialog" aria-label="Your clip">
-              <video
-                src={clipPath}
-                poster="/home/clips/putt.jpg"
-                autoPlay
-                muted
-                playsInline
-                loop
-                className="sr-record-video"
-              />
-              <span className="sr-rec">Hole {recordHole}</span>
-              <div className="sr-record-actions">
-                <button type="button" className="btn block" onClick={keepClip}>
-                  Post it
-                </button>
+            <div
+              className="sr-cam"
+              role="dialog"
+              aria-label="Where your camera opens"
+              onClick={() => setStep("play")}
+            >
+              <div className="sr-cam-card" onClick={(e) => e.stopPropagation()}>
+                <h2>Your camera opens here</h2>
+                <p>
+                  On the course, Clip opens your phone&apos;s camera. Film the
+                  shot, trim it if you like, and it&apos;s in the feed for
+                  everyone at home.
+                </p>
+                <div className="sr-cam-clip">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src="/home/clips/putt.jpg" alt="" />
+                  <p>
+                    In this round, Marcus filmed Declan&apos;s putt on the{" "}
+                    {SAMPLE_CLIP_HOLE === 3 ? "3rd" : `hole ${SAMPLE_CLIP_HOLE}`}.
+                    You&apos;ll see it at the end.
+                  </p>
+                </div>
                 <button
                   type="button"
-                  className="btn secondary block"
+                  className="btn block big"
                   onClick={() => setStep("play")}
                 >
                   Back to the scorecard
@@ -328,23 +312,11 @@ function Inner({ onStep }: { onStep?: (s: SampleStep) => void }) {
           )}
 
           {step === "highlight" && (
-            <div className="sr-highlight">
-              <ReelFeed
-                items={feedItems(state, null)}
-                state={state}
-                tournamentName={state.tournament.name}
-                backHref={base.slice(0, -1)}
-                api={value.api}
-                refresh={() => {}}
-              />
-              <button
-                type="button"
-                className="btn sr-next"
-                onClick={() => setStep("feed")}
-              >
-                See the feed
-              </button>
-            </div>
+            <SampleFilm
+              state={state}
+              clipPath={clipPath}
+              onFeed={() => setStep("feed")}
+            />
           )}
 
           {step === "feed" && (

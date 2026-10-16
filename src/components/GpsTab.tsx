@@ -1,9 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { useT } from "./Providers";
-import { useSwipe } from "@/lib/useSwipe";
 import {
   greenYards,
   inUnits,
@@ -19,6 +18,11 @@ import { isIPhone } from "@/lib/camera";
 type Units = "yards" | "metres";
 const UNITS_KEY = "mgs-units";
 const TIP_KEY = "mgs-gps-tip";
+/** Where the tab was last left on the right edge (its middle, as a share of the screen's height) */
+const POS_KEY = "mgs-gps-y";
+/** Movement (px) before a touch counts as a drag rather than a tap */
+const SLOP = 8;
+const panelWidth = () => Math.min(window.innerWidth * 0.92, 420);
 /** Worse than this (metres) and the numbers may be out */
 const WEAK = 15;
 
@@ -30,8 +34,10 @@ interface Fix {
 }
 
 /**
- * GPS during a live round: a big labelled tab on the right edge. Tap it (or swipe the panel) for the front,
- * middle and back of the green. Each measurement is kept against your next shot on that hole.
+ * GPS during a live round: a big labelled tab on the right edge, over the scorecard. Tap it, or pull it left
+ * and the panel follows the finger, for the front, middle and back of the green; push the panel right to put it
+ * away. Drag the tab up or down to wherever it's out of the way: it stays there. Each measurement is kept against
+ * your next shot on that hole.
  */
 export function GpsTab() {
   const { state, session, slug, sample } = useT();
@@ -46,6 +52,13 @@ export function GpsTab() {
   const [err, setErr] = useState<"denied" | "unavailable" | "far" | null>(null);
   const [units, setUnits] = useState<Units>("yards");
   const [tip, setTip] = useState(false);
+  // The tab's height on the edge (its middle, share of the screen), and how far the panel is pushed off (px; 0 = open)
+  const [tabY, setTabY] = useState<number | null>(null);
+  const [slide, setSlide] = useState(0);
+  const [dragging, setDragging] = useState(false);
+  const gesture = useRef<{ x: number; y: number; t: number; y0: number; mode: "tap" | "move" | "pull" | "push"; w: number } | null>(null);
+  const tabRef = useRef<HTMLButtonElement>(null);
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // The last reading kept: measuring again on the same spot doesn't add another
   const [last, setLast] = useState<{ hole: number; at: [number, number]; t: number } | null>(null);
 
@@ -79,6 +92,16 @@ export function GpsTab() {
       clearTimeout(t);
     };
   }, [round, crew, slug, sample]);
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+      try {
+        const y = Number(localStorage.getItem(POS_KEY));
+        if (y > 0 && y < 1) setTabY(y);
+      } catch {}
+    }, 0);
+    return () => clearTimeout(t);
+  }, []);
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -188,18 +211,133 @@ export function GpsTab() {
     );
   };
 
-  const show = () => {
+  /** Open the panel (from `from` px off the edge: 0 = all the way in) and measure the hole the card is on. */
+  const show = (from = 0) => {
     // The hole the scorecard is on (it moves on as the card does); the arrows are for when that's wrong
     const h = startHole() ?? hole;
-    if (h == null) return;
+    if (h == null) return false;
+    if (closeTimer.current) clearTimeout(closeTimer.current);
     setHole(h);
+    setSlide(from);
     setOpen(true);
     measure(h);
     try {
       if (isIPhone() && !localStorage.getItem(TIP_KEY)) setTip(true);
     } catch {}
+    return true;
   };
-  const swipe = useSwipe({ onRight: () => setOpen(false) });
+  /** Slide the panel away, then take it off the screen. */
+  const hide = () => {
+    setDragging(false);
+    setSlide(panelWidth());
+    if (closeTimer.current) clearTimeout(closeTimer.current);
+    closeTimer.current = setTimeout(() => {
+      setOpen(false);
+      setSlide(0);
+    }, 200);
+  };
+  /** Let go of a pull or a push: past a third of the way (or flicked), it goes; otherwise it springs back. */
+  const settle = (dx: number, w: number, ms: number) => {
+    setDragging(false);
+    const quick = Math.abs(dx) > 40 && ms < 250;
+    const shown = w - slideFor(dx, w);
+    if (gesture.current?.mode === "pull") return shown > w / 3 || (quick && dx < 0) ? setSlide(0) : hide();
+    return w - shown > w / 3 || (quick && dx > 0) ? hide() : setSlide(0);
+  };
+  const slideFor = (dx: number, w: number) => (gesture.current?.mode === "pull" ? Math.max(0, Math.min(w, w + dx)) : Math.max(0, Math.min(w, dx)));
+
+  // The tab: tap to open; pull left to slide the panel out with the finger; drag up or down to move it
+  const tabHandlers = {
+    onPointerDown(e: React.PointerEvent<HTMLButtonElement>) {
+      const r = e.currentTarget.getBoundingClientRect();
+      gesture.current = { x: e.clientX, y: e.clientY, t: Date.now(), y0: r.top + r.height / 2, mode: "tap", w: panelWidth() };
+    },
+    onPointerMove(e: React.PointerEvent<HTMLButtonElement>) {
+      const g = gesture.current;
+      if (!g) return;
+      const dx = e.clientX - g.x;
+      const dy = e.clientY - g.y;
+      if (g.mode === "tap") {
+        if (Math.abs(dx) < SLOP && Math.abs(dy) < SLOP) return;
+        e.currentTarget.setPointerCapture?.(e.pointerId);
+        if (dx < 0 && Math.abs(dx) > Math.abs(dy)) {
+          g.mode = "pull";
+          if (!show(g.w)) return (gesture.current = null);
+        } else g.mode = "move";
+        setDragging(true);
+      }
+      if (g.mode === "pull") setSlide(slideFor(dx, g.w));
+      else {
+        const half = (tabRef.current?.offsetHeight ?? 104) / 2;
+        // Between the top of the screen and the bar along the bottom
+        const top = 64 + half;
+        const bar = document.querySelector(".oncourse")?.getBoundingClientRect().top ?? window.innerHeight;
+        const bottom = Math.min(bar, window.innerHeight) - 12 - half;
+        setTabY(Math.max(top, Math.min(bottom, g.y0 + dy)) / window.innerHeight);
+      }
+    },
+    onPointerUp(e: React.PointerEvent<HTMLButtonElement>) {
+      const g = gesture.current;
+      if (!g) return;
+      if (g.mode === "pull") settle(e.clientX - g.x, g.w, Date.now() - g.t);
+      else if (g.mode === "move") {
+        setDragging(false);
+        try {
+          if (tabY != null) localStorage.setItem(POS_KEY, String(tabY));
+        } catch {}
+      }
+      // A tap is left to the click (so the keyboard opens it too)
+      if (g.mode !== "tap") setTimeout(() => (gesture.current = null), 0);
+    },
+    onPointerCancel() {
+      const g = gesture.current;
+      gesture.current = null;
+      setDragging(false);
+      if (g?.mode === "pull") hide();
+    },
+    onClick() {
+      const g = gesture.current;
+      gesture.current = null;
+      // Slides in from the edge, as it does when pulled
+      if ((!g || g.mode === "tap") && show(panelWidth())) requestAnimationFrame(() => requestAnimationFrame(() => setSlide(0)));
+    },
+  };
+  // The panel: push it right and it follows the finger; let go past a third and it's put away
+  const panelHandlers = {
+    onPointerDown(e: React.PointerEvent<HTMLElement>) {
+      if ((e.target as HTMLElement).closest("input, select, textarea")) return;
+      gesture.current = { x: e.clientX, y: e.clientY, t: Date.now(), y0: 0, mode: "tap", w: e.currentTarget.offsetWidth };
+    },
+    onPointerMove(e: React.PointerEvent<HTMLElement>) {
+      const g = gesture.current;
+      if (!g || g.mode === "move" || g.mode === "pull") return;
+      const dx = e.clientX - g.x;
+      const dy = e.clientY - g.y;
+      if (g.mode === "tap") {
+        if (Math.abs(dx) < SLOP * 2 && Math.abs(dy) < SLOP * 2) return;
+        // Up and down is a scroll, not a push
+        if (dx <= 0 || Math.abs(dy) > Math.abs(dx)) return (gesture.current = null);
+        g.mode = "push";
+        e.currentTarget.setPointerCapture?.(e.pointerId);
+        setDragging(true);
+      }
+      setSlide(slideFor(dx, g.w));
+    },
+    onPointerUp(e: React.PointerEvent<HTMLElement>) {
+      const g = gesture.current;
+      gesture.current = null;
+      if (g?.mode === "push") settle(e.clientX - g.x, g.w, Date.now() - g.t);
+    },
+    onPointerCancel() {
+      if (gesture.current?.mode === "push") setSlide(0);
+      gesture.current = null;
+      setDragging(false);
+    },
+    onClickCapture(e: React.MouseEvent) {
+      // The end of a push isn't a tap on whatever button it started on
+      if (dragging) e.stopPropagation();
+    },
+  };
   const setU = (u: Units) => {
     setUnits(u);
     try {
@@ -232,9 +370,11 @@ export function GpsTab() {
   return (
     <>
       <button
-        className={`gps-tab${open ? " hidden" : ""}`}
-        onClick={show}
-        aria-label="GPS distances to the green"
+        ref={tabRef}
+        className={`gps-tab${open ? " hidden" : ""}${dragging && !open ? " dragging" : ""}`}
+        style={tabY != null ? { top: `clamp(116px, ${(tabY * 100).toFixed(2)}%, calc(100% - var(--oc-h) - 64px))`, bottom: "auto", transform: "translateY(-50%)" } : undefined}
+        {...tabHandlers}
+        aria-label="GPS distances to the green. Drag up or down to move it."
       >
         <span className="gps-tab-k">GPS</span>
         {tabNumber != null && (
@@ -242,13 +382,14 @@ export function GpsTab() {
         )}
       </button>
       {open && (
-        <div className="gps-back" onClick={() => setOpen(false)}>
+        <div className={`gps-back${dragging ? " dragging" : ""}`} style={{ opacity: Math.max(0, 1 - slide / panelWidth()) }} onClick={hide}>
           <aside
-            className="gps-panel"
+            className={`gps-panel${dragging ? " dragging" : ""}`}
+            style={{ transform: `translateX(${slide}px)` }}
             role="dialog"
             aria-label={`Distances, hole ${hole}`}
             onClick={(e) => e.stopPropagation()}
-            {...swipe}
+            {...panelHandlers}
           >
             <div className="gps-head">
               <button
@@ -375,7 +516,7 @@ export function GpsTab() {
                 </button>
               </p>
             )}
-            <button className="gps-close" onClick={() => setOpen(false)}>
+            <button className="gps-close" onClick={hide}>
               Close <small>or swipe right</small>
             </button>
           </aside>

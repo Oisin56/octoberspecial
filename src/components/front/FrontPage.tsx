@@ -285,6 +285,7 @@ export async function FrontPage() {
       <footer className="bx-wrap bx-foot">
         <span>{BRAND.domain || BRAND.name}</span>
         <span className="bx-foot-links">
+          <Link href="/join">Join my tournament</Link>
           <Link href="/account">Sign in</Link>
           <Link href="/privacy">Privacy</Link>
           <span>Made in Ireland</span>

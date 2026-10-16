@@ -574,6 +574,27 @@ function ScoreInner() {
             const gaveUp = !!conceded && sideOfBall(b) === conceded;
             const label = ballName(b, game, state.players);
             const ptsHere = rcfg.scoring === "stableford" && !sc.pickedUp && sc.gross != null ? Math.max(0, 2 + h.par - (sc.gross - st)) : null;
+            // The sample round: the others' scores are already in, so only yours is entered
+            if (sample?.locked?.includes(b) && sc.gross != null)
+              return (
+                <section className="pscore entry is-locked" key={b} aria-label={`${label} score, already in`}>
+                  <span className="pwho">
+                    <span className="pname">
+                      {label} <span className="already">Already in</span>
+                    </span>
+                    <span className="shots">
+                      {st > 0 ? `${st} shot${st > 1 ? "s" : ""} here` : ""}
+                      {ptsHere != null ? `${st > 0 ? " · " : ""}${ptsHere} pt${ptsHere === 1 ? "" : "s"}` : ""}
+                    </span>
+                  </span>
+                  <span className="score-step is-locked" data-par={h.par} data-value={sc.gross}>
+                    <span className="ss-val">
+                      <span className="v">{sc.gross}</span>
+                      <small>{scoreWord(sc.gross, h.par)}</small>
+                    </span>
+                  </span>
+                </section>
+              );
             return (
               <section className="pscore entry" key={b} aria-label={`${label} score`}>
                 <div className="ptop">
@@ -643,7 +664,7 @@ function ScoreInner() {
       {missingAsk && (
         <div className="hole-sheet" role="dialog" aria-label="A score is missing">
           <p className="display" style={{ fontSize: 22, margin: 0 }}>
-            {missingAsk.length === 1 ? `${missingAsk[0]}'s score isn't in.` : `${missingAsk.slice(0, -1).join(", ")} and ${missingAsk[missingAsk.length - 1]}'s scores aren't in.`}
+            {missingAsk.length === 1 ? `${possessive(missingAsk[0])} score isn't in.` : `${missingAsk.slice(0, -1).join(", ")} and ${possessive(missingAsk[missingAsk.length - 1])} scores aren't in.`}
           </p>
           <button className="btn block" onClick={() => setMissingAsk(null)}>
             Enter {missingAsk.length === 1 ? "it" : "them"}
@@ -695,12 +716,12 @@ function ScoreInner() {
         <button className="btn block next-hole" onClick={next}>
           {nextNo != null ? `Next: hole ${nextNo}` : sample ? "Finish the round" : "Finish: check the card"}
           <small className={`saved-line${saved === "phone" ? " phone" : ""}`} aria-live="polite">
-            {msg ?? (sample ? "Sample round: kept on this phone only" : saved === "saving" ? "Saving…" : saved === "saved" ? "✓ Saved for everyone" : saved === "phone" ? "Saved on this phone. Sends when there's signal" : "Every tap is saved as you go")}
+            {msg ?? (sample ? "Sample round: nothing is saved" : saved === "saving" ? "Saving…" : saved === "saved" ? "✓ Saved for everyone" : saved === "phone" ? "Saved on this phone. Sends when there's signal" : "Every tap is saved as you go")}
           </small>
         </button>
 
         {err && <p className="queue error">{err}</p>}
-        {waiting > 0 && (
+        {waiting > 0 && !sample && (
           <p className="queue" style={{ color: "var(--bracken)" }}>
             {waiting} hole{waiting > 1 ? "s" : ""} waiting for signal.{" "}
             <button className="chip" onClick={syncQueue}>
@@ -825,6 +846,9 @@ export default function ScoreScreen() {
  * someone taps. Plus or minus records par plus or minus one; tapping the faded number records par. Tapping an entered
  * number opens the full list (any score, or clear it).
  */
+/** "Neil's", and "Your" for the sample round's "You" */
+const possessive = (name: string) => (name === "You" ? "Your" : `${name}'s`);
+
 function Stepper({ label, par, value, onSet, onOpen }: { label: string; par: number; value: number | null; onSet: (n: number) => void; onOpen: () => void }) {
   return (
     <div className={`score-step${value == null ? " is-empty" : ""}`} data-par={par} data-value={value ?? ""} role="group" aria-label={`${label}'s score`}>
