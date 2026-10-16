@@ -49,15 +49,6 @@ export async function POST(req: Request) {
   return json({ slug: data.slug });
 }
 
-/** Published tournaments, newest first; ?q= finds them by name (Join my tournament on the front page). */
-export async function GET(req: Request) {
-  const q = (new URL(req.url).searchParams.get("q") ?? "").trim().slice(0, 60);
-  let query = adminClient().from("public_tournaments").select("slug,name,subtitle,start_date,end_date").eq("published", true);
-  if (q) query = query.or(`name.ilike.%${q.replace(/[%_,().*\\]/g, " ").trim()}%,subtitle.ilike.%${q.replace(/[%_,().*\\]/g, " ").trim()}%`);
-  const { data } = await query.order("created_at", { ascending: false }).limit(q ? 8 : 50);
-  return json({ tournaments: data ?? [] });
-}
-
 /**
  * The setup wizard's "Create my tournament". Keeping it safe: the organiser's email (it goes into My tournaments,
  * with a sign-in link emailed) or an organiser PIN. Signed in already: it simply joins My tournaments.

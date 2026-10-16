@@ -55,6 +55,12 @@ export default function Privacy() {
         </ul>
         <p>You must be 16 or over to join a tournament.</p>
 
+        <h2>Who can see it</h2>
+        <p>
+          Only people you share a tournament&apos;s link with. There&apos;s no search for tournaments on this site, and tournament pages are kept out of search
+          engines like Google.
+        </p>
+
         <h2>Why</h2>
         <p>
           To run your tournament: the scoring, the leaderboard, the feed, the match reports, the emails you asked for and the highlights film. We don&apos;t sell
@@ -83,7 +89,7 @@ export default function Privacy() {
           you&apos;re not happy with our answer, you can complain to Ireland&apos;s <a href="https://www.dataprotection.ie">Data Protection Commission</a>.
         </p>
 
-        <p className="fr-quiet">Last updated 14 October 2026.</p>
+        <p className="fr-quiet">Last updated 16 October 2026.</p>
       </article>
     </BrandShell>
   );

@@ -1188,6 +1188,18 @@ table.card.compact .shotdot { display: none; }
 .num-tile[aria-pressed="true"] { background: var(--board); color: var(--tile, #fff); border-color: var(--board); }
 .num-tile.more { font-size: 17px; }
 .num-tile.more[aria-pressed="true"] { font-size: 30px; }
+/* the score stepper: minus, the number, plus. Faded par means "not entered yet" */
+.score-step { display: grid; grid-template-columns: 76px 1fr 76px; gap: 8px; margin-top: 8px; }
+.ss-btn { appearance: none; height: 64px; border-radius: 14px; border: 0; background: var(--board); color: var(--tile, #fff); font: 700 38px/1 var(--font-display); cursor: pointer; display: grid; place-items: center; padding: 0;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.12) inset, 0 4px 10px -6px color-mix(in srgb, var(--board) 80%, black); }
+.ss-btn:active:not(:disabled) { transform: scale(0.97); }
+.ss-btn:disabled { opacity: 0.35; cursor: default; }
+.ss-val { appearance: none; height: 64px; border-radius: 14px; border: 2px solid var(--board); background: var(--paper, #fff); color: var(--ink); cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; padding: 0; font-family: var(--font-display); }
+.ss-val .v { font-size: 36px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+.ss-val small { font-size: 13px; font-weight: 600; letter-spacing: 0.01em; color: var(--ink-soft); }
+.score-step.is-empty .ss-val { border-style: dashed; border-color: var(--rule); background: transparent; }
+.score-step.is-empty .ss-val .v { color: color-mix(in srgb, var(--ink) 32%, transparent); }
 .gave-up { margin: 8px 0 0; height: 58px; display: flex; align-items: center; justify-content: center; border-radius: 12px; background: var(--mist); font-family: var(--font-display); font-size: 20px; font-weight: 600; color: var(--ink-soft); }
 .hole-result { text-align: center; font-family: var(--font-display); font-size: 19px; font-weight: 700; margin: 10px 0 0; }
 .hole-sheet .grid.numbers { grid-template-columns: repeat(5, 1fr); }
@@ -1759,6 +1771,8 @@ body:has(.shotcard) .gps-tab { display: none; }
 .fr-recent { margin: 4px 0 16px; }
 .fr-recent h2 { font: 600 18px var(--font-display); color: color-mix(in srgb, var(--gold) 80%, white); margin: 0 0 8px; }
 .fr-recent-list { display: grid; gap: 8px; }
+.fr-page .fr-recent { margin: 8px 0 24px; }
+.fr-page .fr-recent h2 { color: var(--board); }
 .fr-recent-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 64px; padding: 10px 18px; border-radius: 14px;
   background: var(--gold); color: var(--on-gold, #1b1408); text-decoration: none; }
 .fr-recent-name { font: 700 22px/1.1 var(--font-display); }

@@ -16,7 +16,7 @@ import { CardPanel } from "@/components/CardPanel";
 import { cardInfo, gameComplete } from "@/lib/scorecards";
 import { fieldPosition, roundBoard } from "@/lib/live";
 import { ballName, sideLabel, toRoundCfg } from "@/lib/types";
-import { scoreTiles, scoreWord } from "@/lib/scoreEntry";
+import { scoreWord } from "@/lib/scoreEntry";
 
 type Draft = Record<string, BallHole>;
 
@@ -47,6 +47,8 @@ function ScoreInner() {
   const [review, setReview] = useState(false);
   const [waiting, setWaiting] = useState(0);
   const [msg, setMsg] = useState<string | null>(null);
+  /** Next was tapped with someone's score not in: whose, so we can ask before moving on */
+  const [missingAsk, setMissingAsk] = useState<string[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
   // Every tap is saved at once; the hole is "finished" (and news of it goes out) when the scorer moves on,
   // or after two quiet minutes
@@ -337,9 +339,26 @@ function ScoreInner() {
     changed();
   }
 
-  /** "Next": this hole is saved as it stands and you move on. A missing score is fine; the hole stays unfinished. */
+  /** "Next": if a score is missing, ask first (enter it, or skip and come back). Nothing is ever filled in for anyone. */
   function next() {
     if (!round || !game) return;
+    const d = latest.current.draft;
+    const touched = Object.values(d).some((x) => x.gross != null || x.pickedUp) || !!latest.current.conceded;
+    if (touched && !preview.complete) {
+      const missing = balls.filter((b) => {
+        const sc = d[b];
+        const gaveUp = !!latest.current.conceded && sideOfBall(b) === latest.current.conceded;
+        return !gaveUp && !sc?.pickedUp && sc?.gross == null;
+      });
+      if (missing.length) return setMissingAsk(missing.map((b) => ballName(b, game, state!.players)));
+    }
+    moveOn();
+  }
+
+  /** Save the hole as it stands and move on. A missing score is allowed; the hole stays unfinished. */
+  function moveOn() {
+    if (!round || !game) return;
+    setMissingAsk(null);
     const touched = Object.values(latest.current.draft).some((x) => x.gross != null || x.pickedUp) || !!latest.current.conceded;
     if (touched) {
       commit(hole!, true);
@@ -553,8 +572,6 @@ function ScoreInner() {
             const st = holeShots(rcfg, shots[b] ?? 0, h.number);
             const gaveUp = !!conceded && sideOfBall(b) === conceded;
             const label = ballName(b, game, state.players);
-            const tiles = scoreTiles(h.par);
-            const outside = sc.gross != null && !tiles.includes(sc.gross);
             const ptsHere = rcfg.scoring === "stableford" && !sc.pickedUp && sc.gross != null ? Math.max(0, 2 + h.par - (sc.gross - st)) : null;
             return (
               <section className="pscore entry" key={b} aria-label={`${label} score`}>
@@ -586,18 +603,7 @@ function ScoreInner() {
                 {gaveUp || sc.pickedUp ? (
                   <p className="gave-up">{gaveUp ? "Conceded the hole" : "Picked up"}</p>
                 ) : (
-                  <div className="num-tiles" role="group" aria-label={`${label}'s score`}>
-                    {tiles.map((n) => (
-                      <button key={n} className="num-tile" aria-pressed={sc.gross === n} onClick={() => setB(b, { gross: n, pickedUp: false })}>
-                        {n}
-                        {sc.gross === n && <small>{scoreWord(n, h.par)}</small>}
-                      </button>
-                    ))}
-                    <button className="num-tile more" aria-pressed={outside} aria-label={`${label}: another score`} onClick={() => setMore(b)}>
-                      {outside ? sc.gross : "More"}
-                      {outside && <small>{scoreWord(sc.gross!, h.par)}</small>}
-                    </button>
-                  </div>
+                  <Stepper label={label} par={h.par} value={sc.gross ?? null} onSet={(n) => setB(b, { gross: n, pickedUp: false })} onOpen={() => setMore(b)} />
                 )}
               </section>
             );
@@ -631,6 +637,20 @@ function ScoreInner() {
           {winnerText && <p className="hole-result">{winnerText}</p>}
           {oneBall && <p className="small muted" style={{ textAlign: "center" }}>One score per side: enter the team&apos;s score on the hole.</p>}
         </>
+      )}
+
+      {missingAsk && (
+        <div className="hole-sheet" role="dialog" aria-label="A score is missing">
+          <p className="display" style={{ fontSize: 22, margin: 0 }}>
+            {missingAsk.length === 1 ? `${missingAsk[0]}'s score isn't in.` : `${missingAsk.slice(0, -1).join(", ")} and ${missingAsk[missingAsk.length - 1]}'s scores aren't in.`}
+          </p>
+          <button className="btn block" onClick={() => setMissingAsk(null)}>
+            Enter {missingAsk.length === 1 ? "it" : "them"}
+          </button>
+          <button className="btn secondary block" onClick={moveOn}>
+            Skip for now and come back
+          </button>
+        </div>
       )}
 
       {more && (
@@ -795,5 +815,31 @@ export default function ScorePage() {
     <Suspense fallback={<Loading />}>
       <ScoreInner />
     </Suspense>
+  );
+}
+
+/**
+ * One player's score: minus, the number, plus. It starts on par, faded, meaning "not entered": nothing is saved until
+ * someone taps. Plus or minus records par plus or minus one; tapping the faded number records par. Tapping an entered
+ * number opens the full list (any score, or clear it).
+ */
+function Stepper({ label, par, value, onSet, onOpen }: { label: string; par: number; value: number | null; onSet: (n: number) => void; onOpen: () => void }) {
+  return (
+    <div className={`score-step${value == null ? " is-empty" : ""}`} data-par={par} data-value={value ?? ""} role="group" aria-label={`${label}'s score`}>
+      <button className="ss-btn ss-minus" aria-label={`${label}: one fewer`} disabled={value != null && value <= 1} onClick={() => onSet(value == null ? Math.max(1, par - 1) : Math.max(1, value - 1))}>
+        <span aria-hidden>&minus;</span>
+      </button>
+      <button
+        className="ss-val"
+        aria-label={value == null ? `${label}: not entered. Tap for par ${par}` : `${label}: ${value}, ${scoreWord(value, par).toLowerCase()}. Tap to choose another score`}
+        onClick={() => (value == null ? onSet(par) : onOpen())}
+      >
+        <span className="v">{value ?? par}</span>
+        <small>{value == null ? "Tap for par" : scoreWord(value, par)}</small>
+      </button>
+      <button className="ss-btn ss-plus" aria-label={`${label}: one more`} disabled={value != null && value >= 15} onClick={() => onSet(value == null ? par + 1 : Math.min(15, value + 1))}>
+        <span aria-hidden>+</span>
+      </button>
+    </div>
   );
 }

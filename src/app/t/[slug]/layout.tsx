@@ -21,6 +21,8 @@ export async function generateMetadata({ params }: LayoutProps<"/t/[slug]">): Pr
     manifest: `/t/${slug}/app.webmanifest`,
     appleWebApp: { capable: true, title: t?.name ?? BRAND.short, statusBarStyle: "default" },
     icons: { apple: "/api/app-icon?s=180" },
+    // Seen only by people given the link: kept out of search engines
+    robots: { index: false, follow: false },
   };
 }
 
