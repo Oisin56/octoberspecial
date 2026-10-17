@@ -1236,8 +1236,8 @@ table.card.compact .shotdot { display: none; }
 .pick-tile[aria-pressed="true"] { background: var(--board); color: var(--tile); border-color: var(--board); }
 
 /* ---- The camera: unmistakable while recording, zoom, the one-time iPhone tip */
-.cam.recording::after { content: ""; position: absolute; inset: 0; z-index: 3; pointer-events: none; box-shadow: inset 0 0 0 3px #ff3b30; animation: rec-pulse 1.2s ease-in-out infinite; }
-@keyframes rec-pulse { 50% { box-shadow: inset 0 0 0 3px rgba(255, 59, 48, 0.4); } }
+.cam.recording::after { content: ""; position: absolute; inset: 8px; z-index: 3; pointer-events: none; border: 3px solid #ff3b30; border-radius: 34px; animation: rec-pulse 1.2s ease-in-out infinite; }
+@keyframes rec-pulse { 50% { border-color: rgba(255, 59, 48, 0.45); } }
 .cam-rec-banner { position: relative; z-index: 4; align-self: center; margin-top: calc(14px + env(safe-area-inset-top)); display: flex; align-items: center; gap: 9px; background: #ff3b30; color: #fff; font-family: var(--font-display); font-size: 23px; font-weight: 700; letter-spacing: 0.04em; padding: 6px 16px; border-radius: 999px; box-shadow: 0 4px 18px rgba(0, 0, 0, 0.35); font-variant-numeric: tabular-nums; }
 .cam-rec-banner .dot { width: 12px; height: 12px; border-radius: 50%; background: #fff; animation: rec-dot 1s steps(2) infinite; }
 .cam-rec-banner.warn { background: #ffb020; color: var(--on-gold, #1b1408); }
@@ -2105,7 +2105,7 @@ textarea.fr-input { resize: vertical; }
 .bx-wide-only { display: inline; }
 @media (max-width: 520px) { .bx-wide-only { display: none; } }
 .fs-still.is-in .fb-strap-card { animation-delay: 0.9s; }
-.bx-studio-h { margin: 44px 0 0; font: 700 26px var(--font-display); color: #fff; }
+.bx-studio-h { margin: 48px 0 0; font: 700 clamp(30px, 3.4vw, 40px)/1.1 var(--font-display); color: #fff; }
 .bx-studio { margin: 16px 0 0; display: grid; gap: 22px; }
 .bx-studio dt { font: 700 24px var(--font-display); color: #fff; }
 .bx-studio dd { margin: 4px 0 0; font-size: 17px; line-height: 1.45; color: rgba(255, 255, 255, 0.78); max-width: 30ch; }
@@ -2128,12 +2128,23 @@ textarea.fr-input { resize: vertical; }
 .bx-theme figcaption { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; padding: 16px 2px 0; }
 .bx-theme figcaption b { font: 700 24px var(--font-display); color: #fff; }
 .bx-theme figcaption span { font-size: 17px; color: rgba(255, 255, 255, 0.72); }
-.bx-theme-nav { display: none; }
-@media (min-width: 960px) {
-  .bx-theme-nav { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
-  .bx-theme-nav button { width: 52px; height: 52px; border-radius: 50%; border: 1px solid rgba(255, 255, 255, 0.3); background: transparent; color: #fff; font: 600 28px/1 var(--font-display); cursor: pointer; }
-  .bx-theme-nav button:hover { background: rgba(255, 255, 255, 0.1); }
-}
+/* It's a carousel: the next look shows at the edge, arrows sit on the stage's sides, and dots count them off */
+.bx-theme-viewport { position: relative; }
+.bx-theme { cursor: pointer; transition: opacity 0.35s; }
+.bx-theme:not(.is-on) { opacity: 0.55; }
+.bx-theme.is-on { cursor: default; }
+.bx-theme-arrow { position: absolute; z-index: 2; top: calc(32px + min(90vw, 1080px) * 9 / 32); transform: translateY(-50%); width: 56px; height: 56px; border-radius: 50%; border: 0;
+  display: grid; place-items: center; background: #fff; color: var(--bx-night, #0b150f); box-shadow: 0 10px 30px -6px rgba(0, 0, 0, 0.5); cursor: pointer; transition: opacity 0.2s, transform 0.2s; }
+.bx-theme-arrow svg { width: 26px; height: 26px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.bx-theme-arrow.prev { left: max(8px, calc((100vw - 1160px) / 2 - 28px)); }
+.bx-theme-arrow.next { right: max(8px, calc((100vw - 1160px) / 2 - 28px)); }
+.bx-theme-arrow:disabled { opacity: 0; pointer-events: none; }
+.bx-theme-arrow:hover { transform: translateY(-50%) scale(1.06); }
+.bx-theme-dots { display: flex; align-items: center; gap: 10px; margin-top: 22px; }
+.bx-theme-dots button { width: 10px; height: 10px; padding: 0; border: 0; border-radius: 99px; background: rgba(255, 255, 255, 0.3); cursor: pointer; transition: width 0.3s, background 0.3s; }
+.bx-theme-dots button[aria-current="true"] { width: 30px; background: var(--gold, #c9a227); }
+.bx-theme-count { margin-left: 8px; font: 600 16px var(--font-display); color: rgba(255, 255, 255, 0.7); }
+@media (max-width: 700px) { .bx-theme-arrow { width: 44px; height: 44px; } .bx-theme-arrow svg { width: 22px; height: 22px; } }
 
 /* ---- everything that's included */
 .bx-all { padding: clamp(80px, 10vw, 128px) 0; }

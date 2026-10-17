@@ -22,14 +22,14 @@ const MADE_FOR = [
 
 const ON_COURSE = [
   { title: "No signal, no problem", body: "Scores wait on the phone and send when there's signal.", img: "/home/offline.jpg", alt: "The scorecard: saved on this phone, sends when there's signal" },
-  { title: "Yardages without a rangefinder", body: "Front, middle and back, from where you stand. Over 40,000 courses.", img: "/home/gps.jpg", alt: "Distances to the front, middle and back of the green" },
+  { title: "GPS yardages on demand", body: "Front, middle and back, from where you stand. Over 40,000 courses.", img: "/home/gps.jpg", alt: "Distances to the front, middle and back of the green" },
   { title: "Film the moment", body: "Anyone in the group can film. Trim it on the spot and it's straight on the feed.", img: "/home/record.jpg", alt: "Filming a putt on the course, recording" },
   { title: "One tap tells the story", body: "Say what happened with a tap or a voice note. Or skip it. The score is enough.", img: "/home/shotcard.jpg", alt: "What happened: the tee shot, with one-tap answers" },
   { title: "See where you stand", body: "The leaderboard moves as every group scores.", img: "/home/follow.jpg", alt: "The live leaderboard on the phone" },
 ];
 
 const AT_HOME = [
-  { icon: "board", title: "Live leaderboard", body: "It moves as each score goes in." },
+  { icon: "board", title: "Live leaderboard", body: "Moves as each score goes in." },
   { icon: "feed", title: "Feed and live bulletins", body: "Every clip, photo and note, with bulletins as it happens." },
   { icon: "clip", title: "Highlights", body: "Clips with TV graphics, to like and comment on." },
   { icon: "mail", title: "Previews and round reports", body: "In their inbox, before and after each round." },

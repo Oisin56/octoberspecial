@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { InView } from "./Broadcast";
 import { Phone } from "./Phone";
 import screens from "@/lib/screens.json";
@@ -110,40 +110,65 @@ const dims = screens as unknown as Record<string, { dark?: boolean; w?: number; 
 /** The looks, side by side: each one's leaderboard, and the tournament's home on a phone. */
 export function ThemeScroller({ themes }: { themes: readonly Theme[] }) {
   const track = useRef<HTMLDivElement>(null);
-  const move = (dir: 1 | -1) => {
+  const [at, setAt] = useState(0);
+  // Which look is in view, as the track is scrolled (by finger, arrows or dots)
+  useEffect(() => {
     const t = track.current;
     if (!t) return;
-    const card = t.querySelector<HTMLElement>(".bx-theme");
-    t.scrollBy({ left: dir * ((card?.offsetWidth ?? 600) + 24), behavior: "smooth" });
+    const on = () => {
+      const cards = [...t.querySelectorAll<HTMLElement>(".bx-theme")];
+      const left = t.scrollLeft + t.clientWidth * 0.3;
+      let i = 0;
+      cards.forEach((c, k) => {
+        if (c.offsetLeft - cards[0].offsetLeft <= left) i = k;
+      });
+      setAt(i);
+    };
+    t.addEventListener("scroll", on, { passive: true });
+    return () => t.removeEventListener("scroll", on);
+  }, []);
+  const go = (i: number) => {
+    const t = track.current;
+    const cards = t ? [...t.querySelectorAll<HTMLElement>(".bx-theme")] : [];
+    const c = cards[Math.max(0, Math.min(cards.length - 1, i))];
+    if (t && c) t.scrollTo({ left: c.offsetLeft - cards[0].offsetLeft, behavior: "smooth" });
   };
   return (
     <div className="bx-theme-wrap">
-      <div className="bx-theme-track" ref={track}>
-        {themes.map((t) => {
-          const b = dims[`theme-${t.id}-board`] ?? { w: 1200, h: 700 };
-          return (
-            <figure className="bx-theme" key={t.id}>
-              <div className="bx-theme-stage">
-                <div className="bx-theme-board">
-                  <Image src={`/home/theme-${t.id}-board.png`} width={b.w ?? 1200} height={b.h ?? 700} alt={`The leaderboard in ${t.name}`} sizes="(min-width: 960px) 620px, 80vw" />
+      <div className="bx-theme-viewport">
+        <div className="bx-theme-track" ref={track}>
+          {themes.map((t, i) => {
+            const b = dims[`theme-${t.id}-board`] ?? { w: 1200, h: 700 };
+            return (
+              <figure className={`bx-theme${i === at ? " is-on" : ""}`} key={t.id} onClick={() => i !== at && go(i)}>
+                <div className="bx-theme-stage">
+                  <div className="bx-theme-board">
+                    <Image src={`/home/theme-${t.id}-board.png`} width={b.w ?? 1200} height={b.h ?? 700} alt={`The leaderboard in ${t.name}`} sizes="(min-width: 960px) 620px, 80vw" />
+                  </div>
+                  <Phone src={`/home/theme-${t.id}.jpg`} alt={`The tournament's home page in ${t.name}`} sizes="(min-width: 960px) 190px, 30vw" className="bx-theme-phone" />
                 </div>
-                <Phone src={`/home/theme-${t.id}.jpg`} alt={`The tournament's home page in ${t.name}`} sizes="(min-width: 960px) 190px, 30vw" className="bx-theme-phone" />
-              </div>
-              <figcaption>
-                <b>{t.name}</b>
-                <span>{t.note}</span>
-              </figcaption>
-            </figure>
-          );
-        })}
+                <figcaption>
+                  <b>{t.name}</b>
+                  <span>{t.note}</span>
+                </figcaption>
+              </figure>
+            );
+          })}
+        </div>
+        <button type="button" className="bx-theme-arrow prev" onClick={() => go(at - 1)} disabled={at === 0} aria-label="Previous look">
+          <svg viewBox="0 0 24 24" aria-hidden><path d="M15 5l-7 7 7 7" /></svg>
+        </button>
+        <button type="button" className="bx-theme-arrow next" onClick={() => go(at + 1)} disabled={at === themes.length - 1} aria-label="Next look">
+          <svg viewBox="0 0 24 24" aria-hidden><path d="M9 5l7 7-7 7" /></svg>
+        </button>
       </div>
-      <div className="bx-wrap bx-theme-nav">
-        <button type="button" onClick={() => move(-1)} aria-label="Previous look">
-          ‹
-        </button>
-        <button type="button" onClick={() => move(1)} aria-label="Next look">
-          ›
-        </button>
+      <div className="bx-wrap bx-theme-dots" role="group" aria-label="The looks">
+        {themes.map((t, i) => (
+          <button key={t.id} type="button" aria-label={t.name} aria-current={i === at} onClick={() => go(i)} />
+        ))}
+        <span className="bx-theme-count">
+          {at + 1} of {themes.length}
+        </span>
       </div>
     </div>
   );
