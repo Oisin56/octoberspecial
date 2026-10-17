@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { Phone } from "./Phone";
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { BRAND } from "@/lib/brand";
@@ -77,9 +78,9 @@ function Shell() {
             ))}
           </ol>
         </div>
-        <div className="tr-phone">
+        <Phone className="tr-phone" dark>
           <iframe src="/try?embed=1" title="The sample round on a phone" />
-        </div>
+        </Phone>
       </div>
     </div>
   );

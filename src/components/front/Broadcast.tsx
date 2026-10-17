@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
+import { Phone, darkTop } from "./Phone";
 
 /**
  * The front page's one moving moment: a TV-style leaderboard from a made-up tournament (the Atlantic Cup, invented
@@ -93,7 +94,9 @@ export function BroadcastBoard() {
       <div className="bx-board-head">
         <span className="bx-live">Live</span>
         <span className="bx-board-title">The Atlantic Cup</span>
-        <span className="bx-board-round">Round 1, Birr</span>
+        <span className="bx-board-round">
+          Round 1<span className="bx-wide-only">, The Atlantic Links</span>
+        </span>
       </div>
       <div className="bx-rows" aria-hidden>
         {START.map((s) => {
@@ -106,7 +109,7 @@ export function BroadcastBoard() {
               <span className="bx-pos">{r.pos}</span>
               <span className="bx-name">
                 {r.name}
-                {moved && was && r.pts > was.pts && <i className="bx-plus">+{r.pts - was.pts}</i>}
+                {moved && was && r.pts > was.pts && <i className="bx-plus">+{r.pts - was.pts} pts</i>}
               </span>
               <span className="bx-thru">{r.thru === 18 ? "F" : `Thru ${r.thru}`}</span>
               <span className="bx-pts" key={`${s.name}-${r.pts}`}>
@@ -129,7 +132,7 @@ export function BroadcastBoard() {
         ) : (
           <>
             <b>Round 1</b>
-            <span>Four friends. One trophy. Live from Birr</span>
+            <span>Four friends. One trophy. Live from the links</span>
           </>
         )}
       </div>
@@ -142,7 +145,7 @@ const TICKER = [
   ["New clip", "Declan from thirty feet at the 11th"],
   ["Round report", "In everyone's inbox at 7pm"],
   ["Photos", "12 new from the 10th tee"],
-  ["Weather at Birr", "14 degrees, light westerly"],
+  ["Weather on the links", "14 degrees, light westerly"],
   ["Tomorrow", "Round 2 tees off at 9:30"],
 ];
 
@@ -221,7 +224,7 @@ export function StickyCta({ href, label }: { href: string; label: string }) {
   );
 }
 
-type Step = { title: string; body: string; img: string; alt: string };
+type Step = { title: string; body?: string; img: string; alt: string };
 
 /**
  * On a computer: the phone stays put while the steps scroll past beside it, and its screen changes to match the step
@@ -247,19 +250,17 @@ export function StepPhone({ steps, head }: { steps: Step[]; head?: React.ReactNo
         {steps.map((s, i) => (
           <div key={s.title} className={`bx-step${i === active ? " is-on" : ""}`} data-i={i} ref={(el) => void (refs.current[i] = el)}>
             <h3>{s.title}</h3>
-            <p>{s.body}</p>
-            <div className="bx-phone bx-step-phone">
-              <Image src={s.img} width={1170} height={1992} alt={s.alt} sizes="62vw" />
-            </div>
+            {s.body && <p>{s.body}</p>}
+            <Phone src={s.img} alt={s.alt} sizes="64vw" className="bx-step-phone" />
           </div>
         ))}
       </div>
       <div className="bx-steps-pin" aria-hidden>
-        <div className="bx-phone">
+        <Phone dark={darkTop(steps[active]?.img.split("/").pop()?.replace(/\.\w+$/, "") ?? "")}>
           {steps.map((s, i) => (
-            <Image key={s.img} src={s.img} width={1170} height={1992} alt="" sizes="320px" className={i === active ? "is-on" : ""} />
+            <Image key={s.img} src={s.img} width={1170} height={2532} alt="" sizes="300px" className={i === active ? "is-on" : ""} />
           ))}
-        </div>
+        </Phone>
       </div>
     </div>
   );

@@ -1,0 +1,57 @@
+{
+  "setup": {
+    "dark": true
+  },
+  "play": {
+    "dark": false
+  },
+  "gps": {
+    "dark": true
+  },
+  "shotcard": {
+    "dark": false
+  },
+  "offline": {
+    "dark": false
+  },
+  "record": {
+    "dark": true
+  },
+  "feed": {
+    "dark": false
+  },
+  "highlight": {
+    "dark": true
+  },
+  "follow": {
+    "dark": false
+  },
+  "theme-links-board": {
+    "w": 1336,
+    "h": 826
+  },
+  "theme-links": {
+    "dark": true
+  },
+  "theme-spring-board": {
+    "w": 1336,
+    "h": 826
+  },
+  "theme-spring": {
+    "dark": false
+  },
+  "theme-championship-board": {
+    "w": 1336,
+    "h": 826
+  },
+  "theme-championship": {
+    "dark": true
+  },
+  "theme-teamcup-board": {
+    "w": 1336,
+    "h": 818
+  },
+  "theme-teamcup": {
+    "dark": true
+  }
+}

@@ -149,6 +149,15 @@ function RecordInner() {
     return () => stopCamera();
   }, [clip, waitPending, startCamera, stopCamera]);
 
+  // The camera's picture on whichever video element is showing (the page can draw it after the camera opened)
+  useEffect(() => {
+    const v = preview.current;
+    if (v && stream.current && v.srcObject !== stream.current) {
+      v.srcObject = stream.current;
+      v.play().catch(() => {});
+    }
+  });
+
   // Stop automatically at the limit (with a buzz and a warning 10 seconds before)
   useEffect(() => {
     if (phase !== "recording") return;
