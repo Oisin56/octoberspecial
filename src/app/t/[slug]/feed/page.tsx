@@ -1,10 +1,10 @@
 "use client";
 
 import { useT } from "@/components/Providers";
-import { Loading } from "@/components/ui";
+import { Board, Loading } from "@/components/ui";
 import { SocialFeed } from "@/components/SocialFeed";
 
-/** Everything from the tournament in one column, newest first. */
+/** Everything from the tournament, newest first. On a wide screen the leaderboard stays beside it. */
 export default function FeedPage() {
   const { state, session } = useT();
   if (!state) return <Loading />;
@@ -16,9 +16,14 @@ export default function FeedPage() {
       </div>
     );
   return (
-    <div className="sf-page">
-      <h1 className="sf-page-title">Feed</h1>
-      <SocialFeed />
+    <div className="sf-page sf-page-wide">
+      <aside className="sf-side" aria-label="Leaderboard">
+        <Board />
+      </aside>
+      <div className="sf-main">
+        <h1 className="sf-page-title">Feed</h1>
+        <SocialFeed />
+      </div>
     </div>
   );
 }

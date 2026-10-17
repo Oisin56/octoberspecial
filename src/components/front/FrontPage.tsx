@@ -6,7 +6,7 @@ import { BroadcastBoard, StepPhone, StickyCta, Ticker } from "./Broadcast";
 import { HeaderLink } from "./WelcomeBack";
 import { Phone } from "./Phone";
 import { Icon, type IconName } from "./Icons";
-import { FilmStill, ThemeScroller } from "./FilmShowcase";
+import { FilmStill, HighlightGraphics, ThemeScroller } from "./FilmShowcase";
 
 /**
  * The front page, for the person who runs the golf. Built to the G3 blueprint: one promise, who it's for, the features
@@ -21,15 +21,16 @@ const MADE_FOR = [
 ] as const;
 
 const ON_COURSE = [
-  { title: "Score with one thumb", img: "/home/play.jpg", alt: "The scorecard: minus, the score, plus, for each player" },
+  { title: "No signal, no problem", body: "Scores wait on the phone and send when there's signal.", img: "/home/offline.jpg", alt: "The scorecard: saved on this phone, sends when there's signal" },
   { title: "Yardages without a rangefinder", body: "Front, middle and back, from where you stand. Over 40,000 courses.", img: "/home/gps.jpg", alt: "Distances to the front, middle and back of the green" },
-  { title: "Film the moment", body: "Anyone in the group can film a shot. It goes straight to the feed.", img: "/home/record.jpg", alt: "Filming a putt on the course, recording" },
-  { title: "One tap tells the story", body: "Say what happened with a tap or a voice note. Or skip it. The score is enough.", img: "/home/shotcard.jpg", alt: "After the hole: what happened, with Clip and Hold to talk" },
-  { title: "No signal, no problem", body: "Scores wait on the phone and send when there's signal.", img: "/home/offline.jpg", alt: "Saved on this phone. Sends when there's signal" },
+  { title: "Film the moment", body: "Anyone in the group can film. Trim it on the spot and it's straight on the feed.", img: "/home/record.jpg", alt: "Filming a putt on the course, recording" },
+  { title: "One tap tells the story", body: "Say what happened with a tap or a voice note. Or skip it. The score is enough.", img: "/home/shotcard.jpg", alt: "What happened: the tee shot, with one-tap answers" },
+  { title: "See where you stand", body: "The leaderboard moves as every group scores.", img: "/home/follow.jpg", alt: "The live leaderboard on the phone" },
 ];
 
 const AT_HOME = [
   { icon: "board", title: "Live leaderboard", body: "It moves as each score goes in." },
+  { icon: "feed", title: "Feed and live bulletins", body: "Every clip, photo and note, with bulletins as it happens." },
   { icon: "clip", title: "Highlights", body: "Clips with TV graphics, to like and comment on." },
   { icon: "mail", title: "Previews and round reports", body: "In their inbox, before and after each round." },
 ] as const;
@@ -41,7 +42,12 @@ const SETUP = [
   { title: "Send one link", body: "Players tap it and they're in. Nothing to download." },
 ] as const;
 
-const YOURS = ["Stableford, stroke play and match play", "Fourballs, foursomes and skins", "One round or a whole week", "Tee times and handicaps"] as const;
+const YOURS = [
+  ["Formats", "Stroke play, Stableford, match play"],
+  ["Games", "Fourballs, foursomes, skins"],
+  ["Length", "One round or a whole week"],
+  ["Extras", "Closest to the pin, long drive, tee times"],
+] as const;
 
 const STUDIO = [
   { title: "Commentary", body: "Two voices, or record your own." },
@@ -135,17 +141,25 @@ export async function FrontPage() {
               <div className="bx-email" aria-label="A round report email">
                 <span className="bx-email-from">{BRAND.name}</span>
                 <strong>Round 1: Declan leads at The Atlantic Links</strong>
-                <span>Thirty feet at the 11th, a birdie at the 12th, and Marcus and Shane a point behind with six to play&hellip;</span>
+                <span>Thirty feet at the 11th, a birdie at the 12th, and Marcus and Shane a shot behind with six to play&hellip;</span>
               </div>
             </div>
             <div className="bx-screens">
-              <div className="bx-laptop">
-                <div className="bx-laptop-screen">
-                  <Image src="/home/board-wide.jpg" width={1600} height={1000} alt="The live leaderboard on a laptop" sizes="(min-width: 960px) 640px, 88vw" />
+              <div className="lp">
+                <div className="lp-lid">
+                  <span className="lp-cam" aria-hidden />
+                  <div className="lp-screen">
+                    <Image src="/home/board-wide.jpg" width={2560} height={1600} alt="On a laptop: the feed, with the live leaderboard beside it" sizes="(min-width: 960px) 640px, 88vw" />
+                  </div>
                 </div>
-                <div className="bx-laptop-base" />
+                <div className="lp-base" aria-hidden>
+                  <span className="lp-notch" />
+                </div>
               </div>
-              <Phone src="/home/highlight.jpg" alt="A clip in the highlights: hole 11, Declan from thirty feet" sizes="(min-width: 960px) 220px, 36vw" className="bx-home-phone" />
+              <Phone dark className="bx-home-phone">
+                <Image src="/home/highlight.jpg" width={1170} height={2532} alt="A clip in the highlights, with the leaderboard on it: hole 11, Declan from thirty feet" sizes="(min-width: 960px) 220px, 36vw" />
+                <HighlightGraphics />
+              </Phone>
             </div>
           </div>
         </section>
@@ -159,11 +173,17 @@ export async function FrontPage() {
                 <div className="bx-course-head">
                   <h2 id="bx-course-h">Quick on the course.</h2>
                   <p>Big buttons, one hole at a time, and anyone in the group can help.</p>
+                  <div className="bx-try">
+                    <Link href="/try" className="bx-btn">
+                      Try a sample round
+                    </Link>
+                    <span>Three holes, no sign-up</span>
+                  </div>
                 </div>
               }
             />
             <div className="bx-course-foot">
-              <Link href="/try" className="bx-btn bx-btn-ghost">
+              <Link href="/try" className="bx-btn">
                 Try a sample round
               </Link>
             </div>
@@ -185,11 +205,14 @@ export async function FrontPage() {
               </ol>
               <p className="bx-setup-more">The more you add, the better the reports and commentary.</p>
               <p className="bx-yours-h">All of it yours to change</p>
-              <ul className="bx-yours">
-                {YOURS.map((y) => (
-                  <li key={y}>{y}</li>
+              <dl className="bx-spec">
+                {YOURS.map(([k, v]) => (
+                  <div key={k}>
+                    <dt>{k}</dt>
+                    <dd>{v}</dd>
+                  </div>
                 ))}
-              </ul>
+              </dl>
             </div>
             <Phone src="/home/setup.jpg" alt="Setting up: which tees at The Atlantic Links?" sizes="(min-width: 960px) 300px, 62vw" className="bx-setup-phone" />
           </div>

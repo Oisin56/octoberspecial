@@ -1,5 +1,5 @@
 /** The front page's few line icons: one weight, one size, drawn for this page. */
-export type IconName = "board" | "clip" | "mail" | "card" | "pin" | "lock";
+export type IconName = "board" | "feed" | "clip" | "mail" | "card" | "pin" | "lock";
 
 const PATHS: Record<IconName, React.ReactNode> = {
   // a leaderboard: three rows, the first marked
@@ -7,6 +7,14 @@ const PATHS: Record<IconName, React.ReactNode> = {
     <>
       <rect x="3.5" y="4.5" width="17" height="15" rx="2.5" />
       <path d="M7 9.5h6M7 12.5h6M7 15.5h6M16.5 9.5h.5M16.5 12.5h.5M16.5 15.5h.5" />
+    </>
+  ),
+  // the feed: posts, one above the other
+  feed: (
+    <>
+      <rect x="4.5" y="4" width="15" height="7" rx="2" />
+      <rect x="4.5" y="13" width="15" height="7" rx="2" />
+      <path d="M7.5 7.5h6M7.5 16.5h4" />
     </>
   ),
   // a clip: a frame with play

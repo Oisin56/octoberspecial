@@ -10,30 +10,32 @@ import { Phone, darkTop } from "./Phone";
  * Phones set to reduce motion get the board standing still.
  */
 
+/** Net to par: lower is better */
 type Row = { name: string; pts: number; thru: number };
+const toPar = (n: number) => (n === 0 ? "E" : n > 0 ? `+${n}` : `−${-n}`);
 
 // The Atlantic Cup after 11 holes, then the 12th (a par 3) as it goes in: the same story as the screens below
 const START: Row[] = [
-  { name: "Declan", pts: 24, thru: 11 },
-  { name: "Marcus", pts: 24, thru: 11 },
-  { name: "Shane", pts: 24, thru: 11 },
-  { name: "Ronan", pts: 19, thru: 11 },
+  { name: "Declan", pts: -2, thru: 11 },
+  { name: "Marcus", pts: -2, thru: 11 },
+  { name: "Shane", pts: -2, thru: 11 },
+  { name: "Ronan", pts: 3, thru: 11 },
 ];
 
 /** What happens, in order: who scores, how many points, and the caption the graphic shows. */
 const EVENTS: { name: string; add: number; caption: string; who: string }[] = [
-  { name: "Declan", add: 3, who: "Declan", caption: "Birdie at the 12th. Takes the lead" },
-  { name: "Marcus", add: 2, who: "Marcus", caption: "Par at the 12th. One behind" },
-  { name: "Shane", add: 2, who: "Shane", caption: "Par at the 12th. Level with Marcus" },
-  { name: "Ronan", add: 2, who: "Ronan", caption: "A shot on the 12th, and a net par" },
+  { name: "Declan", add: -1, who: "Declan", caption: "Birdie at the 12th. Takes the lead" },
+  { name: "Marcus", add: 0, who: "Marcus", caption: "Par at the 12th. One behind" },
+  { name: "Shane", add: 0, who: "Shane", caption: "Par at the 12th. Level with Marcus" },
+  { name: "Ronan", add: 0, who: "Ronan", caption: "A shot on the 12th, and a net par" },
 ];
 
 const STEP_MS = 3400;
 
 function order(rows: Row[]) {
-  const sorted = [...rows].sort((a, b) => b.pts - a.pts || a.name.localeCompare(b.name));
+  const sorted = [...rows].sort((a, b) => a.pts - b.pts || a.name.localeCompare(b.name));
   return sorted.map((r) => {
-    const above = sorted.filter((o) => o.pts > r.pts).length;
+    const above = sorted.filter((o) => o.pts < r.pts).length;
     const tied = sorted.filter((o) => o.pts === r.pts).length > 1;
     return { ...r, pos: `${tied ? "T" : ""}${above + 1}` };
   });
@@ -109,18 +111,18 @@ export function BroadcastBoard() {
               <span className="bx-pos">{r.pos}</span>
               <span className="bx-name">
                 {r.name}
-                {moved && was && r.pts > was.pts && <i className="bx-plus">+{r.pts - was.pts} pts</i>}
+                {moved && was && r.pts < was.pts && <i className="bx-plus">Birdie</i>}
               </span>
               <span className="bx-thru">{r.thru === 18 ? "F" : `Thru ${r.thru}`}</span>
               <span className="bx-pts" key={`${s.name}-${r.pts}`}>
-                {r.pts}
+                {toPar(r.pts)}
               </span>
             </div>
           );
         })}
       </div>
       <div className="bx-board-foot" aria-hidden>
-        <span>Stableford points</span>
+        <span>Stroke play, net</span>
         <span>12th hole, par 3</span>
       </div>
       <div className="bx-third" aria-hidden key={step}>

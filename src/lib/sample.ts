@@ -6,7 +6,7 @@
  */
 import data from "./sampleRound.json";
 import type { CourseGeo } from "./gps";
-import { roundBoard } from "./live";
+import { roundBoard, toPar } from "./live";
 import { tournamentSummary } from "./engine";
 import { toEntries, toTournamentCfg } from "./types";
 import type { AiPieceRow, CommentRow, HoleEntryRow, PlayerRow, PostRow, RoundRow, ShotRow, TournamentRow, TournamentState } from "./types";
@@ -90,6 +90,7 @@ export function sampleState(clipPath = "/home/clips/putt.mp4"): TournamentState 
     status: "live",
     course_guide: null,
     photo_path: null,
+    format: "stroke",
     handicap_rule: { mode: "manual", shots: shots18 },
     shots: shots18,
   };
@@ -144,7 +145,7 @@ export function sampleState(clipPath = "/home/clips/putt.mp4"): TournamentState 
     details: { shot: "Putt", result: "Holed from 30 ft+", club: "Putter", shape: "portrait" },
   };
   return {
-    tournament: { ...raw.tournament, slug: SAMPLE_SLUG, name: "Sample round", subtitle: "Three holes. Nothing is saved.", feed_on: true },
+    tournament: { ...raw.tournament, slug: SAMPLE_SLUG, name: "Sample round", subtitle: "Three holes. Nothing is saved.", feed_on: true, standings: "stroke" },
     players: raw.players,
     rounds: [round],
     entries,
@@ -204,22 +205,23 @@ function scoreName(gross: number, par: number) {
 export function sampleReactions(state: TournamentState, field: { name: string; playerIds: string[]; value: number }[]): { comments: CommentRow[]; piece: AiPieceRow } {
   const round = state.rounds[0];
   const clip = state.posts.find((p) => p.kind === "video");
-  // The real leaderboard's points (handicaps included), best first
-  const table = [...field].sort((a, b) => b.value - a.value).map((f) => ({ name: f.name, id: f.playerIds[0], pts: f.value }));
-  const mine = table.find((x) => x.id === YOU) ?? { name: "You", id: YOU, pts: 0 };
-  const above = table.filter((x) => x.pts > mine.pts);
-  const level = table.filter((x) => x.pts === mine.pts && x.id !== YOU);
-  const place = above.length + 1;
-  const pts = (n: number) => `${n} point${n === 1 ? "" : "s"}`;
+  // The real leaderboard: net to par (handicaps included), best first
+  const table = [...field].sort((a, b) => a.value - b.value).map((f) => ({ name: f.name, id: f.playerIds[0], par: f.value }));
+  const mine = table.find((x) => x.id === YOU) ?? { name: "You", id: YOU, par: 0 };
+  const ahead = table.filter((x) => x.par < mine.par);
+  const level = table.filter((x) => x.par === mine.par && x.id !== YOU);
+  const place = ahead.length + 1;
+  const at = (n: number) => (n === 0 ? "level par" : toPar(n));
+  const shots = (n: number) => (n === 1 ? "a shot" : `${n} shots`);
   const names = (xs: { name: string }[]) => (xs.length === 1 ? xs[0].name : `${xs.slice(0, -1).map((x) => x.name).join(", ")} and ${xs[xs.length - 1].name}`);
 
   let lead: string;
   if (place === 1 && !level.length) {
     const next = table.find((x) => x.id !== YOU);
-    lead = `You lead on ${pts(mine.pts)} after three holes at ${round.course_name}${next ? `, ${pts(mine.pts - next.pts)} clear of ${next.name}` : ""}.`;
-  } else if (place === 1) lead = `You share the lead with ${names(level)} on ${pts(mine.pts)} after three holes at ${round.course_name}.`;
+    lead = `You lead at ${at(mine.par)} after three holes at ${round.course_name}${next ? `, ${shots(next.par - mine.par)} clear of ${next.name}` : ""}.`;
+  } else if (place === 1) lead = `You share the lead with ${names(level)} at ${at(mine.par)} after three holes at ${round.course_name}.`;
   else
-    lead = `You're ${level.length ? "tied " : ""}${place === 2 ? "second" : "third"} on ${pts(mine.pts)} after three holes at ${round.course_name}, ${pts(table[0].pts - mine.pts)} behind ${names(above.filter((x) => x.pts === table[0].pts))}.`;
+    lead = `You're ${level.length ? "tied " : ""}${place === 2 ? "second" : "third"} at ${at(mine.par)} after three holes at ${round.course_name}, ${shots(mine.par - table[0].par)} behind ${names(ahead.filter((x) => x.par === table[0].par))}.`;
 
   // Your card, hole by hole: "bogey, par, par"
   const word = (gross: number, par: number) => scoreName(gross, par).replace(/^an? /, "");
@@ -233,7 +235,7 @@ export function sampleReactions(state: TournamentState, field: { name: string; p
   const after2 = { ...state, entries: state.entries.filter((e) => e.hole <= 2) };
   const was = roundBoard(after2, tournamentSummary(toTournamentCfg(after2), toEntries(after2.entries)), round).field;
   const topOf = (f: { playerIds: string[]; value: number }[]) => {
-    const best = Math.max(...f.map((x) => x.value));
+    const best = Math.min(...f.map((x) => x.value));
     const at = f.filter((x) => x.value === best);
     return { top: at.some((x) => x.playerIds.includes(DECLAN)), shared: at.length > 1 };
   };

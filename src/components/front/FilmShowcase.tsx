@@ -12,10 +12,10 @@ import screens from "@/lib/screens.json";
  * The story is the front page's: the 12th at The Atlantic Cup, Declan's birdie.
  */
 const ROWS = [
-  { pos: "1", name: "Declan", pts: "27 pts", cam: true },
-  { pos: "T2", name: "Marcus", pts: "26 pts" },
-  { pos: "T2", name: "Shane", pts: "26 pts" },
-  { pos: "4", name: "Ronan", pts: "21 pts" },
+  { pos: "1", name: "Declan", pts: "−3", cam: true },
+  { pos: "T2", name: "Marcus", pts: "−2" },
+  { pos: "T2", name: "Shane", pts: "−2" },
+  { pos: "4", name: "Ronan", pts: "+3" },
 ];
 
 export function FilmStill() {
@@ -57,6 +57,50 @@ export function FilmStill() {
         </div>
       </div>
     </InView>
+  );
+}
+
+/** The film's graphics on a highlight in the app (the TV version of a clip): the same panel and name bar, small. */
+export function HighlightGraphics() {
+  return (
+    <div className="hl-gfx" aria-hidden>
+      <div className="fb-bug is-in">
+        <div className="fb-head">
+          <span className="fb-hole">Hole 11</span>
+          <span className="fb-par">Par 4</span>
+          <span className="fb-kind">LEADERBOARD</span>
+        </div>
+        <div className="fb-rows">
+          {[
+            ["T1", "Declan", "−2", true],
+            ["T1", "Marcus", "−2", false],
+            ["T1", "Shane", "−2", false],
+          ].map(([pos, name, v, cam]) => (
+            <div key={String(name)} className={`fb-row${cam ? " is-cam" : ""}`}>
+              <span className="fb-pos">{pos}</span>
+              <span className="fb-name">{name}</span>
+              <span className="fb-val">{v}</span>
+              <span className="fb-thru">10</span>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="fb-strap">
+        <span className="fb-strap-card">
+          <span className="fb-strap-rule" />
+          <span className="fb-strap-body">
+            <span className="fb-strap-hole">
+              <small>HOLE</small>
+              <b>11</b>
+            </span>
+            <span className="fb-strap-text">
+              <b>Declan</b>
+              <small>From thirty feet</small>
+            </span>
+          </span>
+        </span>
+      </div>
+    </div>
   );
 }
 

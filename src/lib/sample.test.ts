@@ -78,11 +78,11 @@ describe("the sample round", () => {
 
   it("says where you stand, whatever you score", () => {
     const lead = played([3, 3, 2]);
-    expect(sampleReactions(lead, field(lead)).piece.body).toMatch(/^You lead on \d+ points after three holes at The Atlantic Links, \d+ points? clear of/);
+    expect(sampleReactions(lead, field(lead)).piece.body).toMatch(/^You lead at −\d after three holes at The Atlantic Links, \d shots clear of/);
     expect(sampleReactions(lead, field(lead)).comments[0].body).toMatch(/^(An eagle|Birdie) at the/);
     const behind = played([7, 7, 5]);
     const b = sampleReactions(behind, field(behind));
-    expect(b.piece.body).toMatch(/^You're (tied )?(second|third) on \d+ points? after three holes at The Atlantic Links, \d+ points? behind Declan/);
+    expect(b.piece.body).toMatch(/^You're (tied )?(second|third) at \+\d after three holes at The Atlantic Links, \d shots behind Declan/);
     expect(b.piece.body).toContain("Your card: triple bogey, triple bogey, double bogey.");
     expect(b.piece.body).toMatch(/to (go top|go clear at the top)/);
     expect(b.comments[0].body).toMatch(/^Rough one at the/);
@@ -91,13 +91,14 @@ describe("the sample round", () => {
 });
 
 describe("the sample round's handicaps", () => {
-  it("give shots as an 18-hole round would: one on SI 1 and SI 5, none on SI 15", () => {
+  it("is stroke play, with shots as an 18-hole round gives them: one on SI 1 and SI 5, none on SI 15", () => {
     const s = played([5, 4, 3]);
+    expect(s.rounds[0].format).toBe("stroke");
     const b = field(s);
-    // bogey, par, par with a shot on each of the first two: 2 + 3 + 2
-    expect(b.find((x) => x.playerIds.includes(YOU))!.value).toBe(7);
-    // Declan: 5 (net par) 2, 4 (net birdie) 3, 2 (birdie) 3
-    expect(b.find((x) => x.playerIds.includes(DECLAN))!.value).toBe(8);
+    // bogey, par, par with a shot on each of the first two: net par, birdie, par
+    expect(b.find((x) => x.playerIds.includes(YOU))!.value).toBe(-1);
+    // Declan: 5 (net par), 4 (net birdie), 2 (birdie)
+    expect(b.find((x) => x.playerIds.includes(DECLAN))!.value).toBe(-2);
   });
 
   it("says when Declan's birdie changes the lead, and not when it doesn't", () => {
