@@ -1,0 +1,31 @@
+// The owner's "Make the sample commentary" button, and the public endpoint the sample reads.
+const BASE = process.env.BASE || "http://127.0.0.1:3100";
+const fsx = await import("node:fs");
+const PIN = fsx.readFileSync("/home/claude/october-special/.env.local", "utf8").match(/^ORGANISER_PIN=(.*)$/m)[1].trim();
+let fails = 0; const ok = (c, m) => { console.log(`${c ? "PASS" : "FAIL"}  ${m}`); if (!c) fails++; };
+let cookie = "";
+const call = async (body) => { const r = await fetch(`${BASE}/api/owner`, { method: "POST", headers: { "content-type": "application/json", cookie }, body: JSON.stringify(body) }); const sc = r.headers.getSetCookie?.() ?? []; if (sc.length) cookie = sc.map((c) => c.split(";")[0]).join("; "); return { status: r.status, j: await r.json().catch(() => ({})) }; };
+ok((await call({ action: "makeSampleFilm" })).status === 401, "not signed in: refused");
+ok((await call({ action: "signin", pin: PIN })).status === 200, "owner signs in");
+const r = await call({ action: "makeSampleFilm" });
+ok(r.status === 200, `makes the sample commentary (${r.status} ${r.j.error ?? ""})`);
+const g = await fetch(`${BASE}/api/owner`, { headers: { cookie } }).then((x) => x.json());
+ok(g.films?.sample?.lines?.length === 4 && g.films.sample.lines.every((l) => l.src && l.sec > 0), "the owner page lists the four lines");
+const pub = await fetch(`${BASE}/api/sample-film`).then((x) => x.json());
+ok(pub.lines.length === 4 && pub.lines.every((l) => /sample-[a-z0-9]+-\d\.mp3$/.test(l.src)), "the sample reads the four lines");
+ok(pub.music === null || /^http/.test(pub.music), "and the first film track for music (or none)");
+const fs = await import("node:fs");
+const log = fs.readFileSync("/var/tmp/ospg/tts.log", "utf8").trim().split("\n").slice(-4).map((x) => JSON.parse(x));
+ok(log.length === 4 && log[0].text.startsWith("Declan, thirty feet") && log[0].voice !== log[1].voice && log[0].voice === log[2].voice, "two voices: commentator, pundit, commentator, pundit");
+// Again: the old recordings are replaced
+const first = pub.lines.map((l) => l.src);
+await call({ action: "makeSampleFilm" });
+const pub2 = await fetch(`${BASE}/api/sample-film`).then((x) => x.json());
+ok(pub2.lines.every((l) => !first.includes(l.src)), "making it again replaces the recordings");
+const gone = await fetch(first[0]).then((x) => x.status);
+ok(gone === 200, `the last recordings stay a while for pages already open (${gone})`);
+await call({ action: "makeSampleFilm" });
+const gone2 = await fetch(first[0]).then((x) => x.status);
+ok(gone2 === 404 || gone2 === 400, `the ones before go next time (${gone2})`);
+console.log(fails ? `\n${fails} FAILED` : "\nALL PASSED");
+console.log(JSON.stringify(pub2));

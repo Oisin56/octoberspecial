@@ -44,3 +44,6 @@ next-env.d.ts
 
 # copied from node_modules at build time
 /public/ffmpeg
+
+# local test environment
+/localtest/harness/smtp/node_modules

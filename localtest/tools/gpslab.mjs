@@ -1,0 +1,26 @@
+import { chromium } from "playwright";
+import fs from "node:fs";
+const pin = fs.readFileSync("/home/claude/october-special/.env.local", "utf8").match(/^ORGANISER_PIN=(.*)$/m)[1].trim();
+const out = process.argv[2];
+const b = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium" });
+const ctx = await b.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, geolocation: { latitude: 53.0917, longitude: -7.8949 }, permissions: ["geolocation"] });
+const p = await ctx.newPage();
+const errs = []; p.on("pageerror", (e) => errs.push(e.message)); p.on("console", (m) => m.type() === "error" && errs.push(m.text()));
+await p.goto("http://127.0.0.1:3100/lab/gps");
+await p.fill("#pin", pin); await p.click("text=Continue");
+await p.fill("#q", "Birr"); await p.click("text=Search");
+await p.click("text=load (2 calls");
+await p.waitForSelector(".leaflet-interactive");
+console.log("markers", await p.locator(".leaflet-interactive").count());
+await p.screenshot({ path: `${out}/lab1.png`, fullPage: true });
+await p.click("button:text-is('4')");
+await p.click("text=Use my location");
+await p.waitForTimeout(800);
+await p.screenshot({ path: `${out}/lab2.png`, fullPage: false });
+console.log("markers h4", await p.locator(".leaflet-interactive").count());
+// load again: should be free (from store)
+await p.click("text=load (2 calls");
+await p.waitForTimeout(500);
+console.log("calls", fs.readFileSync("/var/tmp/ospg/golfapi.log", "utf8").trim().split("\n").length);
+console.log("errors", errs.filter(e => !/arcgisonline|ERR_|Failed to load resource/.test(e)));
+await b.close();
