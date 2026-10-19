@@ -14,7 +14,7 @@ end without touching the real database, spending money on the real services or s
 
     bash localtest/setup.sh
 
-About six minutes: links the scripts into `/var/tmp/ospg`, makes local keys and `.env.local` (made-up values),
+About five minutes: links the scripts into `/var/tmp/ospg`, makes local keys and `.env.local` (made-up values),
 creates the database from `supabase/schema.sql` and `seed.sql`, makes stand-in phone videos, builds and starts the
 app. Re-running it skips what is already done. Linux only for now.
 
@@ -23,16 +23,15 @@ After a workspace restart, bring the services back with `bash /var/tmp/ospg/up.s
 
 ## Running tests
 
-- Everything: `bash /var/tmp/ospg/runall.sh` (about an hour). Every line should say `ALL PASSED`; look for both
+- Everything: `bash /var/tmp/ospg/runall.sh` (about 15 minutes). Every line should say `ALL PASSED`; look for both
   `FAIL` and `Error`, since a crash prints only the latter.
 - A few: `bash /var/tmp/ospg/one.sh sampletest.mjs phaseftest.mjs` (resets the database, runs `e2e.mjs`, then those).
 - `fresh.sh` resets the database to the seed. `startapp.sh` with `VOICE=1` starts the app with the voice stand-in.
 
 ## What's here
 
-- `tests/` browser tests (Playwright). `e2e.mjs` builds the base tournament the others use.
-  `directortest`, `reeltest`, `filmaudio`, `filmresult`, `ownersample` (`VOICE=1`) aren't in `runall.sh`; run them on
-  their own when the film or commentary changes.
+- `tests/` browser tests (Playwright). `e2e.mjs` builds the base tournament the others use. `runall.sh` runs every
+  one; the last two (`ownersample`, `filmaudio`) start the app with the voice stand-in.
 - `tools/` front page screens (`frontshots.mjs`, then `compose.py`), page review shots (`pagelook.mjs`), the sample
   round's starting data (`samplefixture.mjs`) and its fallback recording (`walkthrough.mjs`), film graphics check
   (`gfx.mjs`), GPS lab (`gpslab.mjs`).
