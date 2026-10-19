@@ -67,7 +67,7 @@ const jwt = (role) => {
 const ANON = jwt("anon"), SERVICE = jwt("service_role");
 const STUB = "http://127.0.0.1:54321";
 fs.writeFileSync(`${work}/pgrst.conf`, `db-uri = "postgres://authenticator:auth@127.0.0.1:5433/postgres"\ndb-schemas = "public,storage"\ndb-anon-role = "anon"\njwt-secret = "${secret}"\nserver-port = 3000\n`);
-fs.writeFileSync(`${work}/keys.env`, `ANON=${ANON}\nSERVICE=${SERVICE}\nSMTP_HOST=127.0.0.1\nSMTP_PORT=2525\nSMTP_USER=test\nSMTP_PASS=test\n`);
+fs.writeFileSync(`${work}/keys.env`, `ANON=${ANON}\nSERVICE=${SERVICE}\nSMTP_HOST=127.0.0.1\nSMTP_PORT=2525\nSMTP_USER=me@test.ie\nSMTP_PASS=app-pass\n`);
 fs.writeFileSync(`${repo}/.env.local`, [
   "# Local test environment only: every service points at the stand-ins on this machine.",
   `NEXT_PUBLIC_SUPABASE_URL=${STUB}`, `NEXT_PUBLIC_SUPABASE_ANON_KEY=${ANON}`, `SUPABASE_SERVICE_ROLE_KEY=${SERVICE}`,
@@ -78,7 +78,7 @@ fs.writeFileSync(`${repo}/.env.local`, [
   "SHOTSTACK_API_KEY=local-stub", `SHOTSTACK_BASE_URL=${STUB}/edit/stage`,
   "ELEVENLABS_API_KEY=local-stub", `ELEVENLABS_BASE_URL=${STUB}`,
   "GEMINI_API_KEY=local-stub", `GEMINI_BASE_URL=${STUB}/v1beta`,
-  "SMTP_HOST=127.0.0.1", "SMTP_PORT=2525", "SMTP_USER=test", "SMTP_PASS=test",
+  "SMTP_HOST=127.0.0.1", "SMTP_PORT=2525", "SMTP_USER=me@test.ie", "SMTP_PASS=app-pass", // the test mailbox's login
   "GOLFAPI_KEY=local-stub", `GOLFAPI_BASE_URL=${STUB}/golfapi`, "",
 ].join("\n"));
 console.log("new local keys written");

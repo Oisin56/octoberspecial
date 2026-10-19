@@ -19,3 +19,11 @@ if [ ! -f "$V/tripod.webm" ]; then
   ffmpeg -v error -y -f lavfi -i "testsrc2=size=1280x720:rate=30:duration=150" -f lavfi -i "sine=frequency=330:sample_rate=48000:duration=150" \
     -c:v libvpx-vp9 -deadline realtime -cpu-used 8 -b:v 1M -c:a libopus "$V/tripod.webm"
 fi
+
+# Stand-in photos (any JPEG will do): one to upload, two already in storage for the news tests
+P=/var/tmp/ospg/files/photo/october-special-2026
+mkdir -p "$P"
+jpg() { [ -f "$1" ] || ffmpeg -v error -y -f lavfi -i "gradients=size=$2:seed=$3" -frames:v 1 -q:v 4 "$1"; }
+jpg /var/tmp/ospg/hero.jpg 1800x1000 1
+jpg "$P/hero.jpg" 1800x1000 1
+jpg "$P/0000aaaa-1111-2222-3333-444455556666.jpg" 900x500 2
