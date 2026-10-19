@@ -28,7 +28,7 @@ await p.getByRole("button", { name: "Sound on" }).click();
 await sleep(1500);
 const s = await p.evaluate(() => window.__starts.filter((x) => x.dur > 0.5));
 console.log(JSON.stringify(s.map((x) => ({ w: +x.when.toFixed(2), o: +x.offset.toFixed(2), d: +x.dur.toFixed(2) }))));
-const lines = s.filter((x) => x.dur < 3.5);
+const lines = s.filter((x) => x.dur < 5); // the lines are a few seconds each; the music runs far longer
 ok(lines.length === 4, `four lines lined up (${lines.length})`);
 ok(s.some((x) => x.dur > 5), "the music under them");
 const vid = await p.evaluate(() => ({ muted: document.querySelector(".fm-video").muted }));

@@ -21,3 +21,8 @@ create table if not exists storage.buckets (
 do $$ begin
   if not exists (select from pg_publication where pubname = 'supabase_realtime') then create publication supabase_realtime; end if;
 end $$;
+
+-- As on Supabase, the server's role can use every table, including ones created later in schema.sql
+alter default privileges in schema public grant all on tables to service_role;
+alter default privileges in schema public grant all on sequences to service_role;
+alter default privileges in schema public grant all on functions to service_role;

@@ -40,6 +40,7 @@ chown postgres "$WORK" 2>/dev/null || true
 # Links back to this folder: tests, tools and the harness
 for f in "$L"/tests/*.mjs "$L"/tools/* "$L"/harness/*.sh "$L"/harness/*.mjs "$L"/harness/*.sql; do ln -sfn "$f" "$WORK/$(basename "$f")"; done
 ln -sfn "$L/harness/smtp" "$WORK/smtp"
+find "$WORK" -maxdepth 1 -xtype l -delete   # links to scripts that have since been removed
 cp -r "$L"/fixtures/golfapi/. "$WORK/files/golfapi/"
 cp --update=none "$L"/fixtures/social/* "$WORK/social/"
 cp "$L"/fixtures/files/still.jpg "$WORK/files/still.jpg"

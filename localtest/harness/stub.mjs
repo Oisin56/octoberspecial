@@ -2,6 +2,7 @@
 import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
+import { execFile } from "node:child_process";
 
 const FILES = "/var/tmp/ospg/files";
 fs.mkdirSync(FILES, { recursive: true });
@@ -189,8 +190,8 @@ http
         // A 128 kbit/s mp3 as long as the line takes to say at 2 words a second (a slowish commentator)
         const words = String(b.text).replace(/\[[a-z ]+\]\s*/gi, "").trim().split(/\s+/).length;
         const secs = words / 2 + 0.3;
-        const mp3 = Buffer.alloc(Math.round(secs * 16000));
-        mp3[0] = 0xff; mp3[1] = 0xfb;
+        // a real (quiet) mp3 at 128 kbit/s, so a browser can decode and time it like a real recording
+        const mp3 = await new Promise((ok, no) => execFile("ffmpeg", ["-v", "error", "-f", "lavfi", "-i", `sine=frequency=180:sample_rate=44100:duration=${secs}`, "-af", "volume=0.05", "-ac", "1", "-c:a", "libmp3lame", "-b:a", "128k", "-f", "mp3", "-"], { encoding: "buffer", maxBuffer: 1e7 }, (e, out) => (e ? no(e) : ok(out))));
         res.writeHead(200, { "content-type": "audio/mpeg" });
         return res.end(mp3);
       } finally {

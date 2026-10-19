@@ -21,3 +21,7 @@ for t in phasectest; do fresh; run $t.mjs; done
 for t in phasedtest; do fresh; run $t.mjs; done
 for t in phaseftest; do fresh; run $t.mjs; done
 for t in sampletest; do fresh; run $t.mjs; done
+# the sample film's commentary and sound, with the voice stand-in on; then the app back to normal
+voice() { ps -eo pid,comm | awk '$2 ~ /^next-server/ {print $1}' | xargs -r kill; sleep 1; VOICE=1 bash startapp.sh; sleep 6; bash fresh.sh; node e2e.mjs | tail -1; }
+voice; run ownersample.mjs; run filmaudio.mjs
+bash restart-app.sh >/dev/null 2>&1
