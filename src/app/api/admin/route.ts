@@ -357,6 +357,21 @@ export async function POST(req: Request) {
       }
     }
 
+    // Who keeps the card in each group (everything else about the groups stays as it is)
+    case "setScorers": {
+      const { data: round } = await db.from("rounds").select("id,games").eq("id", b.roundId).eq("tournament_id", t.id).maybeSingle();
+      if (!round) return bad("Round not found", 404);
+      const want = (b.scorers ?? {}) as Record<string, string>;
+      const games = ((round.games ?? []) as Game[]).map((g) => {
+        const ids = g.sides.flatMap((x) => x.playerIds);
+        const pick = want[g.id];
+        return pick && ids.includes(pick) ? { ...g, scorerId: pick } : g;
+      });
+      const { error } = await db.from("rounds").update({ games, scorer_id: games.find((g) => !g.free)?.scorerId ?? null }).eq("id", round.id);
+      if (error) return bad(error.message, 500);
+      return json({ ok: true });
+    }
+
     // The course guide for a round, written or corrected by the organiser (or found again by research): every round
     // at this course gets it, and so does the course library for later tournaments
     case "saveGuide": {

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useT } from "@/components/Providers";
 import { EmailSignup } from "@/components/EmailAdmin";
 import { cleanBody, cleanTitle } from "@/lib/cleanText";
+import { PrizesPanel } from "@/components/WinBoards";
 import { Board, GameStatus, Loading, RoundItem, Paras, dateLabel, pts } from "@/components/ui";
 import { SocialFeed } from "@/components/SocialFeed";
 import { formatLabel, toRoundCfg } from "@/lib/types";
@@ -57,6 +58,7 @@ export default function Home() {
       <div className="section-tight">
         <Board />
       </div>
+      <PrizesPanel />
 
       {live && (
         <section className="section">

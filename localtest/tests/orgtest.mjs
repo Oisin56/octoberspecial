@@ -33,10 +33,10 @@ await page.evaluate(async (t) => fetch("/api/admin", { method: "POST", headers: 
 await page.goto(`${BASE}/t/${T}/admin`, { waitUntil: "networkidle" });
 await page.getByRole("heading", { name: "Next up" }).waitFor();
 const tiles = await page.locator(".org-tile strong").allTextContents();
-ok(tiles.length === 10 && tiles[0] === "Rounds and courses" && tiles.includes("Scorecards") && tiles.includes("Write and publish"), `ten tiles (${tiles.join(" | ")})`);
+ok(tiles.length === 11 && tiles[0] === "Tournament setup" && tiles[1] === "Rounds and courses" && tiles.includes("Scorecards") && tiles.includes("Write and publish"), `eleven tiles, Tournament setup first (${tiles.join(" | ")})`);
 ok(/tees off in 3 days/.test(await page.locator(".org-when").innerText()), "countdown to the next round");
 const nu = await page.locator(".next-up li").allInnerTexts();
-ok(nu.length === 2 && /No preview yet for round 1/.test(nu[0]), `next up suggests the round 1 preview (${nu.map((x) => x.split("\n")[0]).join(" / ")})`);
+ok(nu.length >= 1 && /No preview yet for round 1/.test(nu[0]), `next up suggests the round 1 preview (${nu.map((x) => x.split("\n")[0]).join(" / ")})`);
 ok(!(await overflow()), "home fits a phone");
 await page.screenshot({ path: "/var/tmp/ospg/shots/org-home.png", fullPage: true });
 

@@ -41,7 +41,7 @@ export async function POST(req: Request) {
   const isScorer = (!!session.playerId && session.playerId === game.scorerId) || (session.role === "organiser" && !game.scorerId) || correcting;
   if (!isScorer)
     return bad(
-      session.role === "organiser" ? "Only this match's scorer enters its scores. To correct one, use Admin, Scorecards, Correct a score." : "Only this match's scorer can enter scores",
+      session.role === "organiser" ? "Only this match's scorer enters its scores. To correct one, use Organiser, Scorecards, Correct a score." : "Only this match's scorer can enter scores",
       403,
     );
 

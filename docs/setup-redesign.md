@@ -51,6 +51,7 @@ Branch: `setup-redesign`. Read the blueprint for what people see; this file is h
          one more search if short. Each step starts the next; open pages nudge a stalled one. Setup jobs only wait on
          it. Organiser sees the guide or one line ("Couldn't find information about this course online"); the site
          owner page lists the library with each course's research log.
-- [ ] 5. Display: boards for team score, skins, knockout bracket, prizes; rules page; AI writer standings text;
-         film final standings card. Organiser home wording.
+- [x] 5. Display: boards for team score, skins, knockout bracket, prizes; rules page; AI writer standings text;
+         film final standings card. Organiser home wording. (`src/lib/boards.ts`, `src/components/WinBoards.tsx`; old
+         round/side-game screens hidden for tournaments made with the wizard; scorer picker kept.)
 - [ ] 6. Walk-throughs per tournament type, existing suites, October Special check, front page screens.

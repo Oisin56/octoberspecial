@@ -158,7 +158,7 @@ export function SocialFeed({ roundId, limit, composer = true }: { roundId?: stri
   async function hide(table: "posts" | "comments", id: string) {
     const r = await api("/api/admin", { action: "hide", table, id, hidden: true });
     if (!r.ok) return say(String(r.j.error ?? "Couldn't hide it. Try again."));
-    say("Hidden. You can put it back from Admin.");
+    say("Hidden. You can put it back from the Organiser tab, Posts and photos.");
     refresh();
   }
 

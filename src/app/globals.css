@@ -2378,3 +2378,47 @@ textarea.fr-input { resize: vertical; }
 .su-status { margin-left: auto; font-weight: 600; font-size: 16px; color: var(--ink-soft); }
 .su-status.su-saved { color: #2e7d4f; }
 .su-saved-line { color: #2e7d4f; font-weight: 700; margin: 0; }
+
+/* The knockout on the big board: this round's matches */
+.ko-list { display: grid; gap: 10px; }
+.ko-m { display: grid; gap: 2px; padding: 12px 14px; border-radius: 12px; background: rgba(255, 255, 255, 0.06); border: 1px solid rgba(255, 255, 255, 0.1); }
+.ko-m.ko-live { border-color: color-mix(in srgb, var(--red) 70%, transparent); }
+.ko-s { font-family: var(--font-display); font-weight: 700; font-size: 24px; line-height: 1.15; color: color-mix(in srgb, currentColor 78%, transparent); }
+.ko-s.ko-won { color: inherit; }
+.ko-s.ko-won::after { content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--gold); margin-left: 10px; vertical-align: 4px; }
+.ko-s.ko-empty { font-weight: 500; font-style: italic; opacity: 0.7; }
+.ko-l { font-size: 16px; margin-top: 4px; color: var(--board-soft, #cfdcd3); }
+[data-board="light"] .ko-m { background: var(--sb-wash); border-color: var(--sb-line); }
+[data-board="light"] .ko-l { color: var(--sb-soft); }
+
+/* The knockout on the leaderboard: round by round, side by side on a wide screen */
+.ko-draw { display: grid; gap: 18px; }
+@media (min-width: 760px) { .ko-draw { grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); align-items: center; } }
+.ko-stage { display: grid; gap: 10px; }
+.ko-stage h3 { margin: 0; font-size: 18px; }
+.ko-draw .ko-m { background: var(--paper); border: 1px solid var(--rule); color: var(--ink); }
+.ko-draw .ko-s { font-size: 19px; color: var(--ink-soft); }
+.ko-draw .ko-s.ko-won { color: var(--ink); }
+.ko-draw .ko-l { color: var(--ink-soft); font-size: 15px; }
+
+/* Skins: who won each hole */
+.skin-holes { display: flex; flex-wrap: wrap; gap: 8px; }
+.skin-h { display: inline-flex; align-items: baseline; gap: 8px; padding: 6px 12px; border-radius: 999px; background: var(--paper); border: 1px solid var(--rule); font-size: 16px; }
+.skin-h b { font-size: 14px; color: var(--ink-soft); }
+.skin-h.carried { color: var(--ink-soft); border-style: dashed; }
+
+/* Team score: each player's points under their team */
+.team-dot { display: inline-block; width: 11px; height: 11px; border-radius: 50%; margin-right: 8px; vertical-align: 1px; }
+.team-block + .team-block { margin-top: 14px; }
+.team-block h3 { margin: 0 0 6px; font-size: 18px; }
+.plain-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.plain-list li { display: flex; justify-content: space-between; gap: 12px; font-size: 17px; padding: 4px 0; border-bottom: 1px solid var(--rule); }
+
+/* Prizes, beside the winner */
+.prize-list { list-style: none; margin: 0; padding: 0; display: grid; }
+.prize-list li { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; padding: 10px 0; border-top: 1px solid var(--rule); }
+.prize-t { font-family: var(--font-display); font-weight: 700; font-size: 18px; }
+.prize-d { grid-column: 1; font-size: 17px; }
+.prize-pts { color: var(--bracken); font-weight: 600; }
+.prize-s { grid-column: 2; grid-row: 1 / span 2; align-self: center; font-size: 14px; font-weight: 700; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--rule); color: var(--ink-soft); }
+.prize-s.prize-won { background: var(--board); color: #fff; border-color: var(--board); }

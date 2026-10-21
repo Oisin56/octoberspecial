@@ -4,6 +4,7 @@ import { adminClient } from "./admin";
 import { loadServerState } from "./server-data";
 import { courseBySlug } from "@/data/courses";
 import { GUIDES } from "@/data/course-guides";
+import { prizeLines, winBoard } from "./boards";
 import { cleanBody, cleanTitle } from "./cleanText";
 import {
   ballsOfGame,
@@ -141,6 +142,33 @@ function standingsText(s: TournamentState) {
   const nm = (id: string) => s.players.find((p) => p.id === id)?.name ?? id;
   const lines: string[] = [];
   const totals = totalsView(s, t);
+  const wb = winBoard(s, t, cfg);
+  const prizes = prizeLines(s, t, cfg);
+  const prizeText = prizes.length ? "Prizes (played for alongside the winner; they don't change the standings" + (t.win.kind === "points" ? " unless marked with points" : "") + "): " + prizes.map((l) => `${l.title}: ${l.detail || "nobody yet"}${l.detail ? ` (${l.status.toLowerCase()})` : ""}${l.points ? ` ${l.points}` : ""}`).join("; ") : null;
+  if (wb) {
+    // Team score, Texas scramble, skins, the knockout: their own standings, no points table
+    if (wb.kind === "teams") {
+      lines.push(`Tournament: ${s.tournament.name}. ${wb.title}: ${wb.note}`);
+      lines.push("Team standings: " + wb.rows.map((r) => `${r.pos ? `${r.pos}. ` : ""}${r.name} ${r.score}`).join(", "));
+    } else if (wb.kind === "skins") {
+      lines.push(`Tournament: ${s.tournament.name}. Won on the most skins across the whole field (each hole won outright on net score). ${wb.note}`);
+      lines.push("Skins won: " + wb.rows.map((r) => `${r.pos ? `${r.pos}. ` : ""}${r.name} ${fmt(r.skins)}`).join(", ") + (wb.carrying ? `. ${wb.carrying}.` : ""));
+    } else {
+      lines.push(`Tournament: ${s.tournament.name}. A match play knockout, one round for each stage. Losers are out (they play on only for the prizes).`);
+      wb.stages.forEach((st) =>
+        lines.push(`${st.name}: ` + st.matches.map((m) => `${m.a.name} v ${m.b.name}${m.label ? ` (${m.label})` : ""}`).join("; ")),
+      );
+      if (wb.champion) lines.push(`Champion: ${wb.champion}.`);
+    }
+    if (prizeText) lines.push(prizeText);
+    lines.push("Rounds:");
+    s.rounds.forEach((r, i) => {
+      const rs = t.rounds[i];
+      const played = rs?.games.some((g) => g.holesPlayed);
+      lines.push(`- R${r.number} ${r.course_name} (${formatLabel(r)}): ${!played ? "not played yet" : rs.complete ? "finished" : "in progress"}`);
+    });
+    return lines.join("\n");
+  }
   if (totals) {
     lines.push(
       `Tournament: ${s.tournament.name}. Won on running ${totals.kind === "stroke" ? "stroke-play totals (net to par after handicap shots; lowest wins)" : "Stableford points (highest wins)"} over ${s.rounds.length} round${s.rounds.length === 1 ? "" : "s"}.`,
@@ -174,6 +202,7 @@ function standingsText(s: TournamentState) {
     const pts = cfg.sideGames.find((g) => g.kind === a.kind)?.points ?? 0;
     lines.push(`${label} (${pts ? `${pts} pts to the leader at the end` : "tally only"}): ${counts}`);
   }
+  if (prizeText) lines.push(prizeText);
   lines.push("Rounds:");
   s.rounds.forEach((r, i) => {
     const rs = t.rounds[i];

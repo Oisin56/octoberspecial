@@ -10,7 +10,7 @@ import { landingPath, liveRound, scoresToday } from "@/lib/landing";
 /**
  * The bar at the foot of every tournament page on a phone: five big buttons, set by who you are.
  *   during a live round, players and the organiser   Score (Card if someone else keeps it) · Record · Note · Live · More
- *   the organiser                                     Home · Live · Feed · Admin · More
+ *   the organiser                                     Home · Live · Feed · Organiser · More
  *   everyone else                                     Home · Live · Feed · Leaderboard · More
  * More has every other page and who you're logged in as. On a computer the top tabs do this job
  * (the bar only shows there during a live round, for the people playing it). The screen is kept awake on the course.
@@ -83,7 +83,7 @@ export function TabBar() {
       { k: "home", label: "Home", to: "/" },
       { k: "live", label: "Live", to: "/live" },
       state.tournament.feed_on === false ? { k: "board", label: "Leaderboard", to: "/leaderboard" } : { k: "feed", label: "Feed", to: "/feed" },
-      { k: "admin", label: "Admin", to: "/admin" },
+      { k: "admin", label: "Organiser", to: "/admin" },
     ];
   } else {
     items = [
@@ -142,7 +142,7 @@ function MoreSheet({ onClose }: { onClose: () => void }) {
         <nav className="more-list" aria-label="All pages">
           {session?.role === "organiser" && (
             <Link className="more-link strong" href={href("/admin")} onClick={onClose}>
-              Admin: organiser home
+              Organiser: run the tournament
             </Link>
           )}
           {PAGES.filter(([p]) => p !== "/feed" || state?.tournament.feed_on !== false).map(([p, label]) => (
@@ -179,7 +179,7 @@ function canDo(s: ClientSession | null, scoring: boolean): string[] {
   if (!s) return ["Follow every score live", "Watch the clips and highlights", "Log in to play, or join to share photos and comment"];
   if (s.role === "organiser")
     return [
-      "Run the tournament from Admin",
+      "Run the tournament from the Organiser tab",
       "Correct any score (every correction is logged)",
       ...(s.playerId ? ["Play: film and note what happened, sign your card"] : []),
       ...(scoring ? ["Enter the scores for your match"] : []),

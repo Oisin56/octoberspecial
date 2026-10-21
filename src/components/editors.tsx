@@ -208,6 +208,7 @@ export function PlayersEditor({ data, onSaved }: { data: AdminData; onSaved: () 
 
   return (
     <div className="stack">
+      {!t.win && (
       <section className="panel stack">
         <h2>Teams</h2>
         <p className="small muted" style={{ margin: 0 }}>
@@ -232,11 +233,16 @@ export function PlayersEditor({ data, onSaved }: { data: AdminData; onSaved: () 
           <Msg msg={s.msg} />
         </div>
       </section>
+      )}
 
       {data.state.players.map((p) => (
         <PlayerCard key={p.id} player={p} teams={t.teams ?? []} pinSet={data.pinSet[p.id]} onSaved={onSaved} />
       ))}
-      <NewPlayer teams={t.teams ?? []} count={data.state.players.length} onSaved={onSaved} />
+      {t.win ? (
+        <p className="small muted">To add or remove a player, or move them to another team, use Tournament setup: their groups are made again to fit.</p>
+      ) : (
+        <NewPlayer teams={t.teams ?? []} count={data.state.players.length} onSaved={onSaved} />
+      )}
     </div>
   );
 }
@@ -531,6 +537,19 @@ function StandingsEditor({ data, onSaved }: { data: AdminData; onSaved: () => vo
 
 export function RoundsEditor({ data, onSaved }: { data: AdminData; onSaved: () => void }) {
   const [adding, setAdding] = useState(data.state.rounds.length === 0);
+  // Made with the set-up wizard: rounds, formats, points and groups are changed in Tournament setup; here it's
+  // just each course's card, photo and guide, and who keeps the card
+  if (data.state.tournament.win)
+    return (
+      <div className="stack">
+        <p className="small muted" style={{ margin: 0 }}>
+          Courses, dates, formats and groups are changed in Tournament setup. Here: each course&apos;s card and photo, and who keeps the card.
+        </p>
+        {data.state.rounds.map((r) => (
+          <RoundCard key={r.id} round={r} data={data} onSaved={onSaved} lite />
+        ))}
+      </div>
+    );
   return (
     <div className="stack">
       {data.state.rounds.length > 0 && <StandingsEditor data={data} onSaved={onSaved} />}
@@ -755,7 +774,7 @@ export function CardTable({ card, setCard }: { card: { par: number; si: number; 
   );
 }
 
-function RoundCard({ round, data, onSaved }: { round: RoundRow; data: AdminData; onSaved: () => void }) {
+function RoundCard({ round, data, onSaved, lite = false }: { round: RoundRow; data: AdminData; onSaved: () => void; lite?: boolean }) {
   const { href } = useT();
   const players = data.state.players;
   const teams = data.state.tournament.teams ?? [];
@@ -800,6 +819,14 @@ function RoundCard({ round, data, onSaved }: { round: RoundRow; data: AdminData;
   const previewCfg = { ...cfg, play: f.play, scoring: f.format, points, games };
 
   async function save() {
+    if (lite) {
+      // Who keeps the card, and the card itself if it was checked
+      const scorers = Object.fromEntries(games.filter((g) => g.scorerId).map((g) => [g.id, g.scorerId!]));
+      let res = await s.run({ action: "setScorers", roundId: round.id, scorers });
+      if (res.ok && showCard) res = await s.run({ action: "saveRound", round: { id: round.id, holes: card } });
+      if (res.ok) onSaved();
+      return;
+    }
     const r: Record<string, unknown> = { id: round.id, ...f, points_rule: points, handicap_rule: hcp, games };
     if (tee && tee !== round.tee) r.tee = tee;
     if (showCard) r.holes = card;
@@ -827,7 +854,11 @@ function RoundCard({ round, data, onSaved }: { round: RoundRow; data: AdminData;
         <h3>
           R{round.number} {round.course_name}{" "}
           <span className="muted small display">
-            {f.play === "singles" ? SCORING_LABEL[f.format] : `${PLAY_LABEL[f.play].split(" (")[0]} ${SCORING_LABEL[f.format].toLowerCase()}`} · {pts(roundPointsAvailable(previewCfg))} pts · {games.length} {games.length === 1 ? "match" : "matches"} · {round.status}
+            {lite
+              ? round.tee
+                ? `${round.tee} tees`
+                : ""
+              : `${f.play === "singles" ? SCORING_LABEL[f.format] : `${PLAY_LABEL[f.play].split(" (")[0]} ${SCORING_LABEL[f.format].toLowerCase()}`} · ${pts(roundPointsAvailable(previewCfg))} pts · ${games.length} ${games.length === 1 ? "match" : "matches"} · ${round.status}`}
           </span>
         </h3>
         <div className="row">
@@ -839,7 +870,23 @@ function RoundCard({ round, data, onSaved }: { round: RoundRow; data: AdminData;
           </button>
         </div>
       </div>
-      {open && (
+      {open && lite && (
+        <>
+          <ScorerPicker games={games} setGames={setGames} players={players} />
+          <RoundPhoto round={round} onSaved={onSaved} />
+          <button type="button" className="chip" aria-pressed={showCard} onClick={() => setShowCard(!showCard)}>
+            {showCard ? "Hide card" : "Check par and stroke index"}
+          </button>
+          {showCard && <CardTable card={card} setCard={setCard} />}
+          <div className="row">
+            <button className="btn" disabled={s.busy} onClick={save}>
+              Save round {round.number}
+            </button>
+            <Msg msg={s.msg} />
+          </div>
+        </>
+      )}
+      {open && !lite && (
         <>
           <div className="row">
             <label className="field" style={{ flex: "1 1 140px" }}>
@@ -987,6 +1034,37 @@ function RoundCard({ round, data, onSaved }: { round: RoundRow; data: AdminData;
         </>
       )}
     </section>
+  );
+}
+
+/** Who keeps the card in each group or match (one of its players). */
+function ScorerPicker({ games, setGames, players }: { games: Game[]; setGames: (g: Game[]) => void; players: PlayerRow[] }) {
+  const playing = games.filter((g) => !g.free);
+  if (!playing.length) return null;
+  const name = (id: string) => players.find((p) => p.id === id)?.name ?? id;
+  return (
+    <div className="stack" style={{ gap: 8 }}>
+      <h4 className="display" style={{ margin: "4px 0 0", fontSize: 18 }}>
+        Who keeps the card
+      </h4>
+      {playing.map((g, i) => {
+        const ids = g.sides.flatMap((x) => x.playerIds);
+        return (
+          <label key={g.id} className="field">
+            <span className="lbl">
+              {g.name ?? `Group ${i + 1}`}: {ids.map(name).join(", ")}
+            </span>
+            <select value={g.scorerId ?? ids[0]} onChange={(e) => setGames(games.map((x) => (x.id === g.id ? { ...x, scorerId: e.target.value } : x)))}>
+              {ids.map((id) => (
+                <option key={id} value={id}>
+                  {name(id)}
+                </option>
+              ))}
+            </select>
+          </label>
+        );
+      })}
+    </div>
   );
 }
 

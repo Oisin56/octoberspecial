@@ -7,6 +7,8 @@ import { cardInfo, cardLabel } from "@/lib/scorecards";
 import { liveLine, roundBoard, standings, toPar, totalsView, type TotalsView } from "@/lib/live";
 import { CountUp, CourseImage, Icon } from "./visual";
 import { ballsOfGame, gameHole, holeShots, isNine, type Game, type GameSummary, type SegmentResult } from "@/lib/engine";
+import { winBoard } from "@/lib/boards";
+import { WinBoardView } from "@/components/WinBoards";
 import {
   SIDE_GAME_LABEL,
   ballName,
@@ -110,6 +112,9 @@ function TotalsBoard({ view }: { view: TotalsView }) {
 export function Board() {
   const { state, summary, cfg } = useT();
   if (!state || !summary || !cfg) return null;
+  // Team score, Texas scramble, most skins, the knockout draw
+  const wb = winBoard(state, summary, cfg);
+  if (wb) return <WinBoardView wb={wb} />;
   const totals = totalsView(state, summary);
   if (totals) return <TotalsBoard view={totals} />;
   const teamMode = cfg.teams.length >= 2;

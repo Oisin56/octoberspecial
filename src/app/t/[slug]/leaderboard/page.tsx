@@ -4,6 +4,8 @@ import { useT } from "@/components/Providers";
 import { Board, Loading, pts } from "@/components/ui";
 import { SIDE_GAME_LABEL, formatLabel } from "@/lib/types";
 import { standings, totalsView } from "@/lib/live";
+import { winBoard } from "@/lib/boards";
+import { PrizesPanel, WinBoardTables } from "@/components/WinBoards";
 import { roundStage } from "@/lib/scorecards";
 
 const SERIES = ["var(--board)", "var(--red)", "var(--bracken)", "#1d4f91", "#6b4c9a", "#2e7d4f", "#b0582b", "#4a5560"];
@@ -23,6 +25,22 @@ export default function Leaderboard() {
   const tallies = summary.awards.filter((a) => !awardsFor.includes(a));
   const played = summary.rounds.filter((r) => r.games.some((g) => g.holesPlayed > 0)).length;
   const totals = totalsView(state, summary);
+  const wb = winBoard(state, summary, cfg);
+  // Points race: bonus points (birdies and the like) shown in their own column
+  const bonusOn = summary.win.kind === "points" && Object.values(summary.bonus).some((v) => v > 0);
+  const prizePts: Record<string, number> = {};
+  for (const pr of summary.prizes) for (const [k, v] of Object.entries(pr.points)) prizePts[k] = (prizePts[k] ?? 0) + v;
+  const prizesOn = !teamMode && Object.values(prizePts).some((v) => v > 0);
+
+  if (wb)
+    return (
+      <>
+        <h1 style={{ marginBottom: 14 }}>Leaderboard</h1>
+        <Board />
+        <WinBoardTables wb={wb} />
+        <PrizesPanel />
+      </>
+    );
 
   if (totals)
     return (
@@ -74,6 +92,7 @@ export default function Leaderboard() {
               : "Stableford points after handicap shots, added up over every round."}
           </p>
         </section>
+        <PrizesPanel />
         <section className="section panel">
           <h2 style={{ marginBottom: 8 }}>Tallies</h2>
           <p className="small muted" style={{ marginTop: 0 }}>
@@ -126,6 +145,8 @@ export default function Leaderboard() {
                     R{r.number}
                   </th>
                 ))}
+                {bonusOn && <th title="Bonus points: birdies and the like">Bonus</th>}
+                {prizesOn && <th title="Points from prizes">Prizes</th>}
                 {awardsFor.map((a) => (
                   <th key={a.kind} title={SIDE_GAME_LABEL[a.kind]}>
                     {a.kind.toUpperCase()}
@@ -146,6 +167,8 @@ export default function Leaderboard() {
                       {summary.rounds[i].games.some((g) => g.holesPlayed) ? pts(v) : ""}
                     </td>
                   ))}
+                  {bonusOn && <td className="num">{pts(summary.bonus[e.id] ?? 0)}</td>}
+                  {prizesOn && <td className="num">{pts(prizePts[e.id] ?? 0)}</td>}
                   {awardsFor.map((a) => (
                     <td key={a.kind} className="num" title={`count ${a.counts[e.id] ?? 0}`}>
                       {fin ? pts(a.points[e.id] ?? 0) : <span className="muted">({pts(a.projected[e.id] ?? 0)})</span>}
@@ -162,6 +185,8 @@ export default function Leaderboard() {
           {awardsFor.map((a) => `${a.kind.toUpperCase()} = ${SIDE_GAME_LABEL[a.kind].toLowerCase()}`).join(", ")}
         </p>
       </section>
+
+      <PrizesPanel />
 
       {teamMode && (
         <section className="section panel">

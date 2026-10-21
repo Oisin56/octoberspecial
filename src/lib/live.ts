@@ -125,7 +125,9 @@ function fieldRows(s: TournamentState, summary: TournamentSummary, round: RoundR
             rel += (res.sides[sd.id]?.net ?? par + 2) - par;
           }
         }
-        const v = gs.full.value[sd.id] ?? 0;
+        // Most skins: skins are won across the whole field, not within each group
+        const across = summary.win.kind === "skins" && summary.skins ? summary.skins.rows.find((r) => r.playerId === sd.playerIds[0]) : null;
+        const v = across ? (across.rounds[round.id] ?? 0) : (gs.full.value[sd.id] ?? 0);
         field.push({
           sideId: sd.id,
           name: sideName(sd, players),

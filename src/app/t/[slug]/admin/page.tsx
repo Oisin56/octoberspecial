@@ -85,7 +85,7 @@ export default function Admin() {
       <button className="back-home" onClick={home}>
         <span aria-hidden>←</span> Organiser home
       </button>
-      <h1>{SECTIONS[s]}</h1>
+      <h1>{s === "rounds" && data.state.tournament.win ? "Course cards and photos" : SECTIONS[s]}</h1>
       {s === "rounds" && <RoundsEditor data={data} onSaved={reload} />}
       {s === "cards" && <CardsAdmin data={data} onSaved={reload} />}
       {s === "players" && <PlayersEditor data={data} onSaved={reload} />}
@@ -140,14 +140,17 @@ function OrganiserHome({ data }: { data: AdminData }) {
 
   // What needs doing, most urgent first. Only the top two are shown.
   const todo: { text: string; action: string; to: string; external?: boolean }[] = [];
-  if (rounds.length === 0) todo.push({ text: "Add the courses you're playing.", action: "Add a round", to: "#rounds" });
+  // Made with the set-up wizard: changes to rounds and groups are made in Tournament setup
+  const fresh = !!t.win;
+  if (rounds.length === 0) todo.push({ text: "Add the courses you're playing.", action: "Add a round", to: fresh ? href("/setup") : "#rounds", external: fresh });
   // Made with the wizard and "I'll set them myself": an empty list (older rounds have none at all: everyone in one game)
   const unset = rounds.filter((r) => r.status === "upcoming" && Array.isArray(r.games) && r.games.length === 0 && st.players.length > 1);
   if (unset.length)
     todo.push({
       text: `Who plays with whom in round${unset.length > 1 ? "s" : ""} ${listNames(unset.map((r) => String(r.number)))}: not set yet.`,
       action: "Set them",
-      to: "#rounds",
+      to: fresh ? href("/setup") : "#rounds",
+      external: fresh,
     });
   if (st.players.length < 2) todo.push({ text: "Add the players.", action: "Add players", to: "#players" });
   // Everyone's link first: then they can keep score and post from their phones
@@ -182,7 +185,7 @@ function OrganiserHome({ data }: { data: AdminData }) {
   const clips = st.posts.filter((p) => p.kind === "video").length;
   const sides = (t.side_games ?? []).filter((g) => g.enabled !== false).length;
 
-  const tiles: [Section, string][] = [
+  const allTiles: [Section, string][] = [
     ["rounds", rounds.length ? `${rounds.length} round${rounds.length === 1 ? "" : "s"}${next ? `, next at ${short(next.course_name)}` : ""}` : "None yet"],
     ["cards", waiting.length ? `${waiting.length} card${waiting.length === 1 ? "" : "s"} not final yet` : cardStates.length ? "All final" : st.tournament.require_attestation ? "Players sign their cards" : "Final when submitted"],
     ["players", st.players.length ? `${st.players.length} players${noWay.length ? `, ${noWay.length} still to get their link` : ", all with their link"}` : "None yet"],
@@ -194,6 +197,8 @@ function OrganiserHome({ data }: { data: AdminData }) {
     ["look", `${theme}, ${tone.toLowerCase()} tone`],
     ["share", "The link for followers"],
   ];
+  // Rounds, formats, groups and prizes live in Tournament setup for tournaments made with the wizard
+  const tiles = fresh ? allTiles.filter(([id]) => id !== "rounds" && id !== "sides") : allTiles;
 
   return (
     <div className="org-home">

@@ -1,4 +1,5 @@
 import "server-only";
+import { prizeLines, winBoard } from "./boards";
 import Anthropic from "@anthropic-ai/sdk";
 import { adminClient } from "./admin";
 import { loadServerState } from "./server-data";
@@ -150,7 +151,43 @@ function clipFacts(s: TournamentState, clips: PostRow[]): ClipFact[] {
 }
 
 /** Deterministic cards: every number here comes from the scoring engine. */
+/** Team score, scramble, skins and knockouts: the card's rows in their own terms (null for the others). */
+function winRows(s: TournamentState, roundIndex: number | null): [string, string][] | null {
+  const cfg = toTournamentCfg(s);
+  const t = tournamentSummary(cfg, toEntries(s.entries));
+  const wb = winBoard(s, t, cfg);
+  if (!wb) return null;
+  if (wb.kind === "teams") {
+    return wb.rows.map((r) => [r.name, roundIndex == null ? r.score : r.perRound[roundIndex] || "–"] as [string, string]);
+  }
+  if (wb.kind === "skins")
+    return wb.rows
+      .map((r) => [r.name, roundIndex == null ? r.skins : Number(r.perRound[roundIndex] || 0)] as const)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 6)
+      .map(([n, v]) => [n, `${fmt(v)} skin${v === 1 ? "" : "s"}`]);
+  // The knockout: that round's results, or the champion
+  if (roundIndex == null && wb.champion) {
+    const final = wb.stages[wb.stages.length - 1]?.matches[0];
+    return [["Champion", wb.champion], ...(final?.label ? [["The final", final.label] as [string, string]] : [])];
+  }
+  const st = wb.stages[roundIndex ?? wb.current];
+  return (st?.matches ?? []).filter((m) => m.a.empty !== "bye" && m.b.empty !== "bye").slice(0, 6).map((m) => [`${m.a.name} v ${m.b.name}`, m.label || "To play"]);
+}
+
+/** Prizes won, for the last card. */
+function prizeRows(s: TournamentState): [string, string][] {
+  const cfg = toTournamentCfg(s);
+  const t = tournamentSummary(cfg, toEntries(s.entries));
+  return prizeLines(s, t, cfg)
+    .filter((l) => l.won)
+    .slice(0, 3)
+    .map((l) => [l.title, l.detail]);
+}
+
 function resultRows(s: TournamentState, roundIndex: number): [string, string][] {
+  const special = winRows(s, roundIndex);
+  if (special) return special;
   const cfg = toTournamentCfg(s);
   const t = tournamentSummary(cfg, toEntries(s.entries));
   const rs = t.rounds[roundIndex];
@@ -169,6 +206,8 @@ function standingsBefore(s: TournamentState, r: TournamentState["rounds"][number
   const then = { ...s, rounds: earlier, entries: s.entries.filter((e) => earlier.some((x) => x.id === e.round_id)) } as TournamentState;
   const cfg = toTournamentCfg(then);
   const team = cfg.teams.length >= 2;
+  const special = winRows(then, null);
+  if (special) return special.slice(0, 6);
   const totals = totalsView(then, tournamentSummary(cfg, toEntries(then.entries)));
   if (totals) return totals.rows.filter((r) => r.pos).slice(0, 6).map((r) => [r.name, r.score]);
   const st = standings(then, tournamentSummary(cfg, toEntries(then.entries)), team);
@@ -178,6 +217,12 @@ function standingsBefore(s: TournamentState, r: TournamentState["rounds"][number
 }
 
 function standingsRows(s: TournamentState): [string, string][] {
+  const special = winRows(s, null);
+  if (special) return [...special.slice(0, 6), ...prizeRows(s)];
+  return [...pointsRows(s), ...prizeRows(s)];
+}
+
+function pointsRows(s: TournamentState): [string, string][] {
   const cfg = toTournamentCfg(s);
   const t = tournamentSummary(cfg, toEntries(s.entries));
   const fin = t.complete;
@@ -630,7 +675,7 @@ export async function writePlan(tournamentId: string, brief: Brief, probes: Clip
         kind: "card",
         card: "result",
         eyebrow: `Round ${r.number} · ${r.course_name}`,
-        heading: "Round points",
+        heading: winRows(s, ri) ? "Round results" : "Round points",
         rows: resultRows(s, ri),
         seconds: 4,
         voice: ch?.resultVoice?.slice(0, 200),
@@ -651,7 +696,7 @@ export async function writePlan(tournamentId: string, brief: Brief, probes: Clip
       kind: "card",
       card: "standings",
       eyebrow: t.name,
-      heading: fin ? "Final standings" : "Standings so far",
+      heading: fin ? (tournamentSummary(toTournamentCfg(s), toEntries(s.entries)).knockout?.champion ? "The champion" : "Final standings") : "Standings so far",
       rows: standingsRows(s),
       seconds: 5,
       voice: cp.closingVoice?.slice(0, 300),
