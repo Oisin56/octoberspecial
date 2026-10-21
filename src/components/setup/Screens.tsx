@@ -16,6 +16,7 @@ import {
   defaultPoints,
   defaultWin,
   formatName,
+  inSentence,
   handicapFor,
   isMatch,
   isPairs,
@@ -166,7 +167,7 @@ export function WhoScreen({ d, done }: StepProps) {
       <Tiles>
         <Tile on={d.who === "solo"} title="Just me" note="A round or a trip on your own: film it, keep score, make the vlog" onClick={() => done({ who: "solo", organiserPlays: true, win: null })} />
         <Tile on={d.who === "individuals"} title="A group of us" note="Everyone for themselves" onClick={() => done({ who: "individuals", win: d.who === "individuals" ? d.win : null })} />
-        <Tile on={d.who === "teams"} title="Teams" note="Two teams Ryder Cup style, or more teams" onClick={() => done({ who: "teams", win: d.who === "teams" ? d.win : null })} />
+        <Tile on={d.who === "teams"} title="Teams" note="Two teams playing matches, or more teams" onClick={() => done({ who: "teams", win: d.who === "teams" ? d.win : null })} />
       </Tiles>
     </Screen>
   );
@@ -1011,7 +1012,7 @@ export function GroupsScreen({ d, set, done, nextLabel, editing }: StepProps) {
             </div>
           )}
           <p className="wz-hint">
-            Round {at + 1}, {formatName(fmt).toLowerCase()}. Tap a name, then tap where they go.
+            Round {at + 1}, {inSentence(formatName(fmt))}. Tap a name, then tap where they go.
           </p>
           <PickBoard items={items} boxes={boxes} value={value} teamOf={d.who === "teams" ? teamOf : undefined} colours={d.teams.map((t) => t.color)} onChange={(v) => set((x) => setRound(x, at, { picks: v }))} />
           <div className="row">

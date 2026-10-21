@@ -162,7 +162,7 @@ export const COMMENTARY: { id: CommentaryStyle; name: string; note: string; pers
     id: "excitable",
     name: "Excitable",
     note: "Big calls, high drama, every shot an event",
-    persona: "an excitable sports commentator calling it like a Ryder Cup Sunday: big calls, rising excitement, theatrical but never silly",
+    persona: "an excitable sports commentator calling it like the last day of a big team match: big calls, rising excitement, theatrical but never silly",
   },
   {
     id: "dry",

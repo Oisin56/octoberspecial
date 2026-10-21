@@ -33,13 +33,16 @@ const wizard = {
   subtitle: "Four friends. Two rounds. One trophy.",
   rounds: [1, 2].map((n) => ({ courseRef: "golfapi:012141520611:Ireland", courseName: "Birr", holeSet: "all", tee: "White", format: "stroke", date: `2026-10-1${n}`, time: "09:30" })),
   players: [
-    { name: "Declan", index: 12.4 },
-    { name: "Marcus", index: 8.1 },
-    { name: "Ronan", index: 17.6 },
-    { name: "Shane", index: 5.3 },
+    { key: "p1", name: "Declan", index: 12.4 },
+    { key: "p2", name: "Marcus", index: 8.1 },
+    { key: "p3", name: "Ronan", index: 17.6 },
+    { key: "p4", name: "Shane", index: 5.3 },
   ],
   organiserPlays: true,
-  draw: "myself",
+  teams: [],
+  win: "stroke",
+  draw: "random",
+  prizes: [],
   extras: { feed: true, ai: true, video: true },
   theme: "spring",
   units: "yards",
@@ -111,6 +114,16 @@ const atlantic = (p) => p.evaluate(() => {
   await p.locator(".wz-tile", { hasText: "A group of us" }).click();
   await p.fill("#wz-name", "The Atlantic Cup");
   await p.locator(".wz-next").click();
+  await p.getByText("Yes, I'm playing").click();
+  const people = [["Declan", "12.4"], ["Marcus", "8.1"], ["Ronan", "17.6"], ["Shane", "5.3"]];
+  for (const [i, [n, h]] of people.entries()) {
+    if (i) await p.getByText("+ Add another player").click();
+    const row = p.locator(".wz-player").nth(i);
+    await row.locator("input").nth(0).fill(n);
+    await row.locator("input").nth(1).fill(h);
+  }
+  await p.locator(".wz-next").click();
+  await p.locator(".wz-tile", { hasText: "Lowest total score" }).click();
   await p.locator(".wz-nums .num-tile", { hasText: /^2$/ }).click();
   await p.fill("#wz-q", "Birr");
   await p.getByRole("button", { name: "Search" }).click();

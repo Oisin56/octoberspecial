@@ -212,7 +212,7 @@ export function PlayersEditor({ data, onSaved }: { data: AdminData; onSaved: () 
       <section className="panel stack">
         <h2>Teams</h2>
         <p className="small muted" style={{ margin: 0 }}>
-          Only for team events (Ryder Cup style). Leave empty for an individual event.
+          Only for team events. Leave empty for an individual event.
         </p>
         {teams.map((tm, i) => (
           <div className="row" key={i}>
@@ -985,7 +985,7 @@ function RoundCard({ round, data, onSaved, lite = false }: { round: RoundRow; da
                 </label>
               )}
               <p className="small muted" style={{ flexBasis: "100%", margin: 0 }}>
-                {nine ? "A tie splits the points." : "Ryder Cup style: front 0, back 0, 18 = 1. A tie splits the points."}
+                {nine ? "A tie splits the points." : "Team matches: front 0, back 0, 18 = 1. A tie splits the points."}
               </p>
             </div>
           )}

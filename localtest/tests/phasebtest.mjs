@@ -89,7 +89,7 @@ await op.goto(`${BASE}/t/${T}/go`);
 await op.waitForURL(/\/admin$/, { timeout: 15000 });
 ok(true, "the organiser opening the app lands on organiser home");
 await op.locator("nav.tabbar").waitFor();
-ok((await barLabels(op)).join(",") === "Home,Live,Feed,Admin,More", `organiser's bar: ${(await barLabels(op)).join(", ")}`);
+ok((await barLabels(op)).join(",") === "Home,Live,Feed,Organiser,More", `organiser's bar: ${(await barLabels(op)).join(", ")}`);
 ok(/Organiser/.test(await op.locator(".role-badge").innerText()) && (await op.locator(".role-badge.organiser").count()) === 1, `organiser badge (${(await op.locator(".role-badge").innerText()).replace(/\s+/g, " ")})`);
 await op.screenshot({ path: "/var/tmp/ospg/shots/phaseb-organiser-home.png" });
 

@@ -54,4 +54,7 @@ Branch: `setup-redesign`. Read the blueprint for what people see; this file is h
 - [x] 5. Display: boards for team score, skins, knockout bracket, prizes; rules page; AI writer standings text;
          film final standings card. Organiser home wording. (`src/lib/boards.ts`, `src/components/WinBoards.tsx`; old
          round/side-game screens hidden for tournaments made with the wizard; scorer picker kept.)
-- [ ] 6. Walk-throughs per tournament type, existing suites, October Special check, front page screens.
+- [x] 6. Walk-throughs per tournament type (`localtest/tests/setupwalk.mjs`: solo, Stableford, stroke, points race,
+         two teams, three teams, knockout, skins, scramble: wizard, a Tournament setup change, scores, boards, rules,
+         organiser home), `phasectest` rewritten for the new wizard, `phaseftest` and `orgtest` updated, the October
+         Special's standings checked identical to main's on the same scores, front page screens retaken.

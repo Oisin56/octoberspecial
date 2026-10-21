@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { BRAND } from "@/lib/brand";
-import { formatName, winName } from "@/lib/wizard";
+import { formatName, inSentence, winName } from "@/lib/wizard";
 import { fresh, named, settle, stepsFor, toWizard, type Draft } from "@/components/setup/model";
 import {
   AboutScreen,
@@ -340,13 +340,13 @@ function Summary({ d, onFix }: { d: Draft; onFix: (step: string) => void }) {
           {ps.length} player{ps.length === 1 ? "" : "s"}: {ps.map((p) => p.name).join(", ")}
         </Line>
         {d.who === "teams" && <Line step="teams" onFix={onFix}>{d.teams.map((t, i) => t.name.trim() || `Team ${i + 1}`).join(" v ")}</Line>}
-        {d.who !== "solo" && d.win && <Line step="win" onFix={onFix}>Winner: {winName(d.win).toLowerCase()}</Line>}
+        {d.who !== "solo" && d.win && <Line step="win" onFix={onFix}>Winner: {inSentence(winName(d.win))}</Line>}
         {s.rounds.map((r, i) => (
           <Line key={i} step={`course:${i}`} onFix={onFix}>
             Round {i + 1}: {r.courseName}
             {r.tee ? `, ${r.tee} tees` : ""}
             {r.holeSet !== "all" ? `, ${r.holeSet === "front" ? "front 9" : "back 9"}` : ""}
-            {r.format ? `, ${formatName(r.format).toLowerCase()}` : ""}
+            {r.format ? `, ${inSentence(formatName(r.format))}` : ""}
             {r.date ? `, ${new Date(r.date).toLocaleDateString("en-IE", { weekday: "short", day: "numeric", month: "short" })}` : ""}
             {r.time ? ` at ${r.time}` : ""}
           </Line>

@@ -6,7 +6,7 @@ import { useT } from "@/components/Providers";
 import { Loading } from "@/components/ui";
 import { useAdmin } from "@/components/editors";
 import { THEMES, TONE_LABEL } from "@/lib/types";
-import { formatName, isMatch, roundFormats, usesPoints, winName, type DayFormat } from "@/lib/wizard";
+import { formatName, inSentence, isMatch, roundFormats, usesPoints, winName, type DayFormat } from "@/lib/wizard";
 import { fromState } from "@/components/setup/fromState";
 import { GuideScreen, guideStatus } from "@/components/setup/GuideScreen";
 import { badIndex, draftProblems, emptyRound, holesOf, named, settle, toWizard, type Draft } from "@/components/setup/model";
@@ -335,7 +335,7 @@ export default function TournamentSetup() {
 
   const roundLine = (i: number) => {
     const r = base.rounds[i];
-    return [r.courseName, r.format ? formatName(r.format).toLowerCase() : null, r.date ? day(r.date) : null].filter(Boolean).join(", ");
+    return [r.courseName, r.format ? inSentence(formatName(r.format)) : null, r.date ? day(r.date) : null].filter(Boolean).join(", ");
   };
   const tick = (what: string) => ticked.includes(what);
 

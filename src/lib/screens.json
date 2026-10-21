@@ -1,6 +1,6 @@
 {
   "setup": {
-    "dark": true
+    "dark": false
   },
   "play": {
     "dark": false

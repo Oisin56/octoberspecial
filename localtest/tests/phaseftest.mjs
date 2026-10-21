@@ -130,7 +130,7 @@ await s.goto(`${BASE}${new URL(link).pathname}${new URL(link).search}`, { waitUn
 await s.locator(".wz-tile").first().waitFor({ timeout: 8000 });
 ok((await s.getByText("It's invitation-only for now").count()) === 0, "the invite link goes straight into the wizard");
 // The API: the invite makes one tournament, then it's used up
-const wizard = { who: "individuals", name: "Invited Weekend", rounds: [{ courseRef: "golfapi:012141520611:Ireland", courseName: "Birr", holeSet: "all", format: "stableford" }], players: [{ name: "Siobhan", index: 14 }, { name: "Aine", index: 20 }], organiserPlays: true, draw: "myself", extras: {}, theme: "spring" };
+const wizard = { who: "individuals", name: "Invited Weekend", win: "stableford", rounds: [{ courseRef: "golfapi:012141520611:Ireland", courseName: "Birr", holeSet: "all", format: "stableford" }], players: [{ name: "Siobhan", index: 14 }, { name: "Aine", index: 20 }], organiserPlays: true, draw: "random", prizes: [], extras: {}, theme: "spring" };
 const made = await call(s, "/api/tournaments", { wizard, pin: "4321", invite: token });
 ok(made.status === 200 && /^invited-weekend/.test(made.j.slug ?? ""), `with the invite, the tournament is made without the owner PIN (${made.status})`);
 ok(sql(`select (used_at is not null)::text || '|' || (tournament_id is not null)::text from invite_requests`) === "true|true", "the invite is marked as used, with its tournament");

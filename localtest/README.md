@@ -19,7 +19,8 @@ creates the database from `supabase/schema.sql` and `seed.sql`, makes stand-in p
 app. Re-running it skips what is already done. Linux only for now.
 
 After a workspace restart, bring the services back with `bash /var/tmp/ospg/up.sh` then
-`bash /var/tmp/ospg/restart-app.sh`. After changing app code, `npm run build` then `restart-app.sh`.
+`bash /var/tmp/ospg/restart-app.sh`. In a cloud session, start the services and the tests in the same background
+command: services started on their own are stopped a few minutes after the command that started them ends. After changing app code, `npm run build` then `restart-app.sh`.
 
 ## Running tests
 
@@ -30,7 +31,9 @@ After a workspace restart, bring the services back with `bash /var/tmp/ospg/up.s
 
 ## What's here
 
-- `tests/` browser tests (Playwright). `e2e.mjs` builds the base tournament the others use. `runall.sh` runs every
+- `tests/` browser tests (Playwright). `e2e.mjs` builds the base tournament the others use. `setupwalk.mjs` makes
+  every kind of tournament through the wizard on a phone and checks what everyone sees; `researchtest.mjs` the course
+  research in the background. `runall.sh` runs every
   one; the last two (`ownersample`, `filmaudio`) start the app with the voice stand-in.
 - `tools/` front page screens (`frontshots.mjs`, then `compose.py`), page review shots (`pagelook.mjs`), the sample
   round's starting data (`samplefixture.mjs`) and its fallback recording (`walkthrough.mjs`), film graphics check

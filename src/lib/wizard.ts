@@ -27,7 +27,7 @@ export const WINS: Record<"individuals" | "teams", { id: WinChoice; name: string
     { id: "skins", name: "Most skins", note: "Win a hole outright to win its skin" },
   ],
   teams: [
-    { id: "matches", name: "Matches won", note: "Ryder Cup style: a point for every match won" },
+    { id: "matches", name: "Matches won", note: "Two teams, a point for every match won" },
     { id: "teamscore", name: "Team score", note: "Each team's best Stableford scores on every hole count" },
     { id: "scramble", name: "Texas scramble", note: "One ball per team. Lowest team score wins" },
   ],
@@ -45,6 +45,8 @@ export const FORMAT_NAMES: Record<DayFormat, { name: string; note: string }> = {
 };
 
 export const formatName = (f: DayFormat) => FORMAT_NAMES[f]?.name ?? f;
+/** A name in the middle of a sentence: "stroke play", but Stableford and Texas keep their capitals. */
+export const inSentence = (s: string) => s.replace(/\b[A-Z][a-z]+/g, (w) => (w === "Stableford" || w === "Texas" ? w : w.toLowerCase()));
 export const winName = (w: WinChoice) => [...WINS.individuals, ...WINS.teams].find((x) => x.id === w)?.name ?? w;
 
 /** The ways to win on offer for these answers (Matches won needs exactly two teams; a scramble team is 2 to 4). */
