@@ -349,7 +349,7 @@ export default function TournamentSetup() {
             <span aria-hidden>←</span> Back
           </button>
         </div>
-        <GuideScreen key={rounds[i].id} round={rounds[i]} onSaved={() => reload()} />
+        <GuideScreen key={`${rounds[i].id}${rounds[i].course_guide ? "-g" : ""}`} round={rounds[i]} searching={(st.tournament.setup_jobs ?? []).some((j) => j.kind === "guide" && j.roundId === rounds[i].id && j.status === "todo")} onSaved={reload} />
       </div>
     );
   }

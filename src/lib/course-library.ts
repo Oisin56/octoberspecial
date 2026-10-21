@@ -3,22 +3,20 @@ import { adminClient } from "./admin";
 import { cleanGuide, type CourseGuide } from "./types";
 
 /**
- * The course library: one hole-by-hole guide per course, shared by every tournament. Research fills it once; an
+ * The course library: one guide per course, shared by every tournament (keyed by the course reference, or
+ * "manual:<name>" for a card typed in by hand). Research fills it once, in the background (research.ts); an
  * organiser's own guide (written or corrected) replaces it and is never overwritten by research.
  */
 
-/** Courses typed in by hand aren't shared: two clubs can have the same name. */
-const shared = (ref: string | null | undefined): ref is string => !!ref && !ref.startsWith("manual:");
-
 export async function libraryGuide(ref: string | null | undefined): Promise<CourseGuide | null> {
-  if (!shared(ref)) return null;
+  if (!ref) return null;
   const { data, error } = await adminClient().from("course_library").select("guide").eq("ref", ref).maybeSingle();
   if (error) return null; // the table isn't there yet: carry on without it
   return cleanGuide(data?.guide);
 }
 
 export async function saveToLibrary(ref: string | null | undefined, name: string, guide: CourseGuide | null, by: "research" | "organiser", sources: string[] = []): Promise<void> {
-  if (!shared(ref)) return;
+  if (!ref) return;
   const g = cleanGuide(guide);
   const db = adminClient();
   if (!g) {
@@ -30,6 +28,6 @@ export async function saveToLibrary(ref: string | null | undefined, name: string
     const { data } = await db.from("course_library").select("written_by").eq("ref", ref).maybeSingle();
     if (data?.written_by === "organiser") return;
   }
-  const { error } = await db.from("course_library").upsert({ ref, name, guide: g, written_by: by, sources, updated_at: new Date().toISOString() });
+  const { error } = await db.from("course_library").upsert({ ref, name, guide: g, written_by: by, status: "done", sources, updated_at: new Date().toISOString() });
   if (error) console.error("[library]", error.message);
 }

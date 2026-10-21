@@ -491,6 +491,11 @@ interface Hit {
   lon?: number;
 }
 
+/** Start reading up on a course in the background as soon as it's picked (nothing to wait for here). */
+function research(body: Record<string, unknown>) {
+  fetch("/api/research", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "start", ...body }), keepalive: true }).catch(() => {});
+}
+
 export function CourseScreen({ d, done, i, nextLabel }: StepProps & { i: number }) {
   const r = d.rounds[i] ?? emptyRound();
   const [q, setQ] = useState("");
@@ -522,6 +527,7 @@ export function CourseScreen({ d, done, i, nextLabel }: StepProps & { i: number 
     const c = res?.course as { tees: Tee[]; lat: number | null; lon: number | null } | undefined;
     if (!c?.tees?.length) return setErr("Couldn't load that course's scorecard. Try another, or type the card in.");
     const tees = c.tees.map((t) => ({ name: t.name, par: t.par, si: t.si, yards: t.yards, rating: t.rating, slope: t.slope }));
+    research({ ref: h.ref });
     done({ rounds: d.rounds.map((x, k) => (k === i ? { ...x, courseRef: h.ref, courseName: h.name, location: h.location, lat: c.lat ?? h.lat ?? null, lon: c.lon ?? h.lon ?? null, tees, tee: tees[0].name, playerTees: {}, holeSet: tees[0].par.length === 9 ? "all" : x.holeSet, manual: false, manualCard: null } : x)) });
   }
 
@@ -563,6 +569,7 @@ export function CourseScreen({ d, done, i, nextLabel }: StepProps & { i: number 
             const sis = card.map((h) => h.si);
             if (new Set(sis).size !== card.length || sis.some((s) => s < 1 || s > card.length)) return setErr(card.length === 18 ? "Each stroke index from 1 to 18 must be used once." : "Each hole needs a different stroke index, 1 to 9.");
             if (card.some((h) => h.par < 3 || h.par > 6)) return setErr("Each par must be 3 to 6.");
+            research({ manual: { name: mName.trim(), card: card.map((h) => ({ par: h.par })) } });
             done({ rounds: d.rounds.map((x, k) => (k === i ? { ...x, courseRef: null, courseName: mName.trim(), manual: true, manualCard: card.map((h) => ({ par: h.par, si: h.si })), tees: undefined, tee: null, playerTees: {}, holeSet: card.length === 9 ? ("all" as HoleSet) : x.holeSet } : x)) });
           }}
         />

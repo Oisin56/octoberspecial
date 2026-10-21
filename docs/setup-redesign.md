@@ -46,6 +46,11 @@ Branch: `setup-redesign`. Read the blueprint for what people see; this file is h
          tap (Done/Back, no Save buttons; asks first when a round has scores). Fixes: personal link first with PIN as
          fallback (organiser not listed); Publish removed (it controlled nothing: the link always worked, nothing is
          listed or indexed); first preview offered after links; trip dates worked out from the rounds only.
+- [x] 4b. Course research in the background (`src/lib/research.ts`, `/api/research`, `/api/research/run`): starts when a
+         course is picked in the wizard; find → map the club's site → read hole pages in batches, history, reviews →
+         one more search if short. Each step starts the next; open pages nudge a stalled one. Setup jobs only wait on
+         it. Organiser sees the guide or one line ("Couldn't find information about this course online"); the site
+         owner page lists the library with each course's research log.
 - [ ] 5. Display: boards for team score, skins, knockout bracket, prizes; rules page; AI writer standings text;
          film final standings card. Organiser home wording.
 - [ ] 6. Walk-throughs per tournament type, existing suites, October Special check, front page screens.

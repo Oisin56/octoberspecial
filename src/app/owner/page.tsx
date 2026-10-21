@@ -60,6 +60,7 @@ export default function OwnerPage() {
   const [invites, setInvites] = useState<Invite[]>([]);
   const [demo, setDemo] = useState<string | null>(null);
   const [mail, setMail] = useState<Mail | null>(null);
+  const [library, setLibrary] = useState<LibraryRow[]>([]);
   const [pin, setPin] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -75,6 +76,7 @@ export default function OwnerPage() {
     setInvites(j.invites ?? []);
     setDemo(j.demo ?? null);
     setMail(j.mail ?? null);
+    setLibrary(j.library ?? []);
   }, []);
   useEffect(() => {
     const t = setTimeout(load, 0);
@@ -156,6 +158,7 @@ export default function OwnerPage() {
             {done && <p className="notice">{done}</p>}
             {err && !del && <p className="error">{err}</p>}
             <Invites invites={invites} post={post} reload={load} />
+            <Library rows={library} />
             <h2>Tournaments</h2>
             <p className="small">
               The example on the front page: <strong>{demo ? rows.find((r) => r.slug === demo)?.name ?? demo : "none yet (the tile says coming soon)"}</strong>. It can be looked at but not changed, except by you.
@@ -287,6 +290,44 @@ function MailCheck({ mail, post }: { mail: Mail; post: Post }) {
 }
 
 /** Requests to run a tournament while it's invitation-only: approve (emails them a link) or decline. */
+type LibraryRow = { ref: string; name: string; status: string; by: string; holes: number; of: number | null; overview: boolean; history: boolean; at: string; log: string[] };
+
+/** The course library: what the background research found for each course, and how it went. */
+function Library({ rows }: { rows: LibraryRow[] }) {
+  if (!rows.length) return null;
+  const line = (c: LibraryRow) =>
+    c.status === "researching"
+      ? "reading up on it now"
+      : c.status === "none"
+        ? "nothing found"
+        : [c.holes ? `${c.holes}${c.of ? ` of ${c.of}` : ""} holes` : null, c.overview ? "about the course" : null, c.history ? "history" : null, c.by === "organiser" ? "written by the organiser" : null].filter(Boolean).join(", ");
+  return (
+    <details className="owner-earlier">
+      <summary>Course library: {rows.length} courses</summary>
+      <ul>
+        {rows.map((c) => (
+          <li key={c.ref}>
+            <details>
+              <summary>
+                <strong>{c.name || c.ref}</strong>: {line(c)}
+              </summary>
+              {c.log.length > 0 && (
+                <ul className="small">
+                  {c.log.map((l, i) => (
+                    <li key={i} style={{ overflowWrap: "anywhere" }}>
+                      {l}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </details>
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
 function Invites({ invites, post, reload }: { invites: Invite[]; post: Post; reload: () => void }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);

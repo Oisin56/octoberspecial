@@ -97,6 +97,16 @@ export default function NewTournament() {
     }
   }, [d, loaded]);
 
+  // The courses picked so far are being read up on in the background: keep that going while the wizard is open
+  const refs = d.rounds.map((r) => r.courseRef).filter((x): x is string => !!x && !x.startsWith("manual:"));
+  const refKey = [...new Set(refs)].join("|");
+  useEffect(() => {
+    if (!refKey) return;
+    const nudge = () => fetch("/api/research", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "nudge", refs: refKey.split("|") }) }).catch(() => {});
+    const t = setInterval(nudge, 60_000);
+    return () => clearInterval(t);
+  }, [refKey]);
+
   const steps = useMemo(() => stepsFor(d), [d]);
   const at = Math.max(0, steps.indexOf(d.step));
   const step = steps[at] ?? "who";

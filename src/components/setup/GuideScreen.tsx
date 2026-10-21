@@ -1,140 +1,115 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useT } from "@/components/Providers";
 import type { CourseGuide, RoundRow, SetupJob } from "@/lib/types";
+import { libraryRef } from "@/lib/wizard";
 import { Screen } from "./Screens";
 
 /**
- * The course guide: what the AI writer knows about the course, hole by hole. Found on the web once and kept in
- * the course library for every later tournament there; the organiser can search again, or write and correct it.
- * Saves when you leave each box.
+ * The course guide: what the AI writer knows about the course. It's found online in the background when the course
+ * is picked and kept for every later tournament there; here the organiser can read it, correct it, write it, or
+ * (when nothing was found) try again. Saves when you leave each box.
  */
 
-const empty: CourseGuide = { overview: "", signature: "", holes: {} };
+const empty: CourseGuide = { overview: "", history: "", signature: "", holes: {} };
 
 export const guideHoles = (g: CourseGuide | null | undefined) => Object.keys(g?.holes ?? {}).length;
+const hasGuide = (g: CourseGuide | null | undefined) => !!g && (guideHoles(g) > 0 || !!g.overview || !!g.history || !!g.signature);
 
 /** One line on where the guide stands, for the round's list. */
 export function guideStatus(round: RoundRow, jobs: SetupJob[]): string {
   const g = round.course_guide;
   const n = guideHoles(g);
   if (n) return `Notes on ${n} of ${(round.all_holes ?? round.holes).length} holes`;
-  if (g?.overview) return "An overview, no hole-by-hole notes";
-  if (jobs.some((j) => j.kind === "guide" && j.roundId === round.id && j.status === "todo")) return "Still reading up on the course";
-  return "Nothing found yet";
+  if (hasGuide(g)) return "About the course, no hole-by-hole notes";
+  if (jobs.some((j) => j.kind === "guide" && j.roundId === round.id && j.status === "todo")) return "Still reading up on it online";
+  return "Nothing found online";
 }
 
-export function GuideScreen({ round, onSaved }: { round: RoundRow; onSaved: () => Promise<void> | void }) {
+export function GuideScreen({ round, searching: initial, onSaved }: { round: RoundRow; searching: boolean; onSaved: () => Promise<void> | void }) {
   const { api } = useT();
-  const [g, setG] = useState<CourseGuide>(round.course_guide ?? empty);
-  const [savedAt, setSavedAt] = useState<string | null>(null);
+  const [g, setG] = useState<CourseGuide>({ ...empty, ...(round.course_guide ?? {}) });
+  const [saved, setSaved] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [step, setStep] = useState<string | null>(null);
-  const [found, setFound] = useState<{ guide: CourseGuide | null; result: string; sources: string[] } | null>(null);
+  const [searching, setSearching] = useState(initial && !hasGuide(round.course_guide));
   const card = round.all_holes ?? round.holes;
+  const ref = libraryRef(round.course_slug);
+  const reload = useRef(onSaved);
+  useEffect(() => {
+    reload.current = onSaved;
+  }, [onSaved]);
 
-  async function save(next: CourseGuide, by: "organiser" | "research" = "organiser", sources: string[] = [], what = "Saved") {
+  // Reading up on it in the background: look in now and then, and show it when it's in
+  useEffect(() => {
+    if (!searching) return;
+    let stop = false;
+    const look = async () => {
+      const r = await fetch("/api/research", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "status", ref }) })
+        .then((x) => x.json())
+        .catch(() => null);
+      if (stop || !r || r.status === "researching") return;
+      setSearching(false);
+      if (r.found) {
+        // Picked up by the rounds at this course: load it
+        await api("/api/setup", {});
+        await reload.current();
+      }
+    };
+    const t = setInterval(look, 15_000);
+    look();
+    return () => {
+      stop = true;
+      clearInterval(t);
+    };
+  }, [searching, ref, api]);
+
+  async function save(next: CourseGuide) {
     setErr(null);
-    const r = await api("/api/admin", { action: "saveGuide", roundId: round.id, guide: next, by, sources });
+    const r = await api("/api/admin", { action: "saveGuide", roundId: round.id, guide: next, by: "organiser" });
     if (!r.ok) return setErr(String(r.j.error ?? "Couldn't save that. Check the signal and try again."));
-    setSavedAt(what);
+    setSaved(true);
     await onSaved();
   }
-  const changed = (a: CourseGuide) => JSON.stringify(a) !== JSON.stringify(round.course_guide ?? empty);
-  const blur = () => changed(g) && save(g);
+  const blur = () => JSON.stringify(g) !== JSON.stringify({ ...empty, ...(round.course_guide ?? {}) }) && save(g);
 
-  /** Search the web again: the club's own pages first, every note checked against the card */
-  async function search() {
+  async function tryAgain() {
     setErr(null);
-    setFound(null);
-    setSavedAt(null);
-    setStep("Searching for the course's hole-by-hole pages…");
-    let work: Record<string, unknown> | null = null;
-    for (let n = 0; n < 8; n++) {
-      const r = await api("/api/admin", { action: "guideStep", roundId: round.id, work });
-      if (!r.ok) {
-        setStep(null);
-        return setErr(String(r.j.error ?? "Couldn't search just now. Try again."));
-      }
-      work = r.j.work as Record<string, unknown>;
-      const next = ((work.sources as { url: string; status: string }[]) ?? []).find((x) => x.status === "todo");
-      if (work.stage === "done") {
-        setStep(null);
-        const guide = (r.j.guide as CourseGuide | null) ?? null;
-        const sources = (work.from as string[]) ?? [];
-        // Nothing written yet: use it straight away. Otherwise ask before replacing what's there
-        if (guide && !guideHoles(g) && !g.overview) {
-          setG(guide);
-          await save(guide, "research", sources, String(work.result));
-          return;
-        }
-        return setFound({ guide, result: String(work.result ?? ""), sources });
-      }
-      if (next) setStep(`Reading ${host(next.url)}…`);
-    }
-    setStep(null);
-    setErr("That took too long. Try again.");
+    const body = ref.startsWith("manual:") ? { action: "start", again: true, manual: { name: round.course_name, location: round.course_location, card: card.map((h) => ({ par: h.par })) } } : { action: "start", again: true, ref };
+    const r = await fetch("/api/research", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).catch(() => null);
+    if (!r?.ok) return setErr("Couldn't start the search. Check the signal and try again.");
+    setSearching(true);
   }
 
   const n = guideHoles(g);
+  const field = (k: "overview" | "history" | "signature", label: string, rows = 90, placeholder?: string) => (
+    <label className="field">
+      <span className="lbl">{label}</span>
+      <textarea value={g[k] ?? ""} onChange={(e) => setG({ ...g, [k]: e.target.value })} onBlur={blur} style={{ minHeight: rows }} placeholder={placeholder} />
+    </label>
+  );
   return (
-    <Screen q="Course guide" label={round.course_name} hint="What the AI knows about the course, for previews, bulletins, reports and the film. Kept for every later tournament here.">
-      {step ? (
+    <Screen q="Course guide" label={round.course_name} hint="What the AI knows about the course, for the previews, reports and the film. Kept for every later tournament here.">
+      {searching ? (
         <p className="notice" aria-live="polite">
-          {step}
+          Reading up on this course online. It can take a few minutes, and you don&apos;t need to stay on this page.
         </p>
-      ) : n || g.overview ? (
-        <p className="small muted">
-          {n ? `Notes on ${n} of ${card.length} holes.` : "An overview, but no hole-by-hole notes."} Change anything below; it saves when you leave the box.
-        </p>
+      ) : !hasGuide(g) ? (
+        <>
+          <p className="notice">Couldn&apos;t find information about this course online. Try again, or write a line or two yourself below.</p>
+          <button type="button" className="btn secondary block" onClick={tryAgain}>
+            Try again
+          </button>
+        </>
       ) : (
-        <p className="notice">Nothing found for this course yet. Search again, or write a line or two yourself below.</p>
+        <p className="small muted">{n ? `Notes on ${n} of ${card.length} holes. ` : ""}Change anything below; it saves when you leave the box.</p>
       )}
-      {savedAt && !step && <p className="su-saved-line">✓ {savedAt}</p>}
-      {found && (
-        <div className="panel stack">
-          {found.guide ? (
-            <>
-              <p>
-                {found.result}. Use these in place of the notes below?
-              </p>
-              <div className="row">
-                <button
-                  type="button"
-                  className="btn"
-                  onClick={async () => {
-                    const next = { overview: found.guide!.overview || g.overview, signature: found.guide!.signature || g.signature, holes: found.guide!.holes };
-                    setG(next);
-                    setFound(null);
-                    await save(next, "research", found.sources, "Saved the new notes");
-                  }}
-                >
-                  Use the new notes
-                </button>
-                <button type="button" className="btn secondary" onClick={() => setFound(null)}>
-                  Keep what&apos;s here
-                </button>
-              </div>
-            </>
-          ) : (
-            <p>Nothing reliable found this time: no page described the holes in a way that matched your card.</p>
-          )}
-        </div>
-      )}
-      <button type="button" className="btn secondary block" disabled={!!step} onClick={search}>
-        {n || g.overview ? "Search the web again" : "Try again"}
-      </button>
+      {saved && <p className="su-saved-line">✓ Saved</p>}
       {err && <p className="error">{err}</p>}
       <div className="stack guide-editor">
-        <label className="field">
-          <span className="lbl">About the course</span>
-          <textarea value={g.overview} onChange={(e) => setG({ ...g, overview: e.target.value })} onBlur={blur} style={{ minHeight: 90 }} placeholder="e.g. Parkland, tree-lined, opened in 1893; small, quick greens" />
-        </label>
-        <label className="field">
-          <span className="lbl">The holes people talk about</span>
-          <textarea value={g.signature} onChange={(e) => setG({ ...g, signature: e.target.value })} onBlur={blur} style={{ minHeight: 60 }} />
-        </label>
+        {field("overview", "About the course", 90, "e.g. Parkland, tree-lined, small quick greens")}
+        {field("history", "Its story", 80, "e.g. Founded in 1893; the course was laid out by …")}
+        {field("signature", "The holes people talk about", 60)}
         <div className="guide-holes">
           {card.map((h) => {
             const k = String(h.number);
@@ -162,12 +137,4 @@ export function GuideScreen({ round, onSaved }: { round: RoundRow; onSaved: () =
       </div>
     </Screen>
   );
-}
-
-function host(u: string) {
-  try {
-    return new URL(u).hostname.replace(/^www\./, "");
-  } catch {
-    return "the page";
-  }
 }

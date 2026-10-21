@@ -563,3 +563,11 @@ from (
 ) g
 order by ref, n desc
 on conflict (ref) do nothing;
+-- Course research runs in the background as soon as a course is picked: the library row tracks it
+alter table course_library alter column guide drop not null;
+alter table course_library add column if not exists status text not null default 'done';
+alter table course_library drop constraint if exists course_library_status_check;
+alter table course_library add constraint course_library_status_check check (status in ('researching', 'done', 'none'));
+alter table course_library add column if not exists work jsonb;          -- the research so far (pages read, why any were left out)
+alter table course_library add column if not exists step_at timestamptz; -- when the last step started (a stalled one is picked up again)
+alter table course_library add column if not exists started_at timestamptz;

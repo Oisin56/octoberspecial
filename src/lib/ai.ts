@@ -105,6 +105,7 @@ export function guideText(r: RoundRow, focus?: number[]): string | null {
   const notes = nums.map((n) => `- H${n}${par(n) ? ` (par ${par(n)})` : ""}${focus && n !== focus[0] ? " [coming up]" : ""}: ${g.holes[String(n)]}`);
   return [
     g.overview ? `Overview: ${g.overview}` : "",
+    g.history ? `History: ${g.history}` : "",
     g.signature ? `Signature holes: ${g.signature}` : "",
     notes.length ? `Hole notes:\n${notes.join("\n")}` : "",
   ]

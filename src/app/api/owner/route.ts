@@ -49,10 +49,18 @@ export async function GET() {
   };
   const [players, rounds, posts] = await Promise.all([count("players"), count("rounds"), count("posts")]);
   const [brand, music, limits, spend, invites, demo, sample] = await Promise.all([brandPack(), musicTracks(), filmLimits(), filmSpend(), listInvites(), demoSlug(), sampleFilm()]);
+  // The course library: what research found for each course, and how it went (for checking it's working)
+  const { data: lib } = await db.from("course_library").select("ref,name,status,written_by,guide,work,updated_at").order("updated_at", { ascending: false }).limit(60);
+  const library = (lib ?? []).map((c) => {
+    const g = (c.guide ?? {}) as { holes?: Record<string, string>; overview?: string; history?: string };
+    const w = (c.work ?? {}) as { log?: string[]; card?: unknown[] };
+    return { ref: c.ref, name: c.name, status: c.status, by: c.written_by, holes: Object.keys(g.holes ?? {}).length, of: w.card?.length ?? null, overview: !!g.overview, history: !!g.history, at: c.updated_at, log: (w.log ?? []).slice(-14) };
+  });
   return json({
     owner: true,
     invites,
     demo,
+    library,
     mail: { ...mailSetup(), ownerEmail: ownerEmail() || null },
     films: {
       brand: Object.fromEntries(

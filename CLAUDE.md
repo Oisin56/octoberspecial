@@ -49,6 +49,8 @@ Oisin is a GP in Ireland, not a developer. Talk in plain words about what people
 
 - `src/app/t/[slug]/…` the tournament: scorecard, feed, record, follow, owner tools. `src/app/new` the set-up
   wizard. `src/app/try` the sample round. `src/app/owner` the site owner's page.
+- `src/lib/research.ts` course research in the background (club site, hole pages, history), kept in the course
+  library (`course_library` table) for every tournament at that course.
 - `src/lib/engine.ts` scoring (stroke, Stableford, match, team formats, handicaps); `live.ts` leaderboards;
   `sample.ts` the sample round; `screens.json` front page screen sizes and status bar colours.
 - `src/components/front/` the front page. Its phone screens are real app screens taken by

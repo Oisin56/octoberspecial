@@ -319,6 +319,47 @@ http
       fs.writeFileSync(`/var/tmp/ospg/prompt-${promptN}.txt`, `MODEL ${b.model}\nSYSTEM\n${b.system}\n\nUSER\n${b.messages[0].content}`);
       const said = String(b.messages[0].content);
       const reply = (text, extra = {}) => { res.writeHead(200, { "content-type": "application/json" }); return res.end(JSON.stringify({ id: "msg", type: "message", role: "assistant", model: b.model, content: [{ type: "text", text }], stop_reason: "end_turn", usage: { input_tokens: 1, output_tokens: 1 }, ...extra })); };
+      // Course research (research.ts): find, map the club's site, read pages in batches, look for more
+      if (said.includes("Find the web pages that describe this golf course: its holes and its history")) {
+        fs.appendFileSync("/var/tmp/ospg/research.log", "find " + JSON.stringify(b.tools ?? null) + "\n");
+        globalThis.lastCard = Object.fromEntries([...said.matchAll(/(\d+): par (\d)/g)].map((m) => [m[1], Number(m[2])]));
+        if (said.includes("Nowhere")) return reply(JSON.stringify({ official: "", pages: [] }));
+        if (!said.includes("Birr")) return reply(JSON.stringify({ official: "", pages: [{ url: "https://example.com/course-guide", kind: "holes" }] }));
+        return reply("Found: " + JSON.stringify({ official: "https://birrgolfclub.ie/", pages: [
+          { url: "https://www.top100golfcourses.com/birr", kind: "review" },
+          { url: "https://wrongcourse.example.org/birr-links", kind: "holes" },
+        ] }));
+      }
+      if (said.includes("Find the course pages on the website of")) {
+        fs.appendFileSync("/var/tmp/ospg/research.log", "map " + JSON.stringify(b.tools ?? null) + "\n");
+        const pages = Array.from({ length: 18 }, (_, i) => ({ url: `https://birrgolfclub.ie/course/hole-${i + 1}`, kind: "hole", hole: i + 1 }));
+        pages.push({ url: "https://birrgolfclub.ie/history", kind: "history" }, { url: "https://elsewhere.example.com/x", kind: "course" });
+        return reply(JSON.stringify({ pages }));
+      }
+      if (said.includes("Find more web pages about the golf course")) {
+        fs.appendFileSync("/var/tmp/ospg/research.log", "more\n");
+        return reply(JSON.stringify({ pages: [] }));
+      }
+      if (said.includes("OUR SCORECARD (hole: par, lengths from each tee)") && /Read th(is page|ese pages) and report/.test(said)) {
+        const pages = [...said.matchAll(/PAGE: (\S+)/g)].map((m) => m[1]);
+        fs.appendFileSync("/var/tmp/ospg/research.log", "read " + pages.join(" ") + " " + JSON.stringify((b.tools ?? []).map((t) => t.allowed_domains)) + "\n");
+        const c = globalThis.lastCard || {};
+        const holes = {};
+        for (const pg of pages) {
+          const m = pg.match(/hole-(\d+)$/);
+          // The club gives lengths from the white tees (longer than the card's first tee): still kept
+          if (m && Number(m[1]) !== 13) holes[m[1]] = { par: c[m[1]], length: { 3: 175, 4: 390, 5: 520 }[c[m[1]]] ?? null, unit: "yards", note: `Club note for hole ${m[1]}.` };
+        }
+        if (pages.some((x) => x.includes("/history"))) return reply(JSON.stringify({ sameCourse: true, overview: "", history: "Founded in 1893; the course was laid out on eskers in the 1900s.", signature: "", holes: {} }));
+        if (pages.some((x) => x.includes("top100"))) return reply(JSON.stringify({ sameCourse: true, overview: "Parkland in the Midlands, laid out on glacial eskers.", history: "", signature: "The 7th from its elevated tee.", holes: { 13: { par: c[13], length: null, note: "Review note for hole 13." } } }));
+        if (pages.some((x) => x.includes("wrongcourse"))) {
+          for (let h = 1; h <= 18; h++) holes[h] = { par: c[h] === 3 ? 5 : 3, length: 400, unit: "yards", note: `Wrong course ${h}` };
+          return reply(JSON.stringify({ sameCourse: true, overview: "A seaside links.", holes }));
+        }
+        if (pages.some((x) => x.includes("example.com/course-guide"))) return reply(JSON.stringify({ sameCourse: true, overview: "A test course on the cliffs.", holes: { 6: { par: c[6], length: null, note: "Drive over the cliffs." } } }));
+        if (!Object.keys(holes).length) return reply("Couldn't read it.");
+        return reply(JSON.stringify({ sameCourse: true, overview: "", history: "", signature: "", holes }));
+      }
       if (said.includes("Find web pages that describe this golf course HOLE BY HOLE")) {
         fs.writeFileSync("/var/tmp/ospg/guide-search.json", JSON.stringify({ tools: b.tools ?? null }));
         if (said.includes("Nowhere")) return reply(JSON.stringify({ pages: [] }));

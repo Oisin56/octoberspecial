@@ -98,6 +98,8 @@ export interface PlayerRow {
 /** Background on the course for the AI writer: overview, signature holes, notes per hole. */
 export interface CourseGuide {
   overview: string;
+  /** The club and the course's story: founded, designer, championships, famous moments */
+  history?: string;
   signature: string;
   holes: Record<string, string>; // "1".."18" -> note
 }
@@ -110,8 +112,9 @@ export function cleanGuide(g: unknown): CourseGuide | null {
     const n = Number(k);
     if (Number.isInteger(n) && n >= 1 && n <= 18 && typeof v === "string" && v.trim()) holes[String(n)] = v.trim().slice(0, 300);
   }
-  const out = { overview: String(x.overview ?? "").trim().slice(0, 1500), signature: String(x.signature ?? "").trim().slice(0, 800), holes };
-  return out.overview || out.signature || Object.keys(holes).length ? out : null;
+  const history = String(x.history ?? "").trim().slice(0, 1500);
+  const out: CourseGuide = { overview: String(x.overview ?? "").trim().slice(0, 1500), signature: String(x.signature ?? "").trim().slice(0, 800), holes, ...(history ? { history } : {}) };
+  return out.overview || out.signature || history || Object.keys(holes).length ? out : null;
 }
 
 export interface HoleRowData {

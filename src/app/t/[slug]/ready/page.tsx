@@ -66,6 +66,8 @@ export default function Ready() {
     );
 
   const solo = state.players.length === 1;
+  // Courses nothing could be found for online (one brief line; the rest is in Tournament setup)
+  const notFound = [...new Set((jobs ?? []).filter((j) => j.kind === "guide" && j.status === "none" && j.note !== "Skipped").map((j) => state.rounds.find((r) => r.id === j.roundId)?.course_name).filter((x): x is string => !!x))];
   const total = (jobs ?? []).length;
   const done = (jobs ?? []).filter((j) => j.status !== "todo").length;
 
@@ -114,6 +116,11 @@ export default function Ready() {
     <section className="you-ready">
       <h1>You&apos;re ready</h1>
       <p className="lead">{t.name} is set up. Nobody else can see it until you share it.</p>
+      {notFound.length > 0 && (
+        <p className="small muted">
+          We couldn&apos;t find information about {listOf(notFound)} online. You can add a few lines about {notFound.length === 1 ? "it" : "them"} in Tournament setup.
+        </p>
+      )}
       <div className="ready-tiles">
         {!solo && (
           <Link className="ready-tile main" href={href("/admin#players")}>
@@ -134,3 +141,5 @@ export default function Ready() {
     </section>
   );
 }
+
+const listOf = (xs: string[]) => (xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`);

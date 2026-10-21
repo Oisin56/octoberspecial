@@ -432,6 +432,9 @@ export function withTeeTimes(games: Game[], first: string | null | undefined, ga
 /** The course a saved round came from, as the set-up screens refer to it (null: typed in by hand). */
 export const courseRefOf = (slug: string) => (slug.startsWith("manual:") ? null : slug.includes(":") ? slug : `local:${slug}`);
 
+/** The course library's name for a round's course (a typed-in card keeps its own "manual:" name). */
+export const libraryRef = (slug: string) => (slug.startsWith("manual:") ? slug : (courseRefOf(slug) as string));
+
 /** A saved round's format as the set-up screens name it. */
 export function formatOfRound(r: { play: PlayType | null; format: ScoringType }, who: Who): DayFormat {
   if (r.play === "fourball") return "fourball";
