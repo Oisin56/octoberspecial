@@ -4,6 +4,8 @@ import Anthropic from "@anthropic-ai/sdk";
 import { adminClient } from "./admin";
 import { getCourse } from "./courses";
 import { cleanGuide, type CourseGuide } from "./types";
+import { holeMatches, type CardHole } from "./research-check";
+export { holeMatches, type CardHole };
 
 /**
  * Course research: everything the web says about a course, its holes and its history, found in the background as
@@ -28,13 +30,6 @@ const MAX_STEPS = 24;
 const MAX_PAGES = 40;
 /** New courses researched a day, across the site (a safeguard on cost) */
 const DAILY_LIMIT = Number(process.env.RESEARCH_DAILY_LIMIT || 80);
-
-export interface CardHole {
-  number: number;
-  par: number;
-  /** The hole's length from each tee, in yards (0 when unknown) */
-  yards: number[];
-}
 
 export interface ResearchPage {
   url: string;
@@ -336,16 +331,6 @@ At most 8 pages. If there's nothing new, output {"pages": []}.`;
   const added = pages.length - w.pages.length;
   const log = [...w.log, `more (${n} holes so far): ${added} new pages`];
   return { ...w, pages, searchedMore: true, stage: added ? "read" : "done", log };
-}
-
-/** A hole note agrees with our card: same par, and a length close to one of the course's tees (if both known). */
-export function holeMatches(card: CardHole, par: unknown, length: unknown, unit: unknown): boolean {
-  if (Number(par) !== card.par) return false;
-  const len = Number(length);
-  const known = card.yards.filter((y) => y > 0);
-  if (!known.length || !Number.isFinite(len) || len <= 0) return true;
-  const yards = /^m/i.test(String(unit ?? "")) ? len * 1.0936 : len;
-  return known.some((y) => Math.abs(yards - y) / y <= 0.15) || (yards >= Math.min(...known) * 0.85 && yards <= Math.max(...known) * 1.15);
 }
 
 /** Keep what a page says that agrees with our card; leave the page out if its pars clearly don't line up. */
