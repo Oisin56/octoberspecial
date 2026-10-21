@@ -17,6 +17,14 @@ function pointsOf(r: RoundRow, f: DRound["format"]): RoundPoints | undefined {
   return undefined;
 }
 
+/** A saved round's handicaps as the screens show them: official, flat, or shots set by hand (by player id). */
+function hcpOf(r: RoundRow): Pick<DRound, "hcp" | "shots"> {
+  const h = r.handicap_rule;
+  if (h?.mode !== "manual") return { hcp: "official" };
+  const shots = Object.fromEntries(Object.entries(h.shots ?? {}).filter(([, v]) => v > 0));
+  return Object.keys(shots).length ? { hcp: "manual", shots } : { hcp: "flat" };
+}
+
 export function fromState(s: Pick<TournamentState, "tournament" | "players" | "rounds">): Draft {
   const t = s.tournament;
   const players = [...s.players].sort((a, b) => a.sort - b.sort);
@@ -92,13 +100,16 @@ export function fromState(s: Pick<TournamentState, "tournament" | "players" | "r
         time: r.tee_time ? r.tee_time.slice(0, 5) : null,
         points: pointsOf(r, format),
         picks: (r.games ?? []).map((g) => g.sides.map((sd) => [...sd.playerIds])),
+        ...hcpOf(r),
+        card: card.map((h) => ({ par: h.par, yards: h.yards })),
       };
     }),
   };
 
   // The handicap allowance, when it isn't the official one for the first round
-  const first = rounds[0];
-  const f0 = draft.rounds[0]?.format;
+  const k0 = rounds.findIndex((r) => r.handicap_rule?.mode === "allowance");
+  const first = rounds[k0];
+  const f0 = draft.rounds[k0]?.format;
   if (first?.handicap_rule?.mode === "allowance" && f0) {
     const official = handicapFor(f0, draft.win, null).pct;
     draft.allowance = first.handicap_rule.pct === official ? null : first.handicap_rule.pct;

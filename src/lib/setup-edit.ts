@@ -12,7 +12,7 @@ import {
   libraryRef,
   drawRound,
   formatOfRound,
-  handicapFor,
+  roundHandicap,
   isMatch,
   isPairs,
   knockoutPairs,
@@ -76,7 +76,7 @@ export async function applySetupEdit(t: TournamentRow, raw: unknown, scope: stri
   const formatPatch = (r: Pick<RoundRow, "tees" | "tee" | "handicap_rule">, f: DayFormat, i: number) => {
     const { play, scoring } = playOf(f);
     const points = pointsRule(f, w.rounds[i]?.points, w.win, w.players.length);
-    return { play, format: scoring, points_rule: points, nine_points: points.front, full_points: Math.floor(points.full), handicap_rule: handicapFor(f, w.win, ratingOf(r), w.allowance) };
+    return { play, format: scoring, points_rule: points, nine_points: points.front, full_points: Math.floor(points.full), handicap_rule: roundHandicap(f, w.win, ratingOf(r), w.allowance, w.rounds[i] ?? {}, idOf) };
   };
   /** Groups or matches for round i: as picked, or (fresh: the format's changed shape) a new draw. */
   const draw = (i: number, fresh = false) => drawRound(fresh && w.draw === "pick" ? { ...w, draw: "random" } : w, w.rounds[i], i + 1, ids, info);
@@ -282,7 +282,19 @@ export async function applySetupEdit(t: TournamentRow, raw: unknown, scope: stri
           const gs = draw(i, true);
           Object.assign(patch, { games: gs, scorer_id: gs[0]?.scorerId ?? null });
         }
-      } else if (patch.tee && r.handicap_rule?.mode === "allowance") patch.handicap_rule = { ...r.handicap_rule, course: ratingOf(r) };
+      } else {
+        // Handicaps: official, flat or set by hand. An official allowance only follows a change of tee (so an older
+        // round's own percentage is left alone); flat and shots by hand are written as asked
+        const want = roundHandicap(a.format, w.win, ratingOf(r), w.allowance, a, idOf);
+        const shotsOf = (h: unknown) => JSON.stringify(Object.entries((h as { shots?: Record<string, number> })?.shots ?? {}).filter(([, v]) => v > 0).sort());
+        const cur = r.handicap_rule;
+        if (legacy) {
+          // Older tournaments keep their handicaps (changed on the organiser page's Rounds and courses)
+          if (patch.tee && cur?.mode === "allowance") patch.handicap_rule = { ...cur, course: ratingOf(r) };
+        } else if (want.mode === "manual" || cur?.mode === "manual") {
+          if (want.mode !== cur?.mode || shotsOf(want) !== shotsOf(cur)) patch.handicap_rule = want;
+        } else if (patch.tee && cur?.mode === "allowance") patch.handicap_rule = { ...cur, course: ratingOf(r) };
+      }
       // Tee times follow the first one
       if (!isStarted && !patch.games && (a.time || null) !== (r.tee_time || null) && r.games?.length) patch.games = withTeeTimes(r.games, a.time, gap);
       await updateR(r.id, patch);

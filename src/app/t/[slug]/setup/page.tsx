@@ -6,7 +6,7 @@ import { useT } from "@/components/Providers";
 import { Loading } from "@/components/ui";
 import { useAdmin } from "@/components/editors";
 import { THEMES, TONE_LABEL } from "@/lib/types";
-import { formatName, inSentence, isMatch, roundFormats, usesPoints, winName, type DayFormat } from "@/lib/wizard";
+import { formatName, handicapFor, inSentence, isMatch, roundFormats, usesPoints, winName, type DayFormat } from "@/lib/wizard";
 import { fromState } from "@/components/setup/fromState";
 import { GuideScreen, guideStatus } from "@/components/setup/GuideScreen";
 import { badIndex, draftProblems, emptyRound, holesOf, named, settle, toWizard, type Draft } from "@/components/setup/model";
@@ -16,6 +16,7 @@ import {
   ExtrasScreen,
   FormatScreen,
   GroupsScreen,
+  HandicapScreen,
   HolesScreen,
   LookScreen,
   NameScreen,
@@ -208,7 +209,7 @@ export default function TournamentSetup() {
     const [kind, n, part] = what.split(":");
     if (kind === "round") {
       const i = Number(n);
-      return started(i) && part === "tee" ? `Round ${i + 1} has scores. Changing the tees works out its results again from them.` : null;
+      return started(i) && (part === "tee" || part === "hcp") ? `Round ${i + 1} has scores. Changing the ${part === "tee" ? "tees" : "handicaps"} works out its results again from them.` : null;
     }
     if (!["points", "win", "players", "teams"].includes(kind)) return null;
     const names = list(scoredRounds.map((i) => String(i + 1)));
@@ -318,6 +319,7 @@ export default function TournamentSetup() {
             {kind === "holes" && <HolesScreen {...props} i={i} />}
             {kind === "format" && <FormatScreen {...props} i={i} />}
             {kind === "when" && <WhenScreen key={i} {...props} i={i} />}
+            {kind === "hcp" && <HandicapScreen {...props} i={i} />}
             {kind === "points" && <PointsScreen {...props} />}
             {kind === "groups" && <GroupsScreen {...props} />}
             {kind === "prizes" && <PrizesScreen {...props} />}
@@ -377,6 +379,14 @@ export default function TournamentSetup() {
           {!r.manual && (r.tees?.length ?? 0) > 1 && <Row label="Tees" value={`${r.tee}${others ? `, ${others} player${others === 1 ? "" : "s"} on other tees` : ""}`} onChange={() => open(`round:${i}:tee`, view)} saved={tick(`round:${i}:tee`)} />}
           {holesOf(r) === 18 && <Row label="Holes" value={HOLES[r.holeSet]} onChange={on ? undefined : () => open(`round:${i}:holes`, view)} saved={tick(`round:${i}:holes`)} />}
           {r.format && <Row label="Format" value={formatName(r.format)} onChange={on || ko || legacy || opts.length < 2 || (solo && i > 0) ? undefined : () => open(`round:${i}:format`, view)} saved={tick(`round:${i}:format`)} />}
+          {!legacy && r.format && (
+            <Row
+              label="Handicaps"
+              value={r.hcp === "flat" ? "Flat, no shots" : r.hcp === "manual" ? "Shots set by hand" : base.allowance === 0 ? "Off scratch (the whole tournament)" : `Official allowance, ${handicapFor(r.format, base.win, null, base.allowance).pct}%`}
+              onChange={() => open(`round:${i}:hcp`, view)}
+              saved={tick(`round:${i}:hcp`)}
+            />
+          )}
           <Row label="Date and first tee time" value={r.date ? `${day(r.date)}${r.time ? ` at ${r.time}` : ""}` : "Not set yet"} onChange={() => open(`round:${i}:when`, view)} saved={tick(`round:${i}:when`)} />
           {st.tournament.ai_on !== false && rounds[i] && <Row label="Course guide" value={guideStatus(rounds[i], st.tournament.setup_jobs ?? [])} onChange={() => (setView({ kind: "guide", i }), top())} />}
         </ul>

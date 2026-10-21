@@ -225,6 +225,8 @@ export interface Prize {
   per: "trip" | "round";
   /** Closest the pin and long drive: the holes that count (default: every par 3 / every par 5) */
   holes?: number[] | null;
+  /** The same, chosen course by course: round number → holes (a round not listed: every par 3 / par 5) */
+  holesByRound?: Record<string, number[]> | null;
   /** Points race only: the prize counts as this many points instead of standing apart */
   points?: number | null;
 }
@@ -1185,6 +1187,22 @@ export function knockoutGames(cfg: TournamentCfg, entriesByRound: Record<string,
 
 // ---------------------------------------------------------------- prizes
 
+/**
+ * The holes in a round where closest the pin or long drive is recorded on the card: the prize's chosen holes (every
+ * par 3 / par 5 unless chosen), or every one when a points race gives bonus points for them. Older tournaments
+ * (no way to win set) record them on every par 3 and par 5.
+ */
+export function sideGameHoles(cfg: Pick<TournamentCfg, "win" | "prizes">, round: Pick<RoundCfg, "number" | "holes">, kind: "ctp" | "ld"): number[] {
+  const par = kind === "ctp" ? 3 : 5;
+  const every = round.holes.filter((h) => h.par === par).map((h) => h.number);
+  if (!cfg.win) return every;
+  if (cfg.win.kind === "points" && (cfg.win.bonus?.[kind] ?? 0) > 0) return every;
+  const p = (cfg.prizes ?? []).find((x) => x.kind === kind);
+  if (!p) return [];
+  const chosen = p.holesByRound?.[String(round.number)] ?? p.holes;
+  return chosen?.length ? every.filter((n) => chosen.includes(n)) : every;
+}
+
 export interface PrizeResult {
   kind: PrizeKind;
   /** The round it's for (null: the whole trip) */
@@ -1226,9 +1244,10 @@ export function prizeResults(
     return { ...r, points };
   };
   // Closest the pin / long drive on chosen holes (default: par 3s / par 5s), counted from the cards
-  const holeWins = (kind: "ctp" | "ld", holes: number[] | null | undefined, rs: RoundCfg[]) => {
+  const holeWins = (kind: "ctp" | "ld", p: Prize, rs: RoundCfg[]) => {
     const value = Object.fromEntries(pids.map((id) => [id, 0]));
-    for (const r of rs)
+    for (const r of rs) {
+      const holes = p.holesByRound?.[String(r.number)] ?? p.holes;
       for (const g of r.games)
         for (const e of entriesByRound[r.id] ?? []) {
           if (e.game !== g.id) continue;
@@ -1238,6 +1257,7 @@ export function prizeResults(
           const w = kind === "ctp" ? e.ctpWinner : e.ldWinner;
           if (ok && w) for (const pid of playersOfBall(w, g)) value[pid] = (value[pid] ?? 0) + 1;
         }
+    }
     return value;
   };
   for (const p of cfg.prizes ?? []) {
@@ -1246,7 +1266,7 @@ export function prizeResults(
     for (const sc of scopes) {
       const decided = sc.roundId ? sc.idx.every(roundDone) : complete;
       if (p.kind === "ctp" || p.kind === "ld") {
-        const value = holeWins(p.kind, p.holes, sc.rs);
+        const value = holeWins(p.kind, p, sc.rs);
         out.push(award(p, { kind: p.kind, roundId: sc.roundId, value, lowerBetter: false, leaders: leadersOf(value, false, pids), decided }));
       } else if (p.kind === "birdies" || p.kind === "gir") {
         const k: "birdies" | "gir" = p.kind;

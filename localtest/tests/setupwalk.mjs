@@ -53,12 +53,23 @@ async function wizard(name, first, a = {}) {
         await p.locator(".wz-hit").first().click();
       }
     } else if (/^Which tees/.test(h) || /^How many holes/.test(h)) await p.locator(".wz-tile").first().click();
+    else if (/^When is round (\d+)/.test(h) && a.hcp?.[Number(h.match(/\d+/)[0])]) {
+      // Handicaps for this round, under More options
+      await p.getByText("Handicaps for this round").click();
+      await p.locator(".wz-more .wz-tile", { hasText: a.hcp[Number(h.match(/\d+/)[0])] }).click();
+      await next();
+    }
     else if (/^What's round|^How are you scoring/.test(h)) {
       const want = a.formats?.[formatAt++];
       await (want ? p.locator(".wz-tile", { hasText: want }).first() : p.locator(".wz-tile[aria-pressed=true]").first()).click();
     } else if (/^Who plays with whom/.test(h)) await p.getByText(a.draw ?? "Random").first().click();
     else if (/^Any prizes/.test(h)) {
       for (const pr of a.prizes ?? []) await p.locator(".wz-prize-t", { hasText: pr }).click();
+      if (a.ctpHoles) {
+        const box = p.locator(".wz-prize", { hasText: "Closest the pin" });
+        await box.getByRole("button", { name: "Choose the holes" }).click();
+        for (const n of a.ctpHoles) await box.locator(".wz-holes-pick .pick-tile", { hasText: new RegExp(`^${n}\\b`) }).click();
+      }
       await next();
     } else if (/^Pick a look/.test(h)) await p.locator(".wz-theme").first().click();
     else await next();
@@ -189,11 +200,12 @@ await run("stableford", async () => {
       await W.p.getByText("Most Stableford points").click();
       await W.p.locator(".num-tile", { hasText: /^1$/ }).click();
     },
-    { draw: "Balanced by handicap", prizes: ["Most birdies", "Front 9 and back 9"] },
+    { draw: "Balanced by handicap", prizes: ["Most birdies", "Front 9 and back 9", "Closest the pin"], ctpHoles: [7] },
   );
   if (!slug) return;
   ok(q(`select handicap from players p join tournaments t on t.id=p.tournament_id where t.slug='${slug}' and p.name='Ronan'`) === "-1.2", "stableford: a plus handicap is kept as plus");
   ok(q(`select jsonb_array_length(games) from rounds r join tournaments t on t.id=r.tournament_id where t.slug='${slug}'`) === "2", "stableford: six players in two groups");
+  ok(q(`select p->>'holesByRound' from tournaments, jsonb_array_elements(prizes) p where slug='${slug}' and p->>'kind'='ctp'`) === '{"1": [7]}', "stableford: closest the pin on the 7th only");
   // Tournament setup: the name, saved as you type
   const { p, close } = await phone(slug, true);
   await p.goto(`${B}/t/${slug}/setup`, { waitUntil: "networkidle" });
@@ -202,8 +214,23 @@ await run("stableford", async () => {
   await p.waitForSelector(".su-status.su-saved", { timeout: 15000 });
   ok(q(`select name from tournaments where slug='${slug}'`) === "Spring Society 2027", "stableford: a change saves as you type");
   await close();
+  // On the scorecard: the closest the pin buttons on the 7th, not on the 3rd
+  {
+    const { p, close } = await phone(slug, true);
+    const g = JSON.parse(q(`select games from rounds r join tournaments t on t.id=r.tournament_id where t.slug='${slug}' and number=1`))[0].id;
+    await p.goto(`${B}/t/${slug}/score?round=1&game=${g}&correct=1`, { waitUntil: "networkidle" });
+    for (const [hole, want] of [[3, false], [7, true]]) {
+      await p.locator(".hole-pick").click();
+      await p.locator(".hole-sheet .grid button", { hasText: new RegExp(`^${hole}Par`) }).click();
+      await p.waitForTimeout(400);
+      const has = (await p.getByText("Closest to the pin").count()) > 0;
+      ok(has === want, `stableford: closest the pin ${want ? "on" : "not on"} the scorecard at hole ${hole}`);
+    }
+    await close();
+  }
   await score(slug, 1);
-  await follower(slug, { board: /Stableford/i, leaderboard: /Stableford points/, rules: /most Stableford points/, prizes: "Most birdies" });
+  await follower(slug, { board: /Stableford/i, leaderboard: /Stableford points/, rules: /most Stableford points/, prizes: "Closest the pin \\(the 7th\\)" });
+
 });
 
 await run("stroke", async () => {
@@ -232,10 +259,12 @@ await run("points", async () => {
       await W.p.getByText("A points race").click();
       await W.p.locator(".num-tile", { hasText: /^2$/ }).click();
     },
-    { formats: ["Stableford", "Match play"] },
+    { formats: ["Stableford", "Match play"], hcp: { 2: "Set the shots myself" } },
   );
   if (!slug) return;
   ok(q(`select points_rule->>'positions' from rounds r join tournaments t on t.id=r.tournament_id where t.slug='${slug}' and number=1`) === "[1]", "points: two players, the winner only scores");
+  ok(q(`select handicap_rule->>'mode' from rounds r join tournaments t on t.id=r.tournament_id where t.slug='${slug}' and number=1`) === "allowance", "points: round 1 on the official allowance");
+  ok(q(`select (handicap_rule->>'mode') || ' ' || (handicap_rule->'shots')::text from rounds r join tournaments t on t.id=r.tournament_id where t.slug='${slug}' and number=2`).replace(/-[a-z0-9]{4}/g, "") === 'manual {"neil": 12, "oisin": 8}', "points: round 2 shots set by hand (starting from each index)");
   await score(slug, 1);
   await follower(slug, { board: /points/i, leaderboard: /Points by round/, rules: /points race/ });
 });
@@ -271,6 +300,15 @@ await run("teams", async () => {
   await p.waitForSelector(".su-list", { timeout: 15000 });
   const after = q(`select games::text from rounds r join tournaments t on t.id=r.tournament_id where t.slug='${slug}' and number=2`);
   ok(after !== before && JSON.parse(after).length === 4, "teams: the singles are drawn again, still four matches");
+  // Round 2 flat, from Tournament setup
+  await p.locator(".su-row", { has: p.locator(".su-l", { hasText: /^Round 2/ }) }).click();
+  await p.locator(".su-row", { has: p.locator(".su-l", { hasText: "Handicaps" }) }).click();
+  await p.locator(".wz-tile", { hasText: "Flat, no shots" }).click();
+  await p.waitForSelector(".su-status.su-saved", { timeout: 15000 });
+  ok(q(`select string_agg((handicap_rule->>'mode') || coalesce(handicap_rule->>'pct',''), ',' order by number) from rounds r join tournaments t on t.id=r.tournament_id where t.slug='${slug}'`) === "allowance90,manual", "teams: round 2 flat, round 1 still at 90%");
+  await p.getByRole("button", { name: "Done" }).click();
+  await p.waitForSelector(".su-list");
+  ok((await p.locator(".su-row", { hasText: "Handicaps" }).innerText()).includes("Flat, no shots"), "teams: and it says so");
   await close();
   await score(slug, 1);
   await follower(slug, { board: /Team points|Final standings/i, leaderboard: /Points by round/, rules: /Matches won/ });

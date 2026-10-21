@@ -15,6 +15,7 @@ import {
   usesPoints,
   type DayFormat,
   type KnockoutAnswers,
+  type RoundHcp,
   type RoundPoints,
   type WinChoice,
   type Who,
@@ -58,6 +59,11 @@ export interface DRound {
   time: string | null;
   points?: RoundPoints;
   picks?: string[][][] | null;
+  /** Handicaps for this round: official (default), flat, or shots set by hand (by player key) */
+  hcp?: RoundHcp;
+  shots?: Record<string, number>;
+  /** The card, for a saved round whose tees aren't listed (par and yards, hole by hole) */
+  card?: { par: number; yards?: number }[] | null;
 }
 
 export interface Draft {
@@ -251,6 +257,8 @@ export function toWizard(d: Draft): Wizard {
       time: r.time,
       points: r.points,
       picks: d.draw === "pick" ? r.picks : null,
+      hcp: r.hcp ?? "official",
+      shots: r.hcp === "manual" ? r.shots : undefined,
     })),
     bonus: d.bonus,
     draw: d.draw,

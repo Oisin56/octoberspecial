@@ -155,6 +155,26 @@ export const PRIZE_NAME: Record<PrizeResult["kind"], string> = {
   bestround: "Best round",
 };
 
+const nth = (n: number) => `${n}${n % 10 === 1 && n !== 11 ? "st" : n % 10 === 2 && n !== 12 ? "nd" : n % 10 === 3 && n !== 13 ? "rd" : "th"}`;
+/** "the 7th and 16th" */
+export const holesText = (hs: number[]) => {
+  const xs = hs.map(nth);
+  return `the ${xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`}`;
+};
+
+/** Closest the pin or long drive on chosen holes: "on the 7th and 16th" for a round (or every round alike). */
+export function prizeHolesText(p: { holes?: number[] | null; holesByRound?: Record<string, number[]> | null } | undefined, roundNumber: number | null, rounds: number): string | null {
+  if (!p) return null;
+  if (roundNumber != null) {
+    const hs = p.holesByRound?.[String(roundNumber)] ?? p.holes;
+    return hs?.length ? `on ${holesText(hs)}` : null;
+  }
+  const sets = Array.from({ length: rounds }, (_, i) => JSON.stringify(p.holesByRound?.[String(i + 1)] ?? p.holes ?? []));
+  if (sets.every((x) => x === "[]")) return null;
+  if (new Set(sets).size === 1) return `on ${holesText(JSON.parse(sets[0]))}`;
+  return "on the chosen holes";
+}
+
 export interface PrizeLine {
   key: string;
   /** "Closest the pin", "Front 9, round 2" */
@@ -177,7 +197,8 @@ export function prizeLines(s: TournamentState, summary: TournamentSummary, cfg: 
   const lines = summary.prizes.map((r, i): PrizeLine & { order: number } => {
     const rn = r.roundId ? rounds.findIndex((x) => x.id === r.roundId) + 1 : 0;
     const base = r.kind === "nines" ? (r.nine === "front" ? "Front 9" : "Back 9") : PRIZE_NAME[r.kind];
-    const title = rn && (rounds.length > 1 || r.kind === "nines") ? `${base}, round ${rn}` : base;
+    const where = r.kind === "ctp" || r.kind === "ld" ? prizeHolesText(prizeOf(r.kind) ?? undefined, rn || null, rounds.length) : null;
+    const title = `${rn && (rounds.length > 1 || r.kind === "nines") ? `${base}, round ${rn}` : base}${where ? ` (${where.replace(/^on /, "")})` : ""}`;
     const ids = Object.keys(r.value).filter((id) => r.lowerBetter || r.value[id] > 0);
     const counts = r.kind === "ctp" || r.kind === "ld" || r.kind === "birdies" || r.kind === "gir" || r.kind === "skins";
     let detail: string;

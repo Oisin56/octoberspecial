@@ -3,7 +3,7 @@
 import { useT } from "@/components/Providers";
 import { Loading, pts } from "@/components/ui";
 import { acrossField, roundPointsAvailable, stageName } from "@/lib/engine";
-import { PRIZE_NAME } from "@/lib/boards";
+import { PRIZE_NAME, prizeHolesText } from "@/lib/boards";
 import { PLAY_LABEL, SCORING_LABEL, SIDE_GAME_LABEL, toRoundCfg } from "@/lib/types";
 
 const PLAY_RULE: Record<string, string> = {
@@ -142,7 +142,7 @@ export default function Rules() {
       {prizes.length > 0 && <h3>Prizes</h3>}
       {prizes.map((p) => (
         <p key={p.kind}>
-          <strong>{PRIZE_NAME[p.kind]}</strong>: {PRIZE_RULE[p.kind]}
+          <strong>{PRIZE_NAME[p.kind]}</strong>: {(p.kind === "ctp" || p.kind === "ld") && prizeHolesText(p, null, cfg.rounds.length) ? PRIZE_RULE[p.kind].replace(/on the par [35]s/, prizeHolesText(p, null, cfg.rounds.length)!) : PRIZE_RULE[p.kind]}
           {p.kind !== "nines" && cfg.rounds.length > 1 ? (p.per === "round" ? ", in every round" : ", over the whole trip") : ""}.{" "}
           {p.points && win.kind === "points" ? `Worth ${pts(p.points)} point${p.points === 1 ? "" : "s"} in the race, shared if tied.` : "Played for alongside the winner; it doesn't change the standings."}
         </p>

@@ -185,6 +185,30 @@ export interface WizRound {
   points?: RoundPoints;
   /** Picked by hand: the games, each a list of sides, each a list of player keys */
   picks?: string[][][] | null;
+  /** Handicaps for this round: the official allowance (default), flat (no shots), or shots set by hand */
+  hcp?: RoundHcp;
+  /** Shots set by hand, by player key */
+  shots?: Record<string, number>;
+}
+
+export type RoundHcp = "official" | "flat" | "manual";
+
+/** Shots can be set by hand where each player plays their own ball (not foursomes or a scramble). */
+export const shotsByHand = (f: DayFormat | null | undefined) => f !== "foursomes" && f !== "scramble";
+
+/** A round's handicaps from the answers: the official allowance, flat, or the shots set by hand. */
+export function roundHandicap(
+  f: DayFormat,
+  win: WinChoice | null,
+  course: CourseRating | null,
+  allowance: number | null | undefined,
+  r: Pick<WizRound, "hcp" | "shots">,
+  idOf: Record<string, string>,
+): HandicapRule {
+  if (r.hcp === "flat") return { mode: "manual", shots: {} };
+  if (r.hcp === "manual" && shotsByHand(f))
+    return { mode: "manual", shots: Object.fromEntries(Object.entries(r.shots ?? {}).filter(([k, v]) => idOf[k] && v > 0).map(([k, v]) => [idOf[k], Math.round(v)])) };
+  return handicapFor(f, win, course, allowance);
 }
 
 export interface WizPlayer {

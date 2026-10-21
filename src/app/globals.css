@@ -2422,3 +2422,7 @@ textarea.fr-input { resize: vertical; }
 .prize-pts { color: var(--bracken); font-weight: 600; }
 .prize-s { grid-column: 2; grid-row: 1 / span 2; align-self: center; font-size: 14px; font-weight: 700; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--rule); color: var(--ink-soft); }
 .prize-s.prize-won { background: var(--board); color: #fff; border-color: var(--board); }
+.wz-prize-holes { display: grid; gap: 10px; margin-top: 10px; }
+.wz-holes-pick .pick-tiles { grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); }
+.wz-holes-pick .pick-tile small { font-weight: 500; opacity: 0.75; }
+.wz-holes-pick p { margin: 0 0 6px; }

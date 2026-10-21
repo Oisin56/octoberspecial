@@ -11,7 +11,7 @@ import {
   MAX_ROUNDS,
   MAX_TEAMS,
   drawRound,
-  handicapFor,
+  roundHandicap,
   knockoutEntrants,
   knockoutPairs,
   knockoutStages,
@@ -101,6 +101,8 @@ export function cleanWizard(raw: unknown): Wizard {
     if (r.date && !DATE.test(r.date)) r.date = null;
     if (r.time && !TIME.test(r.time)) r.time = null;
     r.playerTees = Object.fromEntries(Object.entries(r.playerTees ?? {}).filter(([k, v]) => keys.has(k) && typeof v === "string" && v).map(([k, v]) => [k, clip(v, 40)]));
+    r.hcp = r.hcp === "flat" || r.hcp === "manual" ? r.hcp : "official";
+    r.shots = r.hcp === "manual" ? Object.fromEntries(Object.entries(r.shots ?? {}).filter(([k]) => keys.has(k)).map(([k, v]) => [k, Math.max(0, Math.min(54, Math.round(Number(v) || 0)))])) : undefined;
     r.picks = Array.isArray(r.picks) ? r.picks.map((g) => (Array.isArray(g) ? g.map((s) => (Array.isArray(s) ? s.filter((k) => keys.has(k)) : [])) : [])) : null;
   });
   if (win === "knockout") {
@@ -115,6 +117,15 @@ export function cleanWizard(raw: unknown): Wizard {
       kind: p.kind,
       per: p.kind === "nines" || p.per === "round" ? ("round" as const) : ("trip" as const),
       holes: Array.isArray(p.holes) && p.holes.length ? p.holes.map(Number).filter((n) => n >= 1 && n <= 18) : null,
+      holesByRound:
+        (p.kind === "ctp" || p.kind === "ld") && p.holesByRound && typeof p.holesByRound === "object"
+          ? Object.fromEntries(
+              Object.entries(p.holesByRound)
+                .filter(([k, v]) => /^\d{1,2}$/.test(k) && Array.isArray(v))
+                .map(([k, v]) => [k, (v as unknown[]).map(Number).filter((n) => Number.isInteger(n) && n >= 1 && n <= 18)])
+                .filter(([, v]) => (v as number[]).length),
+            )
+          : null,
       points: win === "points" ? num(p.points, 0, 100) : null,
     }));
   const bonus = win === "points" ? Object.fromEntries(BONUS.map((k) => [k, num(w.bonus?.[k], 0, 100) ?? 0]).filter(([, v]) => (v as number) > 0)) : {};
@@ -323,7 +334,7 @@ export async function createFromWizard(w: Wizard, opts: { pin?: string | null })
         points_rule: points,
         nine_points: 0,
         full_points: Math.floor(points.full), // legacy whole-number column; points_rule has the real figure
-        handicap_rule: handicapFor(r.format, w.win, c.rating, w.allowance),
+        handicap_rule: roundHandicap(r.format, w.win, c.rating, w.allowance, r, idOf),
         status: "upcoming",
       };
     });

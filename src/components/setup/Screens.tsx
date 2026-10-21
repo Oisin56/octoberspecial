@@ -22,6 +22,7 @@ import {
   isPairs,
   knockoutEntrants,
   roundFormats,
+  shotsByHand,
   winsFor,
   type DayFormat,
   type RoundPoints,
@@ -720,7 +721,7 @@ export function FormatScreen({ d, done, i }: StepProps & { i: number }) {
   );
 }
 
-export function WhenScreen({ d, set, done, i, nextLabel }: StepProps & { i: number }) {
+export function WhenScreen({ d, set, done, i, nextLabel, editing }: StepProps & { i: number }) {
   const r = d.rounds[i];
   const prev = d.rounds[i - 1]?.date;
   const suggest = prev ? new Date(new Date(prev).getTime() + 86400e3).toISOString().slice(0, 10) : null;
@@ -740,7 +741,60 @@ export function WhenScreen({ d, set, done, i, nextLabel }: StepProps & { i: numb
         <label htmlFor="wz-time">First tee time (optional)</label>
         <input id="wz-time" className="wz-input" type="time" value={r.time ?? ""} onChange={(e) => set((x) => setRound(x, i, { time: e.target.value || null }))} />
       </div>
+      {!editing && (
+        <More label="Handicaps for this round">
+          <RoundHandicaps d={d} set={set} i={i} />
+        </More>
+      )}
       <Next onClick={() => done()} label={nextLabel ?? (r.date ? "Next" : "Skip for now")} />
+    </Screen>
+  );
+}
+
+// ------------------------------------------------------------------ handicaps for one round
+
+/** Official allowance, flat (no shots), or the shots set by hand for each player. */
+export function RoundHandicaps({ d, set, i }: { d: Draft; set: StepProps["set"]; i: number }) {
+  const r = d.rounds[i];
+  if (!r) return null;
+  const f = r.format ?? "stableford";
+  const mode = r.hcp ?? "official";
+  const official = handicapFor(f, d.win, null, d.allowance).pct;
+  const ps = named(d);
+  const put = (p: Partial<DRound>) => set((x) => setRound(x, i, p));
+  const start = () => Object.fromEntries(ps.map((p) => [p.key, Math.max(0, Math.round(indexOf(p) ?? 0))]));
+  return (
+    <>
+      <Tiles>
+        <Tile on={mode === "official"} title="Official allowance" note={d.allowance === 0 ? "The whole tournament is off scratch" : `${official}% of each player's handicap`} onClick={() => put({ hcp: "official" })} />
+        <Tile on={mode === "flat"} title="Flat, no shots" note="Everyone plays off scratch in this round" onClick={() => put({ hcp: "flat" })} />
+        {shotsByHand(f) && <Tile on={mode === "manual"} title="Set the shots myself" note="So many shots for each player" onClick={() => put({ hcp: "manual", shots: r.shots ?? start() })} />}
+      </Tiles>
+      {mode === "manual" && shotsByHand(f) && (
+        <div className="wz-points">
+          <div className="wz-pt">
+            <div className="wz-pt-h">
+              <strong>Shots for each player</strong> <span className="muted">in this round</span>
+            </div>
+            {ps.map((p) => (
+              <div className="wz-pt-row" key={p.key}>
+                <span>{p.name}</span>
+                <Stepper value={r.shots?.[p.key] ?? 0} max={54} label={`${p.name}: shots`} fmt={(n) => String(n)} onChange={(v) => put({ shots: { ...(r.shots ?? start()), [p.key]: v } })} />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+/** Tournament setup: a round's handicaps on their own screen. */
+export function HandicapScreen({ d, set, done, i, nextLabel }: StepProps & { i: number }) {
+  return (
+    <Screen q={`Handicaps for round ${i + 1}`} label={roundLabel(d, i)}>
+      <RoundHandicaps d={d} set={set} i={i} />
+      <Next onClick={() => done()} label={nextLabel} />
     </Screen>
   );
 }
@@ -1091,6 +1145,7 @@ export function PrizesScreen({ d, set, done, nextLabel }: StepProps) {
                 </span>
               </button>
               {on && p.perRound && (d.count ?? 0) > 1 && <Pair label={`${p.name}: how often`} value={on.per} options={[["trip", "Whole trip"], ["round", "Each round"]]} onChange={(v) => put(p.kind, { per: v })} />}
+              {on && (p.kind === "ctp" || p.kind === "ld") && <PrizeHoles d={d} kind={p.kind} prize={on} onChange={(holesByRound) => put(p.kind, { holesByRound, holes: null })} />}
               {on && d.win === "points" && (
                 <div className="wz-pt-row">
                   <span>Counts as points</span>
@@ -1103,6 +1158,75 @@ export function PrizesScreen({ d, set, done, nextLabel }: StepProps) {
       </div>
       <Next onClick={() => done()} label={nextLabel ?? (d.prizes.length ? "Next" : "No prizes")} />
     </Screen>
+  );
+}
+
+/** Closest the pin and long drive: every par 3 (par 5), or the holes chosen, course by course. */
+function PrizeHoles({ d, kind, prize, onChange }: { d: Draft; kind: "ctp" | "ld"; prize: Prize; onChange: (h: Record<string, number[]> | null) => void }) {
+  const par = kind === "ctp" ? 3 : 5;
+  const chosen = prize.holesByRound ?? {};
+  const [choosing, setChoosing] = useState(Object.keys(chosen).length > 0);
+  // Each course once (with its tee and holes played); a choice covers every round there
+  const groups: { key: string; name: string; rounds: number[]; holes: { n: number; yards: number }[] }[] = [];
+  settle(d).rounds.forEach((r, i) => {
+    const tee = r.tees?.find((t) => t.name === r.tee) ?? r.tees?.[0];
+    const card = tee ? tee.par.map((p, k) => ({ par: p, yards: tee.yards[k] ?? 0 })) : r.manual ? (r.manualCard ?? []).map((h) => ({ par: h.par, yards: 0 })) : (r.card ?? []).map((h) => ({ par: h.par, yards: h.yards ?? 0 }));
+    const holes = card
+      .map((h, k) => ({ n: k + 1, par: h.par, yards: h.yards }))
+      .filter((h) => h.par === par && (card.length !== 18 || r.holeSet === "all" || (r.holeSet === "front" ? h.n <= 9 : h.n >= 10)));
+    if (!holes.length) return;
+    const key = `${r.courseRef ?? r.courseName}|${r.tee ?? ""}|${r.holeSet}`;
+    const g = groups.find((x) => x.key === key);
+    if (g) g.rounds.push(i + 1);
+    else groups.push({ key, name: r.courseName, rounds: [i + 1], holes: holes.map((h) => ({ n: h.n, yards: h.yards })) });
+  });
+  if (!groups.length) return null;
+  const every = kind === "ctp" ? "Every par 3" : "Every par 5";
+  const toggle = (g: (typeof groups)[number], n: number) => {
+    const now = chosen[String(g.rounds[0])] ?? [];
+    const next = now.includes(n) ? now.filter((x) => x !== n) : [...now, n].sort((a, b) => a - b);
+    const out = { ...chosen };
+    for (const rn of g.rounds) {
+      if (next.length) out[String(rn)] = next;
+      else delete out[String(rn)];
+    }
+    onChange(Object.keys(out).length ? out : null);
+  };
+  const roundsLabel = (rs: number[]) => (rs.length === 1 ? `Round ${rs[0]}` : `Rounds ${rs.slice(0, -1).join(", ")} and ${rs[rs.length - 1]}`);
+  return (
+    <div className="wz-prize-holes">
+      <Pair
+        label={`${kind === "ctp" ? "Closest the pin" : "Long drive"}: which holes`}
+        value={choosing ? "choose" : "every"}
+        options={[
+          ["every", every],
+          ["choose", "Choose the holes"],
+        ]}
+        onChange={(v) => {
+          setChoosing(v === "choose");
+          if (v === "every") onChange(null);
+        }}
+      />
+      {choosing &&
+        groups.map((g) => (
+          <div key={g.key} className="wz-holes-pick">
+            {groups.length > 1 && (
+              <p className="small muted">
+                {roundsLabel(g.rounds)}: {g.name}
+              </p>
+            )}
+            <div className="pick-tiles">
+              {g.holes.map((h) => (
+                <button key={h.n} type="button" className="pick-tile" aria-pressed={(chosen[String(g.rounds[0])] ?? []).includes(h.n)} onClick={() => toggle(g, h.n)}>
+                  {h.n}
+                  {h.yards ? <small> {h.yards} yds</small> : null}
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
+      {choosing && !Object.keys(chosen).length && <p className="small muted">Tap the holes you play for. Until then it&apos;s {every.toLowerCase()}.</p>}
+    </div>
   );
 }
 

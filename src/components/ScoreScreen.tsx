@@ -11,7 +11,7 @@ import { ShotCard } from "@/components/ShotCard";
 import { matchMoment, scorePrompt, type HoleInfo, type Prompt } from "@/lib/shots";
 import { groupPlayers } from "@/lib/courseCards";
 import { useSwipe } from "@/lib/useSwipe";
-import { ballsOfGame, ballsOfSide, gameHole, gameShots, holeShots, ONE_BALL, type BallHole, type Game } from "@/lib/engine";
+import { ballsOfGame, ballsOfSide, gameHole, gameShots, holeShots, ONE_BALL, sideGameHoles, type BallHole, type Game } from "@/lib/engine";
 import { CardPanel } from "@/components/CardPanel";
 import { cardInfo, gameComplete } from "@/lib/scorecards";
 import { fieldPosition, roundBoard } from "@/lib/live";
@@ -233,6 +233,9 @@ function ScoreInner() {
 
   const gi = rcfg.games.indexOf(game);
   const h = round.holes.find((x) => x.number === hole)!;
+  // Closest the pin and long drive: only where they're played for
+  const ctpHere = !!tcfg && sideGameHoles(tcfg, round, "ctp").includes(h.number);
+  const ldHere = !!tcfg && sideGameHoles(tcfg, round, "ld").includes(h.number);
   const preview = gameHole(rcfg, game, shots, { game: game.id, hole, scores: draft, conceded });
   const card = cardInfo(state, round.id, game.id);
   const isOrg = session.role === "organiser";
@@ -631,7 +634,7 @@ function ScoreInner() {
             );
           })}
 
-          {h.par === 3 && (
+          {ctpHere && (
             <section className="pscore side-game">
               <div className="pname">Closest to the pin</div>
               <div className="side-pick" style={{ gridTemplateColumns: `repeat(${Math.min(3, sideChoices.length)}, 1fr)` }}>
@@ -643,7 +646,7 @@ function ScoreInner() {
               </div>
             </section>
           )}
-          {h.par === 5 && (
+          {ldHere && (
             <section className="pscore side-game">
               <div className="pname">Long drive</div>
               <div className="side-pick" style={{ gridTemplateColumns: `repeat(${Math.min(3, sideChoices.length)}, 1fr)` }}>
