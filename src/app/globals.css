@@ -2356,3 +2356,22 @@ textarea.fr-input { resize: vertical; }
 .wz-tick { width: 28px; height: 28px; border-radius: 8px; border: 2px solid var(--rule); flex: none; display: grid; place-items: center; }
 .wz-prize-t[aria-pressed="true"] .wz-tick { background: var(--board); border-color: var(--board); }
 .wz-prize-t[aria-pressed="true"] .wz-tick::after { content: ""; width: 12px; height: 7px; border: 3px solid var(--tile, #fff); border-top: 0; border-right: 0; transform: translateY(-2px) rotate(-45deg); }
+
+/* Tournament setup: every answer, one line each */
+.su { max-width: 620px; margin: 0 auto; padding-bottom: 40px; }
+.su-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.su-row { appearance: none; width: 100%; text-align: left; display: grid; grid-template-columns: 1fr auto; align-items: center; column-gap: 14px; row-gap: 2px; background: var(--paper); color: var(--ink); border: 2px solid var(--rule); border-radius: 16px; padding: 14px 18px; min-height: 76px; font: inherit; cursor: pointer; }
+.su-row:hover { border-color: color-mix(in srgb, var(--board) 40%, var(--rule)); }
+.su-row:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
+.su-row.fixed { cursor: default; background: transparent; }
+.su-l { grid-column: 1; font-size: 15px; color: var(--ink-soft); }
+.su-v { grid-column: 1; font-size: 18px; font-weight: 600; line-height: 1.3; }
+.su-c { grid-column: 2; grid-row: 1 / span 2; font-weight: 700; color: var(--board); text-decoration: underline; text-underline-offset: 3px; }
+.su-saved { color: var(--green, #2e7d4f); font-weight: 700; font-size: 15px; white-space: nowrap; }
+.su-saved::before { content: "✓"; margin: 0 4px 0 8px; }
+.su-h { margin: 22px 0 2px; font-size: 21px; }
+.su-links { margin: 0; padding-left: 20px; line-height: 1.9; font-size: 17px; }
+.su-remove { margin-top: 10px; }
+.su-saving { font-weight: 600; color: var(--ink-soft); }
+.su-busy .wz-screen { opacity: 0.55; pointer-events: none; }
+.org-tile-setup { grid-column: 1 / -1; min-height: 0; }

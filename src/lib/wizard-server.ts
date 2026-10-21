@@ -150,7 +150,7 @@ export function cleanWizard(raw: unknown): Wizard {
 type Tee = { name: string; par: number[]; si: number[]; yards: number[]; rating?: number; slope?: number };
 
 /** The holes, tees and slope/rating for one round, from the course search or the typed-in card. */
-async function roundCourse(r: Wizard["rounds"][number], cache: Map<string, Awaited<ReturnType<typeof getCourse>>>) {
+export async function roundCourse(r: Wizard["rounds"][number], cache: Map<string, Awaited<ReturnType<typeof getCourse>>>) {
   if (r.courseRef) {
     if (!cache.has(r.courseRef)) cache.set(r.courseRef, await getCourse(r.courseRef));
     const c = cache.get(r.courseRef);

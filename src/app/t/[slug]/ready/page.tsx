@@ -125,12 +125,12 @@ export default function Ready() {
           <strong>See your site</strong>
           <span>What everyone will see</span>
         </Link>
-        <Link className="ready-tile" href={href("/admin")}>
-          <strong>Fine-tune</strong>
-          <span>Every detail: rounds, groups, handicaps, points, photos and more</span>
+        <Link className="ready-tile" href={href("/setup")}>
+          <strong>Tournament setup</strong>
+          <span>Change any answer: players, rounds, groups, points and more</span>
         </Link>
       </div>
-      {(jobs ?? []).some((j) => j.status === "todo") && <p className="small muted">Still reading up on the courses: that carries on when you open Admin.</p>}
+      {(jobs ?? []).some((j) => j.status === "todo") && <p className="small muted">Still reading up on the courses: that carries on when you open Organiser.</p>}
     </section>
   );
 }

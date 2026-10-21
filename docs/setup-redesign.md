@@ -35,7 +35,11 @@ Branch: `setup-redesign`. Read the blueprint for what people see; this file is h
 - [x] 2. Wizard: new screen order and screens (`src/components/setup/`, `src/app/new`), rules in `src/lib/wizard.ts`,
          creation in `wizard-server.ts`; knockout rounds fill in after each score (`knockout-server.ts`); extra holes
          19-27 allowed. Still to do elsewhere: entering extra holes on the scorecard (on-course work).
-- [ ] 3. Tournament setup page from the wizard's screens.
+- [x] 3. Tournament setup page (`src/app/t/[slug]/setup`): the wizard's screens, one answer at a time, saved by
+         `/api/setup-edit` (`src/lib/setup-edit.ts`); the tournament read back into answers by
+         `src/components/setup/fromState.ts`. Rounds with scores keep course, holes, format and groups; tees, points
+         and handicaps can change after a warning. Tournaments made before the redesign (no `win`) keep how it's won,
+         points and groups in Rounds and courses.
 - [ ] 4. Course guide library + fixes table.
 - [ ] 5. Display: boards for team score, skins, knockout bracket, prizes; rules page; AI writer standings text;
          film final standings card. Organiser home wording.

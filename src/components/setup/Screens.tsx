@@ -52,6 +52,8 @@ export interface StepProps {
   done: (patch?: Partial<Draft>) => void;
   /** "Next" in the wizard, "Save" when changing one answer */
   nextLabel?: string;
+  /** Tournament setup: changing a tournament that already exists */
+  editing?: boolean;
 }
 
 // ------------------------------------------------------------------ pieces
@@ -937,7 +939,7 @@ function boxesFor(d: Draft, format: DayFormat): Box[] {
   return Array.from({ length: Math.ceil(n / 4) }, (_, k) => ({ label: `Group ${k + 1}`, caps: [4] }));
 }
 
-export function GroupsScreen({ d, set, done, nextLabel }: StepProps) {
+export function GroupsScreen({ d, set, done, nextLabel, editing }: StepProps) {
   const ps = named(d);
   const rounds = settle(d).rounds;
   const [at, setAt] = useState(0);
@@ -988,7 +990,10 @@ export function GroupsScreen({ d, set, done, nextLabel }: StepProps) {
   const value = r?.picks ?? boxes.map((b) => b.caps.map(() => [] as string[]));
   const placed = new Set(value.flat(2)).size;
   return (
-    <Screen q="Who plays with whom?" hint={d.draw === "pick" ? undefined : "Made for every round when the tournament is created. You can still change them afterwards."}>
+    <Screen
+      q="Who plays with whom?"
+      hint={editing ? "Random or Balanced draws them again. Rounds already under way keep their groups." : d.draw === "pick" ? undefined : "Made for every round when the tournament is created. You can still change them afterwards."}
+    >
       <Tiles>
         <Tile on={d.draw === "random"} title="Random" note="A fresh draw for each round" onClick={() => done({ draw: "random" })} />
         <Tile on={d.draw === "balanced"} title="Balanced by handicap" note={d.who === "teams" ? "Players of similar handicap play each other" : "Each group gets a mix of low and high handicaps"} onClick={() => done({ draw: "balanced" })} />
@@ -1167,7 +1172,7 @@ export function LookScreen({ d, done }: StepProps) {
   const a = ps[0]?.name || "Neil";
   const b = ps[1]?.name || "Oisin";
   return (
-    <Screen q="Pick a look" hint="Colours for the whole site and the leaderboards. You can change it later.">
+    <Screen q="Pick a look" hint="Colours for the whole site and the leaderboards.">
       <div className="wz-themes">
         {THEMES.filter((t) => t.id !== "custom" && t.id !== "clubhouse").map((t) => (
           <button key={t.id} type="button" className="wz-theme" data-theme={t.id} data-board={LIGHT_BOARD.includes(t.id) ? "light" : "dark"} aria-pressed={d.theme === t.id} onClick={() => done({ theme: t.id })}>

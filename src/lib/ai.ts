@@ -347,7 +347,7 @@ export async function generatePiece(
   } = {},
 ) {
   const s = await loadServerState(tournamentId);
-  if (s.tournament.ai_on === false) throw new Error("AI writing is switched off for this tournament. Turn it on in Fine-tune (Look and writing).");
+  if (s.tournament.ai_on === false) throw new Error("AI writing is switched off for this tournament. Turn it on in Tournament setup (The extras).");
   const round = roundId ? s.rounds.find((r) => r.id === roundId) ?? null : null;
   if (roundId && !round) throw new Error("Round not found");
 

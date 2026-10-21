@@ -239,6 +239,10 @@ function OrganiserHome({ data }: { data: AdminData }) {
       </section>
 
       <nav className="org-tiles" aria-label="Organiser sections">
+        <Link href={href("/setup")} className="org-tile org-tile-setup">
+          <strong>Tournament setup</strong>
+          <span>Players, rounds, how it&apos;s won, groups and prizes</span>
+        </Link>
         {tiles.map(([id, status]) => (
           <a key={id} href={`#${id}`} className={`org-tile org-tile-${id}${(id === "write" && drafts.length) || (id === "players" && noPin.length) ? " attn" : ""}`}>
             <strong>{SECTIONS[id]}</strong>

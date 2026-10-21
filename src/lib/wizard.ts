@@ -411,19 +411,34 @@ export function drawRound(
     games = groups.map((g, i) => ({ id: gid(i), name: `Group ${i + 1}`, sides: g.map(solo), scorerId: g[0] }));
   }
 
-  // Tee times: four players to a tee time
+  return withTeeTimes(games, round.time, w.teeGap ?? 10);
+}
+
+/** Tee times for a round's games from the first one: four players to a tee time. */
+export function withTeeTimes(games: Game[], first: string | null | undefined, gap = 10): Game[] {
   let slot = 0;
   let filled = 0;
-  for (const g of games) {
+  return games.map((g) => {
     const n = g.sides.reduce((a, s) => a + s.playerIds.length, 0);
     if (filled && filled + n > 4) {
       slot++;
       filled = 0;
     }
-    g.teeTime = teeTimeAt(round.time, slot, w.teeGap ?? 10);
     filled += n;
-  }
-  return games;
+    return { ...g, teeTime: teeTimeAt(first, slot, gap) };
+  });
+}
+
+/** The course a saved round came from, as the set-up screens refer to it (null: typed in by hand). */
+export const courseRefOf = (slug: string) => (slug.startsWith("manual:") ? null : slug.includes(":") ? slug : `local:${slug}`);
+
+/** A saved round's format as the set-up screens name it. */
+export function formatOfRound(r: { play: PlayType | null; format: ScoringType }, who: Who): DayFormat {
+  if (r.play === "fourball") return "fourball";
+  if (r.play === "foursomes" || r.play === "greensomes") return "foursomes";
+  if (r.play === "scramble") return "scramble";
+  if (r.format === "match") return who === "teams" ? "singles" : "match";
+  return r.format;
 }
 
 /** Pairs for a knockout: picked, random, or balanced (the lowest handicap with the highest). */
