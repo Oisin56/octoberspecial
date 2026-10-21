@@ -126,7 +126,9 @@ export async function startResearch(input: CourseInput, again = false): Promise<
   if (row) {
     if (row.status === "researching") return stale(row);
     if (row.written_by === "organiser" && cleanGuide(row.guide)) return false;
-    if (!again && (row.status === "done" || (row.status === "none" && row.started_at && Date.now() - Date.parse(row.started_at) < 3 * 86400e3))) return false;
+    // A guide found the old way (before this research) gets the fuller search once
+    const oldWay = row.status === "done" && row.written_by === "research" && !row.work;
+    if (!again && !oldWay && (row.status === "done" || (row.status === "none" && row.started_at && Date.now() - Date.parse(row.started_at) < 3 * 86400e3))) return false;
   }
   const { count } = await db.from("course_library").select("ref", { count: "exact", head: true }).gte("started_at", new Date(Date.now() - 86400e3).toISOString());
   if ((count ?? 0) >= DAILY_LIMIT) return false;
@@ -186,7 +188,11 @@ export async function runResearchStep(ref: string): Promise<boolean> {
 /** The guide goes in the library and on every round at this course that hasn't one yet. */
 async function finish(ref: string, work: ResearchWork) {
   const db = adminClient();
-  const guide = cleanGuide({ overview: work.overview ?? "", history: work.history ?? "", signature: work.signature ?? "", holes: work.holes });
+  const found = cleanGuide({ overview: work.overview ?? "", history: work.history ?? "", signature: work.signature ?? "", holes: work.holes });
+  // Never worse than what was there before
+  const before = cleanGuide((await rowOf(ref))?.guide);
+  const size = (g: CourseGuide | null) => (g ? Object.keys(g.holes).length * 10 + (g.overview ? 5 : 0) + (g.history ? 5 : 0) : -1);
+  const guide = size(before) > size(found) ? before : found;
   const n = Object.keys(work.holes).length;
   const log = [...work.log, guide ? `done: ${n} hole notes${work.overview ? ", overview" : ""}${work.history ? ", history" : ""}` : "done: nothing found"];
   await db
