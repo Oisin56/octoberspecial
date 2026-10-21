@@ -1,6 +1,6 @@
 import { after } from "next/server";
 import { bad, json, slugify } from "@/lib/server-data";
-import { courseInput, kickResearch, nudgeResearch, researchStatus, selfOrigin, startResearch, type CourseInput } from "@/lib/research";
+import { courseInput, dropResearch, kickResearch, nudgeResearch, researchStatus, selfOrigin, startResearch, type CourseInput } from "@/lib/research";
 
 export const maxDuration = 30;
 
@@ -8,6 +8,7 @@ export const maxDuration = 30;
  * Course research, started as soon as a course is picked in the wizard (or by "Try again" on a course guide),
  * then carried on in the background by itself. Pages that are open nudge it along if a step has stalled.
  *   { action: "start", ref } or { action: "start", manual: { name, location, card: [{ par }] } }
+ *   { action: "drop", ref } or { action: "drop", manual: { name } }   picked by mistake, then changed
  *   { action: "nudge", refs: [...] }
  *   { action: "status", ref }
  */
@@ -30,6 +31,12 @@ export async function POST(req: Request) {
     const again = !!b.again && (await researchStatus(input.ref)).status !== "done";
     if (await startResearch(input, again)) after(() => kickResearch(origin, input.ref));
     return json({ ok: true, ref: input.ref });
+  }
+
+  if (b.action === "drop") {
+    const ref = okRef(b.ref) ? b.ref : b.manual && typeof b.manual.name === "string" ? `manual:${slugify(String(b.manual.name).trim().slice(0, 80)) || "course"}` : null;
+    if (ref) await dropResearch(ref);
+    return json({ ok: true });
   }
 
   if (b.action === "nudge") {

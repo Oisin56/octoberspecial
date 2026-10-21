@@ -146,6 +146,26 @@ export async function startResearch(input: CourseInput, again = false): Promise<
   return true;
 }
 
+/**
+ * A course no longer wanted (picked by mistake, then changed): its search stops at the next step. Only while it's
+ * still searching, and only if no tournament has a round there; anything already found is kept.
+ */
+export async function dropResearch(ref: string): Promise<boolean> {
+  const db = adminClient();
+  const row = await rowOf(ref);
+  if (!row || row.status !== "researching") return false;
+  const { count } = await db.from("rounds").select("id", { count: "exact", head: true }).in("course_slug", [...new Set([ref, ref.replace(/^local:/, "")])]);
+  if ((count ?? 0) > 0) return false;
+  await db.from("course_library").delete().eq("ref", ref).eq("status", "researching");
+  return true;
+}
+
+/** The course to research for a round's course reference (or a card typed in by hand). */
+export async function inputFor(ref: string, name: string, location: string | null, holes: { number: number; par: number; yards?: number }[]): Promise<CourseInput> {
+  const card = holes.map((h) => ({ number: h.number, par: h.par, yards: h.yards ? [h.yards] : [] }));
+  return (!ref.startsWith("manual:") && (await courseInput(ref))) || { ref, name, location, card };
+}
+
 /** A stalled course gets going again (from a page someone has open). */
 export async function nudgeResearch(ref: string): Promise<boolean> {
   const row = await rowOf(ref);

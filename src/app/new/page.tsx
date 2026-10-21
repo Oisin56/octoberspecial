@@ -97,17 +97,49 @@ export default function NewTournament() {
     }
   }, [d, loaded]);
 
-  // The courses picked so far are being read up on in the background: keep that going while the wizard is open
-  const refs = d.rounds.map((r) => r.courseRef).filter((x): x is string => !!x && !x.startsWith("manual:"));
-  const refKey = [...new Set(refs)].join("|");
+  const steps = useMemo(() => stepsFor(d), [d]);
+
+  // Reading up on the courses in the background. A course is searched once it's confirmed (the organiser has answered
+  // the round's next question too), so a mistaken tap fixed with Back costs nothing; a course that's
+  // changed afterwards stops being searched. While the wizard is open, any stalled search is nudged along.
+  const searched = useRef(new Map<string, Record<string, unknown>>());
+  const courseKey = (r: Draft["rounds"][number]) => (r.manual ? (r.courseName.trim() ? `manual|${r.courseName.trim().toLowerCase()}` : null) : r.courseRef || null);
+  const confirmedKey = d.rounds
+    .map((r, i) => {
+      const k = courseKey(r);
+      const pos = steps.indexOf(`course:${i}`);
+      // Past the course and the question after it (the tees, say: the screen where a wrong course shows its name)
+      return k && pos >= 0 && steps.indexOf(d.step) > pos + 1 ? k : null;
+    })
+    .join("~");
+  const allKey = d.rounds.map(courseKey).join("~");
+  useEffect(() => {
+    if (!loaded) return;
+    const post = (body: Record<string, unknown>) => fetch("/api/research", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), keepalive: true }).catch(() => {});
+    const bodyFor = (r: Draft["rounds"][number]) => (r.manual ? { manual: { name: r.courseName.trim(), location: r.location ?? null, card: (r.manualCard ?? []).map((h) => ({ par: h.par })) } } : { ref: r.courseRef });
+    const confirmed = confirmedKey.split("~");
+    const present = new Set(allKey.split("~").filter(Boolean));
+    d.rounds.forEach((r, i) => {
+      const k = confirmed[i];
+      if (k && !searched.current.has(k)) {
+        searched.current.set(k, bodyFor(r));
+        post({ action: "start", ...bodyFor(r) });
+      }
+    });
+    for (const [k, body] of searched.current)
+      if (!present.has(k)) {
+        searched.current.delete(k);
+        post({ action: "drop", ...body });
+      }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [confirmedKey, allKey, loaded]);
+  const refKey = [...new Set(confirmedKey.split("~").filter((k) => k && !k.startsWith("manual|")))].join("|");
   useEffect(() => {
     if (!refKey) return;
     const nudge = () => fetch("/api/research", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "nudge", refs: refKey.split("|") }) }).catch(() => {});
     const t = setInterval(nudge, 60_000);
     return () => clearInterval(t);
   }, [refKey]);
-
-  const steps = useMemo(() => stepsFor(d), [d]);
   const at = Math.max(0, steps.indexOf(d.step));
   const step = steps[at] ?? "who";
   const [kind, idxRaw] = step.split(":");

@@ -37,4 +37,16 @@ ok(n.ref === "manual:nowhere-golf-club" && q(`select status from course_library 
 const st = await post({ action: "status", ref: n.ref });
 ok(st.status === "none" && st.found === false, "status says nothing was found");
 
+// Picked by mistake and changed: the search stops (nothing kept), unless a tournament has a round there
+q(`delete from course_library where ref='manual:slowcourse'`);
+const slow = await post({ action: "start", manual: { name: "Slowcourse", card } });
+await new Promise((r) => setTimeout(r, 500));
+ok(q(`select status from course_library where ref='${slow.ref}'`) === "researching", "a slow search is under way");
+await post({ action: "drop", manual: { name: "Slowcourse" } });
+ok(q(`select count(*) from course_library where ref='${slow.ref}'`) === "0", "dropped when the course is changed");
+await new Promise((r) => setTimeout(r, 6000));
+ok(q(`select count(*) from course_library where ref='${slow.ref}'`) === "0", "and it doesn't carry on");
+await post({ action: "drop", ref: BIRR });
+ok(q(`select status from course_library where ref='${BIRR}'`) === "done", "a finished guide is never dropped");
+
 process.exit(fails ? 1 : 0);

@@ -1,6 +1,7 @@
 import { isOrganiser } from "@/lib/auth";
 import { bad, context, json, DEMO_READONLY } from "@/lib/server-data";
 import { applySetupEdit, validScope } from "@/lib/setup-edit";
+import { selfOrigin } from "@/lib/research";
 import { WizardError } from "@/lib/wizard-server";
 
 export const maxDuration = 60;
@@ -15,7 +16,7 @@ export async function POST(req: Request) {
   const scope = String(b.scope ?? "");
   if (!validScope(scope)) return bad("Unknown change");
   try {
-    const out = await applySetupEdit(t, b.wizard, scope);
+    const out = await applySetupEdit(t, b.wizard, scope, selfOrigin(req));
     return json({ ok: true, ...out });
   } catch (e) {
     if (e instanceof WizardError) return bad(e.message);

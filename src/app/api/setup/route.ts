@@ -2,7 +2,7 @@ import { adminClient } from "@/lib/admin";
 import { isOrganiser } from "@/lib/auth";
 import { generatePiece } from "@/lib/ai";
 import { after } from "next/server";
-import { courseInput, kickResearch, nudgeResearch, researchStatus, selfOrigin, startResearch, type CourseInput } from "@/lib/research";
+import { inputFor, kickResearch, nudgeResearch, researchStatus, selfOrigin, startResearch } from "@/lib/research";
 import { libraryRef } from "@/lib/wizard";
 import { bad, context, json, DEMO_READONLY } from "@/lib/server-data";
 import type { RoundRow, SetupJob } from "@/lib/types";
@@ -96,8 +96,7 @@ async function checkGuide(tournamentId: string, job: SetupJob, origin: string): 
     return null;
   }
   // Never started (an older tournament, or the course was changed later): start it now
-  const card = (round.all_holes ?? round.holes).map((h) => ({ number: h.number, par: h.par, yards: h.yards ? [h.yards] : [] }));
-  const input: CourseInput = (!ref.startsWith("manual:") && (await courseInput(ref))) || { ref, name: round.course_name, location: round.course_location, card };
+  const input = await inputFor(ref, round.course_name, round.course_location, round.all_holes ?? round.holes);
   if (await startResearch(input)) {
     after(() => kickResearch(origin, ref));
     return null;

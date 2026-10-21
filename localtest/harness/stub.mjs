@@ -324,6 +324,7 @@ http
         fs.appendFileSync("/var/tmp/ospg/research.log", "find " + JSON.stringify(b.tools ?? null) + "\n");
         globalThis.lastCard = Object.fromEntries([...said.matchAll(/(\d+): par (\d)/g)].map((m) => [m[1], Number(m[2])]));
         if (said.includes("Nowhere")) return reply(JSON.stringify({ official: "", pages: [] }));
+        if (said.includes("Slowcourse")) { await new Promise((r) => setTimeout(r, 4000)); return reply(JSON.stringify({ official: "", pages: [{ url: "https://example.com/course-guide", kind: "holes" }] })); }
         if (!said.includes("Birr")) return reply(JSON.stringify({ official: "", pages: [{ url: "https://example.com/course-guide", kind: "holes" }] }));
         return reply("Found: " + JSON.stringify({ official: "https://birrgolfclub.ie/", pages: [
           { url: "https://www.top100golfcourses.com/birr", kind: "review" },

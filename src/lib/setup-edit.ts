@@ -1,5 +1,7 @@
 import "server-only";
+import { after } from "next/server";
 import { adminClient } from "./admin";
+import { dropResearch, inputFor, kickResearch, startResearch } from "./research";
 import { syncTripDates } from "./trip-dates";
 import { slugify } from "./server-data";
 import { drawBracket, knockoutGames, type Entrant, type Game, type RoundCfg, type TournamentCfg, type WinRule } from "./engine";
@@ -7,6 +9,7 @@ import { normalizeRound, type CourseTee, type PlayerRow, type RoundRow, type Tou
 import { WizardError, cleanWizard, roundCourse } from "./wizard-server";
 import {
   courseRefOf,
+  libraryRef,
   drawRound,
   formatOfRound,
   handicapFor,
@@ -30,7 +33,7 @@ export const validScope = (s: string) => SCOPES.test(s);
  * changes. A round with scores keeps its course, holes, format and groups (the scores belong to them); its tees,
  * points and handicaps can change, and its results are then worked out again from the scores.
  */
-export async function applySetupEdit(t: TournamentRow, raw: unknown, scope: string): Promise<{ note?: string }> {
+export async function applySetupEdit(t: TournamentRow, raw: unknown, scope: string, origin?: string): Promise<{ note?: string }> {
   const w = cleanWizard(raw);
   const db = adminClient();
   const [{ data: playerRows }, { data: roundRows }] = await Promise.all([
@@ -78,10 +81,14 @@ export async function applySetupEdit(t: TournamentRow, raw: unknown, scope: stri
   /** Groups or matches for round i: as picked, or (fresh: the format's changed shape) a new draw. */
   const draw = (i: number, fresh = false) => drawRound(fresh && w.draw === "pick" ? { ...w, draw: "random" } : w, w.rounds[i], i + 1, ids, info);
   const datesFromRounds = () => syncTripDates(t.id);
+  // Courses chosen here are read up on in the background; a course replaced here stops being searched if nobody needs it
+  const research: { ref: string; name: string; location: string | null; holes: { number: number; par: number; yards?: number }[] }[] = [];
+  const replaced: string[] = [];
   /** A new round row from the answers for round k. */
   const newRound = async (k: number, games: Game[]) => {
     const a = w.rounds[k];
     const c = await roundCourse(a, new Map());
+    research.push({ ref: libraryRef(c.course_slug), name: c.course_name, location: c.course_location, holes: c.holes });
     const { error } = await db.from("rounds").insert({
       tournament_id: t.id,
       number: k + 1,
@@ -241,6 +248,8 @@ export async function applySetupEdit(t: TournamentRow, raw: unknown, scope: stri
       if (!sameCourse) {
         if (isStarted) throw new WizardError("This round has scores, so its course stays as it is.");
         const c = await roundCourse(a, new Map());
+        research.push({ ref: libraryRef(c.course_slug), name: c.course_name, location: c.course_location, holes: c.holes });
+        replaced.push(libraryRef(r.course_slug));
         Object.assign(patch, { course_slug: c.course_slug, course_name: c.course_name, course_location: c.course_location, course_blurb: c.course_blurb, course_guide: c.course_guide, lat: c.lat, lon: c.lon, tee: c.tee, tees: c.tees.length ? c.tees : null, holes: c.holes, photo_path: null });
         r.tees = c.tees;
         r.tee = c.tee;
@@ -321,5 +330,7 @@ export async function applySetupEdit(t: TournamentRow, raw: unknown, scope: stri
     default:
       throw new WizardError("Unknown change");
   }
+  for (const ref of replaced) await dropResearch(ref);
+  for (const c of research) if (await startResearch(await inputFor(c.ref, c.name, c.location, c.holes)) && origin) after(() => kickResearch(origin, c.ref));
   return notes.length ? { note: notes.join(" ") } : {};
 }
