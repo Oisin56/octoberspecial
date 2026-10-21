@@ -338,7 +338,7 @@ export async function createFromWizard(w: Wizard, opts: { pin?: string | null })
         if (seen.has(r.course_slug)) continue;
         seen.add(r.course_slug);
         const name = roundRows[r.number - 1].course_name;
-        jobs.push({ id: `guide-${r.number}`, kind: "guide", roundId: r.id, label: `Hole-by-hole guide: ${name}`, status: r.course_guide ? "done" : "todo" });
+        jobs.push({ id: `guide-${r.number}`, kind: "guide", roundId: r.id, label: `Hole-by-hole guide: ${name}`, status: r.course_guide ? "done" : "todo", note: r.course_guide ? "Already in the course library" : undefined });
       }
       const first = made?.find((r) => r.number === 1);
       if (first) jobs.push({ id: "preview", kind: "preview", roundId: first.id, label: "First preview written", status: "todo" });

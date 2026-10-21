@@ -5,6 +5,7 @@ import { validStrokeIndexes } from "./holes";
 export { validStrokeIndexes };
 import type { CourseGuide } from "./types";
 import { courseDetails, golfApiConfigured, searchClubs } from "./golfapi";
+import { libraryGuide } from "./course-library";
 
 /** A course ready to drop into a round: par/SI/yards per tee. */
 export interface CourseOption {
@@ -158,7 +159,13 @@ export async function searchCourses(q: string): Promise<{ hits: CourseHit[]; rem
   }
 }
 
+/** A course's card and tees, with its guide from the course library when one's been written. */
 export async function getCourse(ref: string): Promise<CourseOption | null> {
+  const [c, guide] = await Promise.all([fetchCourse(ref), libraryGuide(ref)]);
+  return c && guide ? { ...c, guide } : c;
+}
+
+async function fetchCourse(ref: string): Promise<CourseOption | null> {
   const [kind, id, country] = ref.split(":");
   if (kind === "golfapi") {
     try {

@@ -27,6 +27,8 @@ import {
 export interface AdminData {
   state: TournamentState;
   pinSet: Record<string, boolean>;
+  /** Players whose personal link has been made */
+  linkSet?: Record<string, boolean>;
   organiserPinSet: boolean;
   env: { ai: boolean; courses: boolean; mail?: boolean };
   /** Followers who joined the conversation */
@@ -97,8 +99,6 @@ export function BasicsEditor({ data, onSaved }: { data: AdminData; onSaved: () =
   const [f, setF] = useState({
     name: t.name,
     subtitle: t.subtitle ?? "",
-    start_date: t.start_date ?? "",
-    end_date: t.end_date ?? "",
     theme: tournamentTheme(t.theme),
     custom_colors: t.custom_colors ?? { primary: "#1f3d2b", accent: "#c8102e", background: "#e4e9e5" },
   });
@@ -129,14 +129,6 @@ export function BasicsEditor({ data, onSaved }: { data: AdminData; onSaved: () =
         <label className="field" style={{ flex: "2 1 260px" }}>
           <span className="lbl">Strapline</span>
           <input value={f.subtitle} onChange={(e) => setF({ ...f, subtitle: e.target.value })} placeholder="e.g. Seven rounds. Two men. 360 points." />
-        </label>
-        <label className="field" style={{ flex: "1 1 150px" }}>
-          <span className="lbl">First day</span>
-          <input type="date" value={f.start_date} onChange={(e) => setF({ ...f, start_date: e.target.value })} />
-        </label>
-        <label className="field" style={{ flex: "1 1 150px" }}>
-          <span className="lbl">Last day</span>
-          <input type="date" value={f.end_date} onChange={(e) => setF({ ...f, end_date: e.target.value })} />
         </label>
       </div>
       <div className="field">
@@ -1484,11 +1476,9 @@ export function ContentEditor({ data, onSaved }: { data: AdminData; onSaved: () 
 
 export function InviteEditor({ data, onSaved }: { data: AdminData; onSaved: () => void }) {
   const { href } = useT();
-  const t = data.state.tournament;
   const [orgPin, setOrgPin] = useState("");
   const s = useSave();
   const link = typeof window !== "undefined" ? `${window.location.origin}${href("/")}` : href("/");
-  const missingPins = data.state.players.filter((p) => !data.pinSet[p.id]);
 
   async function savePins() {
     const r = await s.run({ action: "updateTournament", patch: {}, organiserPin: orgPin || undefined });
@@ -1497,16 +1487,13 @@ export function InviteEditor({ data, onSaved }: { data: AdminData; onSaved: () =
       onSaved();
     }
   }
-  async function publish(p: boolean) {
-    const r = await s.run({ action: "updateTournament", patch: { published: p } }, p ? "Published" : "Saved");
-    if (r.ok) onSaved();
-  }
 
   return (
     <section className="panel stack">
-      <h2>Invite and go live</h2>
+      <h2>Share it</h2>
+      <p style={{ margin: 0 }}>Anyone with this link can follow along. It isn&apos;t listed anywhere or shown by search engines, so only the people you send it to will see it.</p>
       <div className="field">
-        <label>Share link (followers need nothing else)</label>
+        <label>The link for followers (they need nothing else)</label>
         <div className="row" style={{ flexWrap: "nowrap" }}>
           <input readOnly value={link} onFocus={(e) => e.target.select()} />
           <button
@@ -1521,8 +1508,7 @@ export function InviteEditor({ data, onSaved }: { data: AdminData; onSaved: () =
         </div>
       </div>
       <p className="small" style={{ margin: 0 }}>
-        Players log in with their own PIN (set on the Players step).
-        {missingPins.length > 0 && <span className="error"> Still no PIN: {missingPins.map((p) => p.name).join(", ")}.</span>}
+        Players get in with their own link, sent from Players and PINs. A PIN is the fallback if a link goes astray.
       </p>
       <div className="row">
         <label className="field" style={{ flex: "1 1 200px" }}>
@@ -1532,22 +1518,10 @@ export function InviteEditor({ data, onSaved }: { data: AdminData; onSaved: () =
       </div>
       <div className="row">
         <button className="btn secondary" disabled={s.busy || !orgPin} onClick={savePins}>
-          Save PINs
+          Save organiser PIN
         </button>
-        {t.published ? (
-          <button className="btn secondary" onClick={() => publish(false)}>
-            Unpublish
-          </button>
-        ) : (
-          <button className="btn" onClick={() => publish(true)}>
-            Publish
-          </button>
-        )}
         <Msg msg={s.msg} />
       </div>
-      <p className="small muted" style={{ margin: 0 }}>
-        {t.published ? "Published: anyone with the link can follow." : "Not published yet: it won't appear in the tournament list, but the link still works for testing."}
-      </p>
     </section>
   );
 }

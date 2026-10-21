@@ -1,5 +1,6 @@
 import "server-only";
 import { adminClient } from "./admin";
+import { syncTripDates } from "./trip-dates";
 import { slugify } from "./server-data";
 import { drawBracket, knockoutGames, type Entrant, type Game, type RoundCfg, type TournamentCfg, type WinRule } from "./engine";
 import { normalizeRound, type CourseTee, type PlayerRow, type RoundRow, type TournamentRow } from "./types";
@@ -45,7 +46,8 @@ export async function applySetupEdit(t: TournamentRow, raw: unknown, scope: stri
 
   // Player keys on the setup page are player ids; anyone new gets an id now
   const idOf: Record<string, string> = {};
-  for (const p of w.players) idOf[p.key] = players.some((x) => x.id === p.key) ? p.key : `${slugify(p.name) || "player"}-${Math.random().toString(36).slice(2, 6)}`;
+  // (from the key, so saving again as you type finds the same player rather than adding another)
+  for (const p of w.players) idOf[p.key] = players.find((x) => x.id === p.key || x.id.endsWith(`-${p.key}`))?.id ?? `${slugify(p.name) || "player"}-${p.key}`;
   const ids = w.players.map((p) => idOf[p.key]);
   const teams = w.teams.map((tm, i) => ({ id: `team-${i + 1}`, name: tm.name, color: tm.color }));
   const teamOf: Record<string, string | null> = Object.fromEntries(w.players.map((p) => [idOf[p.key], w.who === "teams" && p.team != null ? (teams[p.team]?.id ?? null) : null]));
@@ -75,11 +77,7 @@ export async function applySetupEdit(t: TournamentRow, raw: unknown, scope: stri
   };
   /** Groups or matches for round i: as picked, or (fresh: the format's changed shape) a new draw. */
   const draw = (i: number, fresh = false) => drawRound(fresh && w.draw === "pick" ? { ...w, draw: "random" } : w, w.rounds[i], i + 1, ids, info);
-  const datesFromRounds = async () => {
-    const { data: all } = await db.from("rounds").select("play_date").eq("tournament_id", t.id);
-    const dates = (all ?? []).map((x) => x.play_date as string | null).filter((x): x is string => !!x).sort();
-    await updateT({ start_date: dates[0] ?? null, end_date: dates[dates.length - 1] ?? null });
-  };
+  const datesFromRounds = () => syncTripDates(t.id);
   /** A new round row from the answers for round k. */
   const newRound = async (k: number, games: Game[]) => {
     const a = w.rounds[k];
@@ -175,7 +173,7 @@ export async function applySetupEdit(t: TournamentRow, raw: unknown, scope: stri
       }
       const added = w.players.filter((p) => !players.some((x) => x.id === idOf[p.key]));
       if (added.length && w.win === "knockout" && anyStarted) throw new WizardError("The knockout has started, so nobody new can join it.");
-      const teamsChanged = kind === "teams" && players.some((p) => keep.has(p.id) && (p.team_id ?? null) !== (teamOf[p.id] ?? null));
+      const teamsChanged = kind !== "about" && players.some((p) => keep.has(p.id) && (p.team_id ?? null) !== (teamOf[p.id] ?? null));
       if (kind === "teams") await updateT({ teams });
       for (const [k, p] of w.players.entries()) {
         const id = idOf[p.key];

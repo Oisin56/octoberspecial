@@ -40,7 +40,12 @@ Branch: `setup-redesign`. Read the blueprint for what people see; this file is h
          `src/components/setup/fromState.ts`. Rounds with scores keep course, holes, format and groups; tees, points
          and handicaps can change after a warning. Tournaments made before the redesign (no `win`) keep how it's won,
          points and groups in Rounds and courses.
-- [ ] 4. Course guide library + fixes table.
+- [x] 4. Course library (`course_library` table, `src/lib/course-library.ts`: `getCourse` returns the library's guide;
+         research and organiser edits write to it; existing guides backfilled by schema.sql). Course guide screen in
+         Tournament setup (search again, write or correct; saves on leaving each box). Tournament setup saves as you
+         tap (Done/Back, no Save buttons; asks first when a round has scores). Fixes: personal link first with PIN as
+         fallback (organiser not listed); Publish removed (it controlled nothing: the link always worked, nothing is
+         listed or indexed); first preview offered after links; trip dates worked out from the rounds only.
 - [ ] 5. Display: boards for team score, skins, knockout bracket, prizes; rules page; AI writer standings text;
          film final standings card. Organiser home wording.
 - [ ] 6. Walk-throughs per tournament type, existing suites, October Special check, front page screens.

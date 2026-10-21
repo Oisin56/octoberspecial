@@ -2375,3 +2375,6 @@ textarea.fr-input { resize: vertical; }
 .su-saving { font-weight: 600; color: var(--ink-soft); }
 .su-busy .wz-screen { opacity: 0.55; pointer-events: none; }
 .org-tile-setup { grid-column: 1 / -1; min-height: 0; }
+.su-status { margin-left: auto; font-weight: 600; font-size: 16px; color: var(--ink-soft); }
+.su-status.su-saved { color: #2e7d4f; }
+.su-saved-line { color: #2e7d4f; font-weight: 700; margin: 0; }

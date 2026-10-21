@@ -167,7 +167,6 @@ export default function OwnerPage() {
                     <Link href={`/t/${t.slug}`}>
                       <strong>{t.name}</strong>
                     </Link>
-                    <span className={`owner-pub${t.published ? " on" : ""}`}>{t.published ? "Public" : "Not public yet"}</span>
                     {demo === t.slug && <span className="owner-pub on">Front page example</span>}
                   </div>
                   <p className="owner-meta">

@@ -537,3 +537,29 @@ revoke all on invite_requests from anon, authenticated;
 
 -- Tell the API about the new tables straight away
 notify pgrst, 'reload schema';
+
+-- Course library: a finished hole-by-hole guide is kept for the course and reused by every later tournament
+-- there (keyed by the course reference, e.g. 'golfapi:123:Ireland' or 'local:birr'). Server only.
+create table if not exists course_library (
+  ref text primary key,
+  name text not null default '',
+  guide jsonb not null,
+  written_by text not null default 'research' check (written_by in ('research', 'organiser')),
+  sources jsonb not null default '[]'::jsonb,
+  updated_at timestamptz not null default now()
+);
+alter table course_library enable row level security;
+revoke all on course_library from anon, authenticated;
+grant all on course_library to service_role;
+-- Guides already found for earlier tournaments go into the library (the fullest one for each course)
+insert into course_library (ref, name, guide)
+select distinct on (ref) ref, course_name, course_guide
+from (
+  select case when position(':' in course_slug) > 0 then course_slug else 'local:' || course_slug end as ref,
+         course_name, course_guide,
+         (select count(*) from jsonb_object_keys(coalesce(course_guide->'holes', '{}'::jsonb))) as n
+  from rounds
+  where course_guide is not null and course_slug not like 'manual:%'
+) g
+order by ref, n desc
+on conflict (ref) do nothing;

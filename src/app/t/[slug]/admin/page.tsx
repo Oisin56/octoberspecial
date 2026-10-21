@@ -129,7 +129,8 @@ function OrganiserHome({ data }: { data: AdminData }) {
   const pieces = st.pieces.filter((p) => !(p.status === "hidden" && p.body === "(writing…)"));
   const drafts = pieces.filter((p) => p.status === "draft");
   const published = pieces.filter((p) => p.status === "published");
-  const noPin = st.players.filter((p) => !data.pinSet[p.id]);
+  // Players who can't get in yet: no personal link made and no PIN (the organiser is already in)
+  const noWay = st.players.filter((p) => p.id !== t.organiser_player_id && !data.linkSet?.[p.id] && !data.pinSet[p.id]);
   const complete = rounds.filter((r) => r.status === "complete");
   const cardStates = rounds
     .filter((r) => r.status !== "upcoming")
@@ -149,6 +150,11 @@ function OrganiserHome({ data }: { data: AdminData }) {
       to: "#rounds",
     });
   if (st.players.length < 2) todo.push({ text: "Add the players.", action: "Add players", to: "#players" });
+  // Everyone's link first: then they can keep score and post from their phones
+  if (noWay.length) todo.push({ text: `Send ${listNames(noWay.map((p) => p.name))} ${noWay.length === 1 ? "their link" : "their links"}, so they can keep score and post from their phones.`, action: "Send links", to: "#players" });
+  // Straight after setting up: the first preview, written while the courses were read up on
+  const firstPreview = !published.length && drafts.find((p) => p.kind === "preview");
+  if (firstPreview) todo.push({ text: "Your first preview is ready to read.", action: "Read it", to: "#write" });
   // The tournament is over: the film is the last thing to do
   const filmReady = t.video_enabled !== false && filmUnlock(st).ok;
   const filmMade = st.posts.some((p) => p.author_name === "AI director");
@@ -167,10 +173,8 @@ function OrganiserHome({ data }: { data: AdminData }) {
   }
   if (aiOn && next && !live && !pieces.some((p) => p.kind === "preview" && p.round_id === next.id))
     todo.push({ text: `No preview yet for round ${next.number} at ${next.course_name}.`, action: "Write the preview", to: `#write/preview/${next.id}` });
-  if (drafts.length && !todo.some((x) => x.to === "#write"))
+  if (drafts.length && !firstPreview && !todo.some((x) => x.to === "#write"))
     todo.push({ text: `${drafts.length} ${drafts.length === 1 ? "draft is" : "drafts are"} waiting to be read.`, action: "Read them", to: "#write" });
-  if (noPin.length) todo.push({ text: `${listNames(noPin.map((p) => p.name))} can't log in yet. Send each player their link (or set a PIN).`, action: "Send links", to: "#players" });
-  if (!t.published && rounds.length && st.players.length >= 2) todo.push({ text: "The site isn't public yet.", action: "Share it", to: "#share" });
 
   const theme = THEMES.find((x) => x.id === t.theme)?.name ?? "Custom";
   const tone = TONE_LABEL[t.tone]?.split(":")[0] ?? "";
@@ -181,14 +185,14 @@ function OrganiserHome({ data }: { data: AdminData }) {
   const tiles: [Section, string][] = [
     ["rounds", rounds.length ? `${rounds.length} round${rounds.length === 1 ? "" : "s"}${next ? `, next at ${short(next.course_name)}` : ""}` : "None yet"],
     ["cards", waiting.length ? `${waiting.length} card${waiting.length === 1 ? "" : "s"} not final yet` : cardStates.length ? "All final" : st.tournament.require_attestation ? "Players sign their cards" : "Final when submitted"],
-    ["players", st.players.length ? `${st.players.length} players${noPin.length ? `, ${noPin.length} without a PIN` : ", all with PINs"}` : "None yet"],
+    ["players", st.players.length ? `${st.players.length} players${noWay.length ? `, ${noWay.length} still to get their link` : ", all with their link"}` : "None yet"],
     ["write", drafts.length ? `${drafts.length} draft${drafts.length === 1 ? "" : "s"} waiting` : published.length ? `${published.length} published` : "Previews and reports"],
     ["email", !subs.list ? "" : !subs.configured ? "Not switched on yet" : `${subs.active} ${subs.active === 1 ? "person" : "people"} signed up`],
     ["film", filmMade ? "The film is made" : filmReady ? "Ready to make the film" : clips ? `${clips} clip${clips === 1 ? "" : "s"} so far` : "The film comes at the end"],
     ["posts", posts ? `${posts} post${posts === 1 ? "" : "s"}, ${st.comments.length} comment${st.comments.length === 1 ? "" : "s"}` : "Nothing posted yet"],
     ["sides", sides ? `${sides} running` : "Closest the pin and more"],
     ["look", `${theme}, ${tone.toLowerCase()} tone`],
-    ["share", t.published ? "Public" : "Not public yet"],
+    ["share", "The link for followers"],
   ];
 
   return (
@@ -244,7 +248,7 @@ function OrganiserHome({ data }: { data: AdminData }) {
           <span>Players, rounds, how it&apos;s won, groups and prizes</span>
         </Link>
         {tiles.map(([id, status]) => (
-          <a key={id} href={`#${id}`} className={`org-tile org-tile-${id}${(id === "write" && drafts.length) || (id === "players" && noPin.length) ? " attn" : ""}`}>
+          <a key={id} href={`#${id}`} className={`org-tile org-tile-${id}${(id === "write" && drafts.length) || (id === "players" && noWay.length) ? " attn" : ""}`}>
             <strong>{SECTIONS[id]}</strong>
             <span>{status}</span>
           </a>

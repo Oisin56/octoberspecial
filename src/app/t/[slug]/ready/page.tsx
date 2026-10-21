@@ -8,7 +8,7 @@ import type { SetupJob } from "@/lib/types";
 
 /**
  * Straight after "Create my tournament": a waiting screen while the course guides and the first preview are
- * written, then "You're ready". You can leave at any point; Admin carries on where this stopped.
+ * written, then "You're ready". You can leave at any point; the organiser page carries on where this stopped.
  */
 export default function Ready() {
   const { state, session, sessionReady, api, href, refresh } = useT();
@@ -101,7 +101,7 @@ export default function Ready() {
         </p>
         <div className="gr-leave">
           <p>
-            You don&apos;t have to wait. It carries on when you next open Admin, and the tournament is ready to use now.
+            You don&apos;t have to wait. It carries on when you next open the organiser page, and the tournament is ready to use now.
           </p>
           <button type="button" className="btn secondary block" onClick={() => setSkipped(true)}>
             Carry on without waiting

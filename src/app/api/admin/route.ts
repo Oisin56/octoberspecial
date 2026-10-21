@@ -4,16 +4,19 @@ import { hashPin, isOrganiser } from "@/lib/auth";
 import { bad, context, json, loadServerState, siteOrigin, slugify, DEMO_READONLY } from "@/lib/server-data";
 import { EMAIL_RE, emailPiece, mailConfigured } from "@/lib/email";
 import { draftGuide, generatePiece, type PieceKind } from "@/lib/ai";
-import { cleanGuide, normalizeRound, type RoundRow, type Tone } from "@/lib/types";
+import { cleanGuide, normalizeRound, type CourseGuide, type RoundRow, type Tone } from "@/lib/types";
 import { guideFrom, guideStep, newGuideWork, type GuideWork } from "@/lib/guide";
 const TONE_IDS: Tone[] = ["broadsheet", "tabloid", "commentator", "dry"];
 import { getCourse, validStrokeIndexes } from "@/lib/courses";
+import { saveToLibrary } from "@/lib/course-library";
+import { syncTripDates } from "@/lib/trip-dates";
+import { courseRefOf } from "@/lib/wizard";
 import type { Game, HandicapRule, PointsRule } from "@/lib/engine";
 
 export const maxDuration = 60;
 
 const TOURNAMENT_FIELDS = [
-  "name", "subtitle", "start_date", "end_date", "theme", "custom_colors", "logo_path", "hero_path", "tone",
+  "name", "subtitle", "theme", "custom_colors", "logo_path", "hero_path", "tone",
   "side_games", "side_games_by", "teams", "auto_bulletins", "video_enabled", "organiser_player_id", "published",
   "require_attestation", "feed_on", "ai_on", "standings", "units", "share_shape",
 ];
@@ -71,12 +74,16 @@ export async function POST(req: Request) {
   switch (b.action) {
     case "state": {
       const state = await loadServerState(t.id);
-      const { data: pins } = await db.from("players").select("id,pin_hash").eq("tournament_id", t.id);
+      type PinRow = { id: string; pin_hash: string | null; link_code?: string | null };
+      const withLinks = await db.from("players").select("id,pin_hash,link_code").eq("tournament_id", t.id);
+      const pins: PinRow[] = withLinks.error ? ((await db.from("players").select("id,pin_hash").eq("tournament_id", t.id)).data ?? []) : (withLinks.data ?? []);
       const fans = await db.from("fans").select("id,name,blocked,created_at").eq("tournament_id", t.id).order("created_at");
       return json({
         state,
         fans: fans.error ? [] : (fans.data ?? []),
-        pinSet: Object.fromEntries((pins ?? []).map((p) => [p.id, !!p.pin_hash])),
+        pinSet: Object.fromEntries(pins.map((p) => [p.id, !!p.pin_hash])),
+        // A personal link made (and so, almost always, sent): the player can get in
+        linkSet: Object.fromEntries(pins.map((p) => [p.id, !!p.link_code])),
         organiserPinSet: !!t.organiser_pin_hash,
         env: { ai: !!process.env.ANTHROPIC_API_KEY, courses: !!process.env.GOLFCOURSEAPI_KEY || !!process.env.GOLFAPI_KEY, mail: mailConfigured() },
       });
@@ -222,9 +229,9 @@ export async function POST(req: Request) {
       }
 
       // Course or tee chosen: pull the card
-      let existing: { course_slug: string } | null = null;
+      let existing: { course_slug: string; course_name: string } | null = null;
       if (r.id) {
-        const { data } = await db.from("rounds").select("course_slug").eq("id", r.id).eq("tournament_id", t.id).single();
+        const { data } = await db.from("rounds").select("course_slug,course_name").eq("id", r.id).eq("tournament_id", t.id).single();
         existing = data;
         if (!existing) return bad("Round not found", 404);
       }
@@ -272,6 +279,10 @@ export async function POST(req: Request) {
           ({ error } = await db.from("rounds").update(patch).eq("id", r.id).eq("tournament_id", t.id));
         }
         if (error) return bad(error.message, 500);
+        // An organiser's own guide goes in the course library for later tournaments
+        const slug = (patch.course_slug as string | undefined) ?? existing?.course_slug;
+        if ("play_date" in r) await syncTripDates(t.id);
+        if ("course_guide" in r && slug) await saveToLibrary(courseRefOf(slug), String(patch.course_name ?? existing?.course_name ?? ""), patch.course_guide as CourseGuide | null, "organiser");
         return json({ ok: true, id: r.id });
       }
       if (!patch.course_name || !patch.holes) return bad("Choose a course (or enter the card) for the new round");
@@ -317,6 +328,7 @@ export async function POST(req: Request) {
         ({ data, error } = await db.from("rounds").insert(insert).select("id").single());
       }
       if (error || !data) return bad(error?.message ?? "Couldn't add the round", 500);
+      await syncTripDates(t.id);
       return json({ ok: true, id: data.id });
     }
 
@@ -345,6 +357,19 @@ export async function POST(req: Request) {
       }
     }
 
+    // The course guide for a round, written or corrected by the organiser (or found again by research): every round
+    // at this course gets it, and so does the course library for later tournaments
+    case "saveGuide": {
+      const { data: round } = await db.from("rounds").select("id,course_slug,course_name").eq("id", b.roundId).eq("tournament_id", t.id).maybeSingle();
+      if (!round) return bad("Round not found", 404);
+      const guide = cleanGuide(b.guide);
+      const by = b.by === "research" ? "research" : "organiser";
+      const { error } = await db.from("rounds").update({ course_guide: guide }).eq("tournament_id", t.id).eq("course_slug", round.course_slug);
+      if (error) return bad(error.message, 500);
+      await saveToLibrary(courseRefOf(round.course_slug), round.course_name, guide, by, Array.isArray(b.sources) ? b.sources.map(String).slice(0, 8) : []);
+      return json({ ok: true, guide });
+    }
+
     case "draftGuide": {
       const { data: round } = await db.from("rounds").select("*").eq("id", b.roundId).eq("tournament_id", t.id).maybeSingle();
       if (!round) return bad("Round not found", 404);
@@ -365,6 +390,7 @@ export async function POST(req: Request) {
       const { data: rs } = await db.from("rounds").select("id,number").eq("tournament_id", t.id).order("number");
       for (const [i, r] of (rs ?? []).entries()) if (r.number !== i + 1) await db.from("rounds").update({ number: -(i + 1) }).eq("id", r.id);
       for (const [i, r] of (rs ?? []).entries()) if (r.number !== i + 1) await db.from("rounds").update({ number: i + 1 }).eq("id", r.id);
+      await syncTripDates(t.id);
       return json({ ok: true });
     }
 

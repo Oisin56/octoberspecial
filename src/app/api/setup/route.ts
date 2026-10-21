@@ -2,6 +2,8 @@ import { adminClient } from "@/lib/admin";
 import { isOrganiser } from "@/lib/auth";
 import { generatePiece } from "@/lib/ai";
 import { guideFrom, guideStep, newGuideWork, type GuideWork } from "@/lib/guide";
+import { saveToLibrary } from "@/lib/course-library";
+import { courseRefOf } from "@/lib/wizard";
 import { bad, context, json, DEMO_READONLY } from "@/lib/server-data";
 import type { RoundRow, SetupJob } from "@/lib/types";
 import { normalizeRound } from "@/lib/types";
@@ -13,7 +15,7 @@ const LOCK_MS = 70_000;
 /**
  * Getting a new tournament ready, one step per call (each well inside the time limit):
  * the hole-by-hole guide for each course, then the first preview. The waiting screen calls this until
- * nothing's left; if everyone leaves, Admin picks it up again.
+ * nothing's left; if everyone leaves, the organiser page picks it up again.
  */
 export async function POST(req: Request) {
   const b = await req.json().catch(() => ({}));
@@ -28,7 +30,7 @@ export async function POST(req: Request) {
     return list;
   };
   if (b.action === "skip") {
-    // "Don't wait": anything unfinished is left (the guide can be written in Fine-tune)
+    // "Don't wait": anything unfinished is left (the guide can be written in Tournament setup)
     return json({ jobs: await save(jobs.map((j) => (j.status === "todo" ? { ...j, status: "none" as const, note: "Skipped" } : j))) });
   }
 
@@ -64,18 +66,20 @@ export async function POST(req: Request) {
       // Every round at this course gets it, unless the organiser has written one
       const { data: same } = await db.from("rounds").select("id,course_guide").eq("tournament_id", t.id).eq("course_slug", round.course_slug);
       for (const r of same ?? []) if (!r.course_guide) await db.from("rounds").update({ course_guide: guide }).eq("id", r.id);
+      // Kept for every later tournament at this course
+      await saveToLibrary(courseRefOf(round.course_slug), round.course_name, guide, "research", work.from);
     }
-    return finish({ data: work, status: guide ? "done" : "none", note: work.result });
+    return finish({ data: work, status: guide ? "done" : "none", note: guide ? work.result : `${work.result}. Try again, or write a few lines yourself, in Tournament setup` });
   }
 
   if (job.kind === "preview") {
     if (t.ai_on === false) return finish({ status: "none", note: "AI writing is off" });
     try {
       await generatePiece(t.id, "preview", job.roundId ?? null, { trigger: "setup" });
-      return finish({ status: "done", note: "Waiting for you to read it in Admin" });
+      return finish({ status: "done", note: "Ready to read on the organiser page" });
     } catch (e) {
       console.error("[setup] preview", e);
-      return finish({ status: "failed", note: "Couldn't write it just now: write it from Admin when you're ready" });
+      return finish({ status: "failed", note: "Couldn't write it just now: write it from the organiser page when you're ready" });
     }
   }
   return finish({ status: "done" });
