@@ -6,7 +6,9 @@ import type {
   HoleEntry,
   PlayType,
   PointsRule,
+  Prize,
   RoundCfg,
+  WinRule,
   ScoringType,
   SideGameCfg,
   Team,
@@ -55,6 +57,10 @@ export interface TournamentRow {
   share_shape?: "portrait" | "landscape" | null;
   /** What's still being got ready after the setup wizard (course guides, photos, the first preview) */
   setup_jobs?: SetupJob[] | null;
+  /** How the overall winner is decided (set-up redesign; older tournaments use `standings`) */
+  win?: WinRule | null;
+  /** Prizes alongside the winner */
+  prizes?: Prize[] | null;
 }
 
 export interface SetupJob {
@@ -146,6 +152,19 @@ export interface RoundRow {
   games: Game[] | null;
   points_rule: PointsRule | null;
   handicap_rule: HandicapRule | null;
+  /** Every tee of the course (when it came from the course search) */
+  tees?: CourseTee[] | null;
+  /** Players on different tees from the round's: player id → tee name */
+  player_tees?: Record<string, string> | null;
+}
+
+export interface CourseTee {
+  name: string;
+  par: number[];
+  si: number[];
+  yards: number[];
+  rating?: number;
+  slope?: number;
 }
 
 export interface HoleEntryRow {
@@ -386,7 +405,24 @@ export function toRoundCfg(r: RoundRow, players: PlayerRow[]): RoundCfg {
     points: r.points_rule ?? { front: r.nine_points, back: r.nine_points, full: r.full_points },
     handicap: r.handicap_rule ?? { mode: "manual", shots: r.shots ?? {} },
     closed: r.status === "complete",
+    playerTees: playerTeesOf(r),
   };
+}
+
+/** Players on their own tees: each one's card (the holes this round plays) and the tee's rating. */
+export function playerTeesOf(r: Pick<RoundRow, "tees" | "player_tees" | "hole_set" | "tee">): RoundCfg["playerTees"] {
+  const out: NonNullable<RoundCfg["playerTees"]> = {};
+  for (const [pid, name] of Object.entries(r.player_tees ?? {})) {
+    const t = r.tees?.find((x) => x.name === name);
+    if (!t || name === r.tee) continue;
+    const card = t.par.map((par, i) => ({ number: i + 1, par, si: t.si[i] }));
+    out[pid] = {
+      tee: t.name,
+      holes: playedHoles(card, r.hole_set),
+      course: t.slope && t.rating ? { slope: t.slope, rating: t.rating, par: t.par.reduce((a, b) => a + b, 0) } : null,
+    };
+  }
+  return Object.keys(out).length ? out : undefined;
 }
 
 export function toTournamentCfg(s: Pick<TournamentState, "tournament" | "players" | "rounds">): TournamentCfg {
@@ -398,6 +434,8 @@ export function toTournamentCfg(s: Pick<TournamentState, "tournament" | "players
     sideGames: s.tournament.side_games ?? [],
     sideGamesBy: s.tournament.side_games_by ?? "player",
     standings: s.tournament.standings ?? "points",
+    win: s.tournament.win ?? null,
+    prizes: s.tournament.prizes ?? null,
   };
 }
 

@@ -101,6 +101,8 @@ export interface Game {
   scorerId?: string | null;
   /** Plays for nothing but the prizes (a knockout's knocked-out players): scored as Stableford, no points */
   free?: boolean;
+  /** "10:20" */
+  teeTime?: string | null;
 }
 
 export type HandicapRule =

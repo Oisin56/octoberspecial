@@ -346,10 +346,19 @@ alter table tournaments add column if not exists setup_jobs jsonb;
 alter table tournaments add column if not exists units text not null default 'yards';
 -- Phase E: where the tournament's videos are mostly shared (upright for phones, wide for YouTube and TV)
 alter table tournaments add column if not exists share_shape text check (share_shape in ('portrait', 'landscape'));
+-- Set-up redesign: how the winner is decided (the engine's WinRule) and the prizes alongside it
+alter table tournaments add column if not exists win jsonb;
+alter table tournaments add column if not exists prizes jsonb;
+-- Every tee of the course, and players on different tees from the round's (player id → tee name)
+alter table rounds add column if not exists tees jsonb;
+alter table rounds add column if not exists player_tees jsonb;
+-- A knockout match level after 18 goes on to extra holes: the 19th, 20th… (played as the 1st, 2nd…)
+alter table hole_entries drop constraint if exists hole_entries_hole_check;
+alter table hole_entries add constraint hole_entries_hole_check check (hole between 1 and 27);
 create view public_tournaments with (security_invoker = false) as
   select id, slug, name, subtitle, start_date, end_date, theme, custom_colors, logo_path, hero_path, tone,
          side_games, side_games_by, teams, auto_bulletins, video_enabled, organiser_player_id, published, created_at, reel_music_path,
-         require_attestation, broadcast_on, broadcast_cap_cents, standings, feed_on, ai_on, setup_jobs, units, share_shape
+         require_attestation, broadcast_on, broadcast_cap_cents, standings, feed_on, ai_on, setup_jobs, units, share_shape, win, prizes
   from tournaments;
 grant select on public_tournaments to anon, authenticated;
 

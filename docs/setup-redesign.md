@@ -32,7 +32,9 @@ Branch: `setup-redesign`. Read the blueprint for what people see; this file is h
 - [x] 1. Engine: WinRule, per-player tees, team score, Texas scramble, skins across the field, knockout bracket +
          ties + extra holes + prize-only groups, prizes, points-race bonus, count-back. `src/lib/compete.test.ts`.
          (Defaults — allowances, two-player points — live in the wizard model, step 2.)
-- [ ] 2. Wizard: new screen order and screens (see blueprint table).
+- [x] 2. Wizard: new screen order and screens (`src/components/setup/`, `src/app/new`), rules in `src/lib/wizard.ts`,
+         creation in `wizard-server.ts`; knockout rounds fill in after each score (`knockout-server.ts`); extra holes
+         19-27 allowed. Still to do elsewhere: entering extra holes on the scorecard (on-course work).
 - [ ] 3. Tournament setup page from the wizard's screens.
 - [ ] 4. Course guide library + fixes table.
 - [ ] 5. Display: boards for team score, skins, knockout bracket, prizes; rules page; AI writer standings text;

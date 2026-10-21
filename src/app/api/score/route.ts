@@ -2,9 +2,10 @@ import { after } from "next/server";
 import { adminClient } from "@/lib/admin";
 import { bad, context, json, siteOrigin, DEMO_READONLY } from "@/lib/server-data";
 import { sweep } from "@/lib/broadcast";
-import { ballsOfGame, type BallHole } from "@/lib/engine";
+import { ballsOfGame, cardHole, type BallHole } from "@/lib/engine";
 import { toRoundCfg, type PlayerRow, type RoundRow } from "@/lib/types";
 import { maybeBulletin } from "@/lib/ai";
+import { syncKnockout } from "@/lib/knockout-server";
 
 export const maxDuration = 60;
 
@@ -20,7 +21,9 @@ export async function POST(req: Request) {
   const roundId = String(body.roundId ?? "");
   const gameId = String(body.game ?? "main");
   const hole = Number(body.hole);
-  if (!roundId || !(hole >= 1 && hole <= 18)) return bad("Bad hole");
+  // A knockout match level after 18 can go on to extra holes (the 19th is played as the 1st)
+  const maxHole = (t as { win?: { kind?: string } | null }).win?.kind === "knockout" ? 27 : 18;
+  if (!roundId || !(hole >= 1 && hole <= maxHole)) return bad("Bad hole");
   // The organiser correcting another match's score (from Admin, Scorecards): always logged
   const correcting = body.correct === true && session.role === "organiser";
 
@@ -42,7 +45,8 @@ export async function POST(req: Request) {
       403,
     );
 
-  const h = cfg.holes.find((x) => x.number === hole);
+  // Extra holes are played as the card again from the 1st (cardHole)
+  const h = hole > 18 ? cardHole(cfg.holes, hole) : cfg.holes.find((x) => x.number === hole);
   if (!h) return bad("Hole not on card");
 
   const balls = ballsOfGame(game, cfg.play);
@@ -109,6 +113,12 @@ export async function POST(req: Request) {
   if (body.final === false) return json({ ok: true });
   const origin = siteOrigin(req);
   after(async () => {
+    // A knockout match decided: its winner goes through to the next round
+    try {
+      await syncKnockout(t.id);
+    } catch (e) {
+      console.error("[knockout] sync", e);
+    }
     try {
       await maybeBulletin(t.id, roundId, gameId, hole);
     } catch (e) {
