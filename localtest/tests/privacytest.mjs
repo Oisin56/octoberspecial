@@ -202,13 +202,13 @@ const fan = agent();
 const ostate = (await fetch(`${BASE}/api/state?t=${OS}`).then((x) => x.json())).state;
 const post = ostate.posts[0];
 ok(!!post, "(a post on the October Special)");
-ok((await fan("/api/fans", { t: OS, action: "profile", name: "Clodagh", how: "Oisin's sister", over16: true })).status === 200, "a follower gives her name and how she knows the group");
+ok((await fan("/api/fans", { t: OS, action: "profile", name: "Sorcha", how: "Oisin's cousin", over16: true })).status === 200, "a follower gives her name and how she knows the group");
 ok((await fan("/api/comments", { t: OS, postId: post.id, body: "Go on Oisin" })).status === 200, "and comments straight away (no email needed)");
 await anon("/api/viewed", { t: OS, device: "anon-device-1" });
 // The site owner opens it as its organiser
 await owner("/api/owner", { action: "open", id: os });
 list = (await owner("/api/fans", { t: OS, action: "list" })).j;
-ok(list.following?.some((f) => f.name === "Clodagh" && f.how === "Oisin's sister") && list.others >= 1, `Who's following: Clodagh, Oisin's sister, and ${list.others} other watching`);
+ok(list.following?.some((f) => f.name === "Sorcha" && f.how === "Oisin's cousin") && list.others >= 1, `Who's following: Sorcha, Oisin's cousin, and ${list.others} other watching`);
 
 // ================================================================ a Friends and family tournament becomes private: its files move
 // A photo on it first (the organiser posts one)
@@ -241,25 +241,26 @@ await p.screenshot({ path: `${SHOTS}/privacy-2-setup.png`, fullPage: true });
 r = await fan(`/api/state?t=${OS}`);
 ok(r.status === 403 && r.j.status === "asking", "a follower from before it went private has to be let in");
 list = (await owner("/api/fans", { t: OS, action: "list" })).j;
-const clo = list.asking?.find((f) => f.name === "Clodagh");
+const clo = list.asking?.find((f) => f.name === "Sorcha" && f.how === "Oisin's cousin");
 ok(!!clo, "the organiser sees her asking");
 // Email subscribers from before get nothing, unless they're let in
-sql(`update fans set email='clodagh@example.ie', verified_at=now() where id='${clo?.id}'`);
-sql(`insert into subscribers (tournament_id, email) values ('${os}', 'outsider@example.ie'), ('${os}', 'clodagh@example.ie') on conflict do nothing`);
+sql(`update fans set email='sorcha@example.ie', verified_at=now() where id='${clo?.id}'`);
+sql(`insert into subscribers (tournament_id, email) values ('${os}', 'outsider@example.ie'), ('${os}', 'sorcha@example.ie') on conflict do nothing`);
 const pieceId = sql(`select id from ai_pieces where tournament_id='${os}' and status='published' limit 1`);
 if (pieceId) {
   const b5 = mails().length;
   await owner("/api/admin", { t: OS, action: "emailPiece", id: pieceId });
-  ok(!mails().slice(b5).some((x) => x.to.includes("outsider@example.ie") || x.to.includes("clodagh@example.ie")), "a report emailed now doesn't go to subscribers who aren't let in");
+  ok(!mails().slice(b5).some((x) => x.to.includes("outsider@example.ie") || x.to.includes("sorcha@example.ie")), "a report emailed now doesn't go to subscribers who aren't let in");
   await owner("/api/fans", { t: OS, action: "decide", fanId: clo.id, decision: "approve" });
   const b6 = mails().length;
   await owner("/api/admin", { t: OS, action: "emailPiece", id: pieceId });
-  ok(mails().slice(b6).some((x) => x.to.includes("clodagh@example.ie")) && !mails().slice(b6).some((x) => x.to.includes("outsider@example.ie")), "once she's let in, she gets it (the outsider still doesn't)");
+  ok(mails().slice(b6).some((x) => x.to.includes("sorcha@example.ie")) && !mails().slice(b6).some((x) => x.to.includes("outsider@example.ie")), "once she's let in, she gets it (the outsider still doesn't)");
 } else {
   ok(false, "(no published piece on the October Special)");
   await owner("/api/fans", { t: OS, action: "decide", fanId: clo.id, decision: "approve" });
 }
-ok((await fan(`/api/state?t=${OS}`)).status === 200, "let in: she sees it again");
+r = await fan(`/api/state?t=${OS}`);
+ok(r.status === 200, `let in: she sees it again (${r.status} ${JSON.stringify(r.j).slice(0, 120)})`);
 // Back again
 await p.goto(`${BASE}/t/${OS}/setup`, { waitUntil: "networkidle" });
 await p.getByRole("button", { name: /Who can watch/ }).click();

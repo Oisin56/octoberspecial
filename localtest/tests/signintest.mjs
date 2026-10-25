@@ -273,9 +273,9 @@ ok((await oldPin2("/api/admin", { t: T, action: "state" })).status === 403, "oth
 
 // ================================================================ followers who joined with an email
 const fan = agent();
-await fan("/api/fans", { t: T, action: "join", name: "Clodagh", email: "clodagh@example.ie", over16: true, consent: true });
+await fan("/api/fans", { t: T, action: "profile", name: "Clodagh", how: "Seamus's sister", email: "clodagh@example.ie", over16: true });
 m = await lastMailTo("clodagh@example.ie");
-await fan("/api/fans", { t: T, action: "verify", token: new URL(linkOf(m)).searchParams.get("token") });
+await fan("/api/account", { action: "code", email: "clodagh@example.ie", code: codeOf(m) });
 golf = (await fan("/api/account")).j;
 ok(golf.account?.email === "clodagh@example.ie" && golf.following.some((x) => x.slug === T), "a follower who confirms their email: signed in, under Following");
 ok((await ses(fan, T))?.role === "fan", "and still following on this phone");

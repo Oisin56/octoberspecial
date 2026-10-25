@@ -2,6 +2,7 @@
 import { chromium } from "playwright";
 import fs from "node:fs";
 import { execSync } from "node:child_process";
+import { codeOf, lastMailTo } from "./signin-helpers.mjs";
 const BASE = "http://127.0.0.1:3100", T = "october-special-2026";
 let fails = 0;
 const ok = (c, m) => (console.log(`${c ? "PASS" : "FAIL"}  ${m}`), c || fails++);
@@ -93,27 +94,25 @@ ok(nc === 2, `comments sheet lists the post's comments (${nc})`);
 await ph.waitForTimeout(400);
 await ph.screenshot({ path: "/var/tmp/ospg/shots/sf-3-comments.png" });
 await ph.getByRole("button", { name: "Join to comment" }).tap();
-await ph.getByLabel("Join the conversation").waitFor();
+await ph.getByLabel("Before you comment").waitFor();
 await ph.waitForTimeout(400);
 await ph.screenshot({ path: "/var/tmp/ospg/shots/sf-4-join.png" });
 await ph.getByLabel("Your name").fill("Aoife Walsh");
-await ph.getByLabel("Your email").fill("aoife@example.com");
-await ph.getByRole("button", { name: "Email me a link" }).tap();
-ok(await ph.getByText("Tick both boxes to join").isVisible(), "must tick 16+ and agree");
+await ph.getByLabel("How do you know the group?").fill("Neil's cousin");
+await ph.getByLabel(/Your email/).fill("aoife@example.com");
+await ph.getByRole("button", { name: "Carry on" }).tap();
+ok(await ph.getByText("Tick the box to say you're 16 or over").isVisible(), "must tick 16+");
 await ph.getByRole("switch", { name: /16 or over/ }).tap();
-await ph.getByRole("switch", { name: /I agree/ }).tap();
-await ph.getByRole("button", { name: "Email me a link" }).tap();
-await ph.getByText("Check your email").waitFor();
+await ph.getByRole("button", { name: "Carry on" }).tap();
+await ph.getByLabel("Confirm your email").waitFor();
 await ph.waitForTimeout(400);
 await ph.screenshot({ path: "/var/tmp/ospg/shots/sf-5-sent.png" });
-await ph.getByRole("button", { name: "Done" }).tap();
-
-// the emailed link
-const tok = sql(`select token from fans where email='aoife@example.com'`);
-await ph.goto(`${BASE}/t/${T}/join?token=${tok}`);
-await ph.waitForURL(/\/feed$/);
+// The code from the email
+await ph.locator(".si-code").fill(codeOf(await lastMailTo("aoife@example.com")));
+await ph.getByRole("button", { name: "Confirm my email" }).tap();
 await ph.locator(".sf-toast").waitFor();
-ok(/You're in, Aoife/.test(await ph.locator(".sf-toast").innerText()), "link signs the fan in and welcomes them");
+ok(/email's confirmed/.test(await ph.locator(".sf-toast").innerText()), "the code confirms the fan's email");
+await ph.reload({ waitUntil: "networkidle" });
 ok((await ph.locator(".sf-tool").count()) === 0 && (await ph.locator(".sf-compose textarea").count()) === 0, "fans share photos (no clips, no text-only posts)");
 await ph.locator(".sf-share-photo input").setInputFiles("/var/tmp/ospg/hero.jpg");
 await ph.locator(".sf-compose textarea").fill("Watching from Galway. Come on Neil!");
