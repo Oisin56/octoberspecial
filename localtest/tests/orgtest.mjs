@@ -23,6 +23,7 @@ page.on("dialog", (d) => d.accept());
 const overflow = () => page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
 
 await page.request.post(`${BASE}/api/login`, { data: { t: T, mode: "organiser", pin: "1234" } });
+await page.goto(`${BASE}/t/${T}/login`, { waitUntil: "networkidle" });
 // one follower so the email buttons appear
 await page.evaluate(async (t) => fetch("/api/admin", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ t, action: "addSubscribers", text: "Fionn <fionn@example.ie>" }) }), T);
 

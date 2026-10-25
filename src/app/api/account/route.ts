@@ -1,7 +1,7 @@
 import { adminClient } from "@/lib/admin";
 import { clearAccount, getAccount, getSession, isOwnerEmail, setSession, touch } from "@/lib/auth";
-import { SignInError, answerOffer, cleanEmail, myGolf, organiserSession, playerSession, redeemCode, redeemToken, sendSignIn, signIn } from "@/lib/accounts";
-import { bad, json, siteOrigin } from "@/lib/server-data";
+import { SignInError, answerOffer, claim, onThisPhone, peekToken, cleanEmail, myGolf, organiserSession, playerSession, redeemCode, redeemToken, sendSignIn, signIn } from "@/lib/accounts";
+import { bad, json, siteOrigin, crossSite, CROSS_SITE } from "@/lib/server-data";
 import { clientIp, tooFast } from "@/lib/social";
 
 /** Who's signed in, and My golf: the tournaments they run, play in and follow, and anything asking "Is this you?" */
@@ -9,17 +9,20 @@ export async function GET() {
   const account = await touch();
   if (!account) return json({ account: null });
   const golf = await myGolf(account);
-  return json({ account, owner: isOwnerEmail(account.email), ...golf });
+  return json({ account, owner: isOwnerEmail(account.email), ...golf, here: await onThisPhone(account) });
 }
 
 /**
  *   send     {email, next?}   email a sign-in link and a 6-digit code
  *   verify   {token}          sign in from the link (works once, for 30 minutes)
  *   code     {email, code}    sign in with the code from the same email
+ *   peek     {token}          who the link is for (the page asks "Sign in as …?" before using it)
  *   answer   {offer, yes}     "Is this you?" on a tournament someone added you to
+ *   claim    {tournament}     "Add to My golf": this phone's own role in a tournament joins the signed-in person
  *   signout
  */
 export async function POST(req: Request) {
+  if (crossSite(req)) return bad(CROSS_SITE, 403);
   const b = await req.json().catch(() => ({}));
   try {
     if (b.action === "send") {
@@ -28,6 +31,8 @@ export async function POST(req: Request) {
       await sendSignIn(siteOrigin(req), email, { next: b.next });
       return json({ ok: true, sent: true });
     }
+
+    if (b.action === "peek") return json({ email: await peekToken(String(b.token ?? "")) });
 
     if (b.action === "verify") {
       const { email, next } = await redeemToken(String(b.token ?? ""));
@@ -60,7 +65,12 @@ export async function POST(req: Request) {
         const s = row?.role === "organiser" ? await organiserSession(tid, "account", row.player_id) : row?.player_id ? await playerSession(tid, row.player_id, "account") : null;
         if (s && !(here?.role === "organiser" && s.role !== "organiser")) await setSession(tid, s);
       }
-      return json({ ok: true, ...(await myGolf(account)) });
+      return json({ ok: true, ...(await myGolf(account)), here: await onThisPhone(account) });
+    }
+
+    if (b.action === "claim") {
+      await claim(account, String(b.tournament ?? ""));
+      return json({ ok: true, ...(await myGolf(account)), here: await onThisPhone(account) });
     }
 
     return bad("Unknown action");

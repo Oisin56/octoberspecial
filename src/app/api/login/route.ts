@@ -1,7 +1,7 @@
 import { adminClient } from "@/lib/admin";
 import { checkOwnerPin, clearSession, getAccount, hashPin, isOwner, safeEqual, setOwner, setSession, touch } from "@/lib/auth";
 import { SignInError, emailProof, linkRole, organiserSession, playerSession, signIn } from "@/lib/accounts";
-import { bad, context, json, DEMO_READONLY } from "@/lib/server-data";
+import { bad, context, json, DEMO_READONLY, crossSite, CROSS_SITE } from "@/lib/server-data";
 import { clientIp, tooFast } from "@/lib/social";
 
 export async function GET(req: Request) {
@@ -23,6 +23,7 @@ export async function DELETE(req: Request) {
 }
 
 export async function POST(req: Request) {
+  if (crossSite(req)) return bad(CROSS_SITE, 403);
   const body = await req.json().catch(() => ({}));
   const mode = body.mode as "organiser" | "player" | "link";
   const { t, session, demo } = await context(req, body);

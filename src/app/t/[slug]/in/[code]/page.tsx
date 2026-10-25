@@ -20,7 +20,7 @@ interface Look {
  * an email already? It asks whether this is them, so the tournament joins their My golf.
  */
 function LinkInner({ code }: { code: string }) {
-  const { state, api, reloadSession, href, slug } = useT();
+  const { state, api, reloadSession, href } = useT();
   const router = useRouter();
   const e = useSearchParams().get("e") ?? undefined;
   const [look, setLook] = useState<Look | null>(null);
@@ -94,7 +94,7 @@ function LinkInner({ code }: { code: string }) {
         {!signedIn && (
           <p className="small muted" style={{ margin: 0 }}>
             Already use the site, or want to get in on another phone or laptop?{" "}
-            <Link href={`/account?next=${encodeURIComponent(`/t/${slug}`)}`}>Add your email</Link> to keep all your golf together.
+            <Link href="/account">Add your email</Link> to keep all your golf together.
           </p>
         )}
       </div>

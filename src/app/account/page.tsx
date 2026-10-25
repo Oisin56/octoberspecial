@@ -25,8 +25,17 @@ interface Offer {
   added_by: string | null;
 }
 
+interface Here {
+  tournament_id: string;
+  slug: string;
+  name: string;
+  role: "organiser" | "player";
+  as: string | null;
+}
+
 interface Golf {
   account: { email: string } | null;
+  here?: Here[];
   owner?: boolean;
   running?: Tile[];
   playing?: Tile[];
@@ -82,7 +91,7 @@ function AccountInner() {
         ["Following", g.following ?? [], (t) => `/t/${t.slug}`],
       ]
     : [];
-  const empty = lists.every(([, xs]) => !xs.length) && !g?.offers?.length;
+  const empty = lists.every(([, xs]) => !xs.length) && !g?.offers?.length && !g?.here?.length;
 
   return (
     <div className="theme-root mgs" data-theme="clubhouse">
@@ -153,6 +162,25 @@ function AccountInner() {
                     No
                   </button>
                 </div>
+              </div>
+            ))}
+
+            {(g.here ?? []).map((h) => (
+              <div key={h.tournament_id} className="panel stack golf-offer" role="group" aria-label="On this phone">
+                <p>
+                  On this phone you {h.role === "organiser" ? "run" : "play in"} <strong>{h.name}</strong>
+                  {h.as ? ` as ${h.as}` : ""}. Add it to My golf, so you can get to it on any phone?
+                </p>
+                <button
+                  className="btn big"
+                  disabled={!!busy}
+                  onClick={async () => {
+                    const j = await call({ action: "claim", tournament: h.tournament_id }, h.tournament_id);
+                    if (j) setG((x) => (x ? { ...x, ...j } : x));
+                  }}
+                >
+                  Add to My golf
+                </button>
               </div>
             ))}
 

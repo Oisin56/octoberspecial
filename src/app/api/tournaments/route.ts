@@ -2,7 +2,7 @@ import { checkOwnerPin, getAccount, isOwner, setOwner, setSession } from "@/lib/
 import { SignInError, cleanEmail, linkRole, linkTournament, makeOffer, organiserSession, sendSignIn } from "@/lib/accounts";
 import { inviteFor, spendInvite } from "@/lib/invites";
 import { adminClient } from "@/lib/admin";
-import { bad, json, siteOrigin, slugify } from "@/lib/server-data";
+import { bad, json, siteOrigin, slugify, crossSite, CROSS_SITE } from "@/lib/server-data";
 import { WizardError, cleanWizard, createFromWizard } from "@/lib/wizard-server";
 import { EMAIL_RE } from "@/lib/email";
 
@@ -13,6 +13,7 @@ export const maxDuration = 60;
  * link (good for one tournament).
  */
 export async function POST(req: Request) {
+  if (crossSite(req)) return bad(CROSS_SITE, 403);
   const b = await req.json().catch(() => ({}));
   const owner = await isOwner();
   const invite = !owner && b.invite ? await inviteFor(String(b.invite)) : null;
@@ -41,7 +42,7 @@ async function bare(b: Record<string, unknown>) {
     .select("id,slug")
     .single();
   if (error) return bad(error.message, 500);
-  await setSession(data.id, { role: "organiser", name: "Organiser", via: "create" });
+  await setSession(data.id, { role: "organiser", name: "Organiser", via: "create", at: Date.now() });
   const account = await getAccount();
   if (account) await linkTournament(account.id, data.id).catch(() => {});
   return json({ slug: data.slug });
@@ -71,7 +72,7 @@ async function fromWizard(req: Request, b: Record<string, unknown>, inviteId: st
     await setSession(created.id, await organiserSession(created.id, "account", created.organiser.playerId));
   } else {
     // This phone runs it now. It joins that email's My golf when they confirm it (the link or the code we send)
-    await setSession(created.id, { role: "organiser", name: created.organiser.name, playerId: created.organiser.playerId, via: "create" });
+    await setSession(created.id, { role: "organiser", name: created.organiser.name, playerId: created.organiser.playerId, via: "create", at: Date.now() });
     await makeOffer(created.id, email, "organiser", created.organiser.playerId ?? null, null).catch(() => {});
     emailed = await sendSignIn(siteOrigin(req), email, { next: `/t/${created.slug}/admin`, intro: `Your tournament ${created.name} is ready. Tap the button to confirm your email, so you can get back in to run it on any phone.` })
       .then(() => true)

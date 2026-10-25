@@ -344,7 +344,7 @@ await op.goto(`${BASE}/owner`, { waitUntil: "networkidle" });
 ok((await op.locator("h1").innerText()) === "Site owner", "the site owner page");
 await op.getByRole("button", { name: "Use the site owner PIN" }).click();
 await op.fill("#opin", OWNER);
-await op.getByRole("button", { name: "Sign in" }).click();
+await op.getByRole("button", { name: "Sign in", exact: true }).click();
 await op.locator(".owner-t").first().waitFor();
 const listed = await op.locator(".owner-t strong").allInnerTexts();
 ok(["Wiz Weekend", "The Cup", "My Vlog Round", "The October Special"].every((n) => listed.some((x) => x.startsWith(n))), `every tournament listed (${listed.length})`);

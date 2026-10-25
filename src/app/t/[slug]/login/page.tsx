@@ -59,6 +59,8 @@ function LoginInner() {
           next={adminPath}
           button="Email me a link"
           onSignedIn={async () => {
+            // They asked for this here, so the tournament this phone runs joins their email now
+            if (state) await fetch("/api/account", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "claim", tournament: state.tournament.id }) }).catch(() => null);
             await reloadSession();
             router.push(adminPath);
           }}

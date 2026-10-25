@@ -47,6 +47,15 @@ export function safeNext(n: unknown): string | null {
 export async function sendSignIn(origin: string, email: string, opts: { next?: string | null; purpose?: "signin" | "owner"; intro?: string } = {}) {
   if (!EMAIL_RE.test(email)) throw new SignInError("That email address doesn't look right");
   if (!mailConfigured()) throw new SignInError("Email isn't set up on this site yet, so sign-in by email isn't available.", 503);
+  // The site's own address for the links (never one taken from the request, on the real site)
+  if (process.env.VERCEL && !process.env.SITE_URL) throw new SignInError("Sign-in emails need SITE_URL set in Vercel.", 503);
+  // At most 6 sign-in emails an hour to one address (kept in the database, so it holds across servers)
+  const { count } = await adminClient()
+    .from("account_tokens")
+    .select("token_hash", { count: "exact", head: true })
+    .eq("email", email)
+    .gt("expires_at", new Date(Date.now() - (60 - LINK_MINUTES) * 60e3).toISOString());
+  if ((count ?? 0) >= 6) throw new SignInError("Too many sign-in emails to that address. Try again in an hour.", 429);
   const token = newToken();
   const code = newCode();
   const purpose = opts.purpose ?? "signin";
@@ -62,6 +71,15 @@ export async function sendSignIn(origin: string, email: string, opts: { next?: s
   }
 }
 
+/** Who an emailed link is for, without using it (the page asks "Sign in as …?" first). */
+export async function peekToken(token: string): Promise<string> {
+  if (!/^[\w-]{20,64}$/.test(token)) throw new SignInError("That link isn't complete. Open it from the email again.");
+  const { data: row } = await adminClient().from("account_tokens").select("email,expires_at,used_at,purpose").eq("token_hash", tokenHash(token)).maybeSingle();
+  if (!row || row.used_at || (row.purpose ?? "signin") !== "signin" || new Date(row.expires_at).getTime() < Date.now())
+    throw new SignInError("That link has expired or been used. Ask for a new one.", 410);
+  return cleanEmail(row.email);
+}
+
 /** The emailed link: works once, for 30 minutes. */
 export async function redeemToken(token: string, purpose: "signin" | "owner" = "signin"): Promise<{ email: string; next: string | null }> {
   if (!/^[\w-]{20,64}$/.test(token)) throw new SignInError("That link isn't complete. Open it from the email again.");
@@ -74,30 +92,41 @@ export async function redeemToken(token: string, purpose: "signin" | "owner" = "
   return { email: cleanEmail(row.email), next: safeNext(row.next) };
 }
 
-/** The 6-digit code from the same email: five tries, then ask for a new one. */
+/**
+ * The 6-digit code from the same email: five tries each, then ask for a new one. Every guess uses up a try on each
+ * live code before it's compared (so guesses sent all at once can't get past the limit), and only codes it managed
+ * to use a try on are compared.
+ */
 export async function redeemCode(email: string, code: string, purpose: "signin" | "owner" = "signin"): Promise<{ email: string; next: string | null }> {
   const c = code.replace(/\D/g, "");
   if (c.length !== 6) throw new SignInError("The code is the 6 numbers in the email");
   const db = adminClient();
+  const e = cleanEmail(email);
   const { data: rows } = await db
     .from("account_tokens")
     .select("token_hash,code_hash,tries,next,purpose")
-    .eq("email", String(email).toLowerCase())
+    .eq("email", e)
     .is("used_at", null)
     .gt("expires_at", new Date().toISOString())
     .order("expires_at", { ascending: false })
     .limit(3);
   const live = (rows ?? []).filter((r) => (r.purpose ?? "signin") === purpose && r.code_hash && r.tries < CODE_TRIES);
   if (!live.length) throw new SignInError("That code has expired. Ask for a new email.", 410);
-  const want = hashCode(email, c);
-  const hit = live.find((r) => safeEqual(r.code_hash, want));
+  const charged: typeof live = [];
+  for (const r of live) {
+    // Only counts if nobody else used this try in the meantime
+    const { data: took } = await db.from("account_tokens").update({ tries: r.tries + 1 }).eq("token_hash", r.token_hash).eq("tries", r.tries).is("used_at", null).select("token_hash");
+    if (took?.length) charged.push(r);
+  }
+  const want = hashCode(e, c);
+  const hit = charged.find((r) => safeEqual(r.code_hash, want));
   if (!hit) {
-    await db.from("account_tokens").update({ tries: live[0].tries + 1 }).eq("token_hash", live[0].token_hash);
-    throw new SignInError(live[0].tries + 1 >= CODE_TRIES ? "That code isn't right, and that was the last try. Ask for a new email." : "That code isn't right. Check the email and try again.", 401);
+    const last = charged.length && charged.every((r) => r.tries + 1 >= CODE_TRIES);
+    throw new SignInError(last ? "That code isn't right, and that was the last try. Ask for a new email." : "That code isn't right. Check the email and try again.", 401);
   }
   const { data: used } = await db.from("account_tokens").update({ used_at: new Date().toISOString() }).eq("token_hash", hit.token_hash).is("used_at", null).select("email");
   if (!used?.length) throw new SignInError("That code has been used. Ask for a new email.", 410);
-  return { email: cleanEmail(email), next: safeNext(hit.next) };
+  return { email: e, next: safeNext(hit.next) };
 }
 
 export async function findOrCreateAccount(email: string): Promise<Account> {
@@ -192,30 +221,74 @@ export async function sessionsFor(a: Account): Promise<Record<string, Session>> 
   return out;
 }
 
-/** Sign a person in on this phone. Anything waiting for "Is this you?" on a tournament this phone made is theirs. */
+/**
+ * Sign a person in on this phone. Nothing joins them as a side effect (a sign-in link can be sent by anyone), with one
+ * exception: a tournament this phone made, waiting for this very email to say "Is this you?". Anything else this
+ * phone runs or plays in joins only when they tap "Add to My golf" (claim).
+ */
 export async function signIn(email: string): Promise<Account> {
   const a = await findOrCreateAccount(email);
   const db = adminClient();
-  // Tournaments this phone runs without an email yet (made here, or signed in with the old organiser PIN): they
-  // join this person, and the old PIN stops working
-  const ownerPhone = await ownerPinPhone();
   for (const [tid, s] of Object.entries(await allSessions())) {
-    if (s.role !== "organiser" || (s.via && s.via !== "create") || (!s.via && ownerPhone)) continue;
-    const { data: t } = await db.from("tournaments").select("id,organiser_pin_hash").eq("id", tid).maybeSingle();
-    if (!t || (!s.via && !t.organiser_pin_hash)) continue;
-    await linkRole(a.id, tid, "organiser", s.playerId ?? null).catch(() => {});
-    if (t.organiser_pin_hash) await db.from("tournaments").update({ organiser_pin_hash: null }).eq("id", tid);
-    await db.from("account_offers").update({ answered_at: new Date().toISOString(), accepted: true }).eq("tournament_id", tid).eq("role", "organiser").eq("email", String(a.email).toLowerCase()).is("answered_at", null);
-  }
-  // Players signed in on this phone with their own link: their spot joins this person too
-  for (const [tid, s] of Object.entries(await allSessions())) {
-    if (s.role !== "player" || !s.playerId || (s.via !== "link" && s.via !== "pin")) continue;
-    const { data: p } = await db.from("players").select("link_gen").eq("id", s.playerId).eq("tournament_id", tid).maybeSingle();
-    if (p && (p.link_gen ?? 0) === (s.gen ?? 0)) await linkRole(a.id, tid, "player", s.playerId).catch(() => {});
+    if (s.role !== "organiser" || s.via !== "create") continue;
+    const { data: offer } = await db.from("account_offers").select("id").eq("tournament_id", tid).eq("role", "organiser").eq("email", a.email.toLowerCase()).is("answered_at", null).maybeSingle();
+    if (offer) await answerOffer(a, offer.id, true).catch(() => {});
   }
   await setAccount(a, await sessionsFor(a));
   await db.from("accounts").update({ last_seen_at: new Date().toISOString() }).eq("id", a.id).then(() => null, () => null);
   return a;
+}
+
+export interface OnThisPhone {
+  tournament_id: string;
+  slug: string;
+  name: string;
+  role: "organiser" | "player";
+  as: string | null;
+}
+
+/** Tournaments this phone runs or plays in that aren't with the signed-in person yet (offered as "Add to My golf"). */
+export async function onThisPhone(a: Account): Promise<OnThisPhone[]> {
+  const db = adminClient();
+  const mine = new Set((await roleRows(a.id)).map((r) => r.tournament_id));
+  const out: OnThisPhone[] = [];
+  for (const [tid, s] of Object.entries(await allSessions())) {
+    if (mine.has(tid) || !(await claimable(tid, s))) continue;
+    const { data: t } = await db.from("tournaments").select("slug,name").eq("id", tid).maybeSingle();
+    if (t) out.push({ tournament_id: tid, slug: t.slug, name: t.name, role: s.role === "organiser" ? "organiser" : "player", as: s.role === "player" ? s.name : null });
+  }
+  return out;
+}
+
+/** This phone's own role in a tournament that a person may add to their My golf: an organiser from before emails (or
+ *  the phone that made it), or a player signed in with their own link. */
+async function claimable(tid: string, s: Session): Promise<boolean> {
+  const db = adminClient();
+  if (s.role === "organiser") {
+    if (s.via === "create") return true;
+    if (s.via || (await ownerPinPhone())) return false;
+    const { data: t } = await db.from("tournaments").select("organiser_pin_hash").eq("id", tid).maybeSingle();
+    return !!t?.organiser_pin_hash;
+  }
+  if (s.role === "player" && s.playerId && (s.via === "link" || s.via === "pin")) {
+    const { data: p } = await db.from("players").select("link_gen").eq("id", s.playerId).eq("tournament_id", tid).maybeSingle();
+    return !!p && (p.link_gen ?? 0) === (s.gen ?? 0);
+  }
+  return false;
+}
+
+/** "Add to My golf": the person signed in on this phone takes this phone's role in the tournament. An organiser's old
+ *  PIN stops working. */
+export async function claim(a: Account, tid: string) {
+  const s = (await allSessions())[tid];
+  if (!s || !(await claimable(tid, s))) throw new SignInError("There's nothing on this phone to add for that tournament", 404);
+  const db = adminClient();
+  if (s.role === "organiser") {
+    await linkRole(a.id, tid, "organiser", s.playerId ?? null);
+    await db.from("tournaments").update({ organiser_pin_hash: null }).eq("id", tid);
+    await db.from("account_offers").update({ answered_at: new Date().toISOString(), accepted: true }).eq("tournament_id", tid).eq("role", "organiser").eq("email", a.email.toLowerCase()).is("answered_at", null);
+  } else await linkRole(a.id, tid, "player", s.playerId);
+  await setAccount(a, await sessionsFor(a));
 }
 
 // ------------------------------------------------------------ "Is this you?"

@@ -56,7 +56,8 @@ async function stillGood(t: TournamentPrivate, s: Session | null): Promise<Sessi
       case "owner":
         return (await isOwner()) ? s : null;
       case "create":
-        return s;
+        // The phone that made it, until its email is confirmed (asked on every visit), for 30 days at most
+        return s.at && Date.now() - s.at < 30 * 864e5 ? s : null;
       default:
         // Signed in before emails, with the tournament's organiser PIN: good until it moves to email sign-in
         return t.organiser_pin_hash ? s : null;
@@ -129,6 +130,26 @@ export function slugify(s: string) {
     .replace(/^-|-$/g, "")
     .slice(0, 48);
 }
+
+/**
+ * A request that didn't come from this site's own pages: another site's form posting to us (to sign someone in to the
+ * wrong account, say). Our pages always send JSON from the same address.
+ */
+export function crossSite(req: Request): boolean {
+  if (!(req.headers.get("content-type") ?? "").includes("application/json")) return true;
+  const origin = req.headers.get("origin");
+  if (!origin) return false;
+  let from: string;
+  try {
+    from = new URL(origin).host;
+  } catch {
+    return true;
+  }
+  const hosts = [req.headers.get("x-forwarded-host"), req.headers.get("host"), process.env.SITE_URL ? new URL(process.env.SITE_URL).host : null].filter(Boolean);
+  return !hosts.includes(from);
+}
+
+export const CROSS_SITE = "That came from somewhere other than this site, so it was ignored.";
 
 /** The site's public address, for links in emails. */
 export function siteOrigin(req: Request) {

@@ -69,6 +69,7 @@ const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, de
 const page = await ctx.newPage();
 page.on("pageerror", (e) => console.log("pageerror:", e.message));
 await page.request.post(`${BASE}/api/login`, { data: { t: T, mode: "organiser", pin: "1234" } });
+await page.goto(`${BASE}/t/${T}/login`, { waitUntil: "networkidle" });
 await page.goto(`${BASE}/t/${T}/admin`, { waitUntil: "networkidle" });
 await page.getByRole("link", { name: /Rounds and courses/ }).click();
 const card2 = page.locator("section").filter({ hasText: "Wicklow Golf Club" }).first();

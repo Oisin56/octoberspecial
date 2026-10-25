@@ -191,6 +191,7 @@ ok((await org("/api/admin", { action: "addOrganiser", email: "organiser@example.
 const ac = await b.newContext({ ...devices["iPhone 13"] });
 const apg = await ac.newPage();
 await apg.goto(url);
+await apg.getByRole("button", { name: "Sign in as organiser@example.com" }).click();
 await apg.waitForURL(/\/account$/, { timeout: 15000 });
 await apg.getByText("Signed in as organiser@example.com").waitFor();
 ok(true, "the link signs them in: My golf");
@@ -219,6 +220,7 @@ for (let i = 0; i < 20 && !mail2; i++) {
 }
 const dev2 = await (await b.newContext({ ...devices["iPhone 13"] })).newPage();
 await dev2.goto(mail2.text.match(/https?:\/\/\S+\/account\/in\?token=[\w-]+/)[0].replace(/^https?:\/\/[^/]+/, BASE));
+await dev2.getByRole("button", { name: "Sign in as organiser@example.com" }).click();
 await dev2.locator(".acct-t", { hasText: "The October Special" }).waitFor({ timeout: 15000 });
 await dev2.goto(`${BASE}/t/${T}/admin`, { waitUntil: "networkidle" });
 await dev2.locator(".role-badge.organiser").waitFor();

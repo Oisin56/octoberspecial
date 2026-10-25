@@ -3,7 +3,7 @@ import { adminClient } from "@/lib/admin";
 import { getAccount, isOrganiser } from "@/lib/auth";
 import { BRAND } from "@/lib/brand";
 import { SignInError, cleanEmail, emailProof, makeOffer, sendSignIn } from "@/lib/accounts";
-import { bad, context, json, loadServerState, siteOrigin, slugify, DEMO_READONLY } from "@/lib/server-data";
+import { bad, context, json, loadServerState, siteOrigin, slugify, DEMO_READONLY, crossSite, CROSS_SITE } from "@/lib/server-data";
 import { EMAIL_RE, emailPiece, mailConfigured, playerLinkEmail, sendOne } from "@/lib/email";
 import { draftGuide, generatePiece, type PieceKind } from "@/lib/ai";
 import { cleanGuide, normalizeRound, type CourseGuide, type RoundRow, type Tone } from "@/lib/types";
@@ -66,6 +66,7 @@ function cleanGames(games: unknown, playerIds: Set<string>, teamIds: Set<string>
 }
 
 export async function POST(req: Request) {
+  if (crossSite(req)) return bad(CROSS_SITE, 403);
   const b = await req.json().catch(() => ({}));
   const { t, session, demo } = await context(req, b);
   if (!t) return bad("Tournament not found", 404);
@@ -92,6 +93,7 @@ export async function POST(req: Request) {
         organisers: await organiserList(t.id),
         // Signed in here without an email yet (the old organiser PIN, or this phone made it): asked to add one
         needEmail: session.via !== "account" && session.via !== "owner",
+        accountEmail: (await getAccount())?.email ?? null,
         organiserPinSet: !!t.organiser_pin_hash,
         env: { ai: !!process.env.ANTHROPIC_API_KEY, courses: !!process.env.GOLFCOURSEAPI_KEY || !!process.env.GOLFAPI_KEY, mail: mailConfigured() },
       });

@@ -2,7 +2,7 @@ import { adminClient } from "@/lib/admin";
 import { checkOwnerPin, getAccount, isOwner, isOwnerEmail, ownerClaimed, setOwner, setSession } from "@/lib/auth";
 import { SignInError, organiserSession } from "@/lib/accounts";
 import { checkOwnerCode, checkOwnerLink, passkeyAnswer, passkeyCount, passkeyQuestion, passkeySave, passkeySetup, sendOwnerCode } from "@/lib/owner-check";
-import { bad, json } from "@/lib/server-data";
+import { bad, json, crossSite, CROSS_SITE } from "@/lib/server-data";
 import { clientIp, tooFast } from "@/lib/social";
 import { mediaUrl } from "@/lib/supabase";
 import { brandPack, demoSlug, filmLimits, filmSpend, musicTracks, sampleFilm, setSetting } from "@/lib/site";
@@ -91,6 +91,7 @@ export async function GET() {
  *   setDemo {slug | null}    the example tournament on the front page
  */
 export async function POST(req: Request) {
+  if (crossSite(req)) return bad(CROSS_SITE, 403);
   const b = await req.json().catch(() => ({}));
   const db = adminClient();
   if (b.action === "signin") {

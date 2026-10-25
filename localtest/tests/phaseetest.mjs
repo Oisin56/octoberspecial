@@ -142,7 +142,7 @@ o.on("pageerror", (e) => console.log("pageerror:", e.message));
 await o.goto(`${BASE}/owner`, { waitUntil: "networkidle" });
 await o.getByRole("button", { name: "Use the site owner PIN" }).click();
 await o.fill("#opin", OWNER);
-await o.getByRole("button", { name: "Sign in" }).click();
+await o.getByRole("button", { name: "Sign in", exact: true }).click();
 await o.locator(".owner-films").waitFor({ timeout: 15000 });
 ok(true, "the owner page has a Films section");
 await o.getByLabel("Monthly limit, all tournaments ($)").fill("30");

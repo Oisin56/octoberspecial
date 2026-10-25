@@ -104,6 +104,7 @@ ok(mails()[0].html.includes("Tournament preview"), "tournament preview labelled"
 
 // ---- admin UI
 await page.request.post(`${BASE}/api/login`, { data: { t: T, mode: "organiser", pin: "1234" } });
+await page.goto(`${BASE}/t/${T}/login`, { waitUntil: "networkidle" });
 await page.goto(`${BASE}/t/${T}/admin`, { waitUntil: "networkidle" });
 await page.getByRole("link", { name: /Email list/ }).click();
 await page.getByText(/Email list · 2 subscribed/).waitFor({ timeout: 10000 });

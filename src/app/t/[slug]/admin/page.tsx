@@ -148,8 +148,7 @@ function OrganiserHome({ data }: { data: AdminData }) {
 
   // What needs doing, most urgent first. Only the top two are shown.
   const todo: { text: string; action: string; to: string; external?: boolean }[] = [];
-  // Signed in here without an email (the old organiser PIN, or this phone made it): first, keep it safe
-  if (data.needEmail) todo.push({ text: "Add your email to keep this tournament safe. You'll sign in with it from now on, on any phone.", action: "Add my email", to: `/account?next=${encodeURIComponent(`/t/${t.slug}/admin`)}`, external: true });
+
   // Made with the set-up wizard: changes to rounds and groups are made in Tournament setup
   const fresh = !!t.win;
   if (rounds.length === 0) todo.push({ text: "Add the courses you're playing.", action: "Add a round", to: fresh ? href("/setup") : "#rounds", external: fresh });
@@ -235,6 +234,8 @@ function OrganiserHome({ data }: { data: AdminData }) {
 
       {!data.env.ai && <p className="notice">The AI writer is off until ANTHROPIC_API_KEY is added in Vercel.</p>}
 
+      {data.needEmail && <KeepSafe data={data} />}
+
       <SetupResume jobs={t.setup_jobs ?? []} />
 
       <section className={`next-up${todo.length ? "" : " calm"}`} aria-label="Next up">
@@ -278,6 +279,44 @@ function OrganiserHome({ data }: { data: AdminData }) {
         <a href="#settings">Settings and test data</a>
       </p>
     </div>
+  );
+}
+
+/**
+ * Run from this phone without an email yet (the old organiser PIN, or this phone made it): keep it safe with an email,
+ * so it can be run from any phone. Signed in already: one tap adds it. Not yet: sign in first, then come back here.
+ */
+function KeepSafe({ data }: { data: AdminData }) {
+  const { href, reloadSession } = useT();
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const email = data.accountEmail;
+  return (
+    <section className="next-up keep-safe" aria-label="Keep it safe">
+      <h2>Keep it safe</h2>
+      <p>{email ? `Add this tournament to your email, ${email}, so you can run it from any phone.` : "Add your email, so you can run this tournament from any phone. You'll sign in with it from now on."}</p>
+      {err && <p className="error">{err}</p>}
+      {email ? (
+        <button
+          className="btn"
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true);
+            const r = await fetch("/api/account", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "claim", tournament: data.state.tournament.id }) }).catch(() => null);
+            setBusy(false);
+            if (!r?.ok) return setErr((await r?.json().catch(() => ({})))?.error ?? "That didn't work. Try again.");
+            await reloadSession();
+            window.location.reload();
+          }}
+        >
+          Add it to {email}
+        </button>
+      ) : (
+        <Link className="btn" href={`/account?next=${encodeURIComponent(href("/admin"))}`}>
+          Add my email
+        </Link>
+      )}
+    </section>
   );
 }
 

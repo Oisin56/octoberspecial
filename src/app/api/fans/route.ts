@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { adminClient } from "@/lib/admin";
-import { bad, context, json, siteOrigin, DEMO_READONLY } from "@/lib/server-data";
+import { bad, context, json, siteOrigin, DEMO_READONLY, crossSite, CROSS_SITE } from "@/lib/server-data";
 import { EMAIL_RE, fanLinkEmail, mailConfigured, sendOne } from "@/lib/email";
 import { isCrew, setSession } from "@/lib/auth";
 import { signIn } from "@/lib/accounts";
@@ -15,6 +15,7 @@ const LINK_HOURS = 48;
  * action "join" sends the link; action "verify" signs in from the link.
  */
 export async function POST(req: Request) {
+  if (crossSite(req)) return bad(CROSS_SITE, 403);
   const b = await req.json().catch(() => ({}));
   const { t, session, demo } = await context(req, b);
   if (!t) return bad("Tournament not found", 404);

@@ -34,6 +34,7 @@ const b = agent();
 await b("/api/account", { action: "send", email: "mary@example.ie" });
 m = await lastMailTo("mary@example.ie");
 const token = new URL(linkOf(m)).searchParams.get("token");
+ok((await b("/api/account", { action: "peek", token })).j.email === "mary@example.ie", "the button's page says who it signs in first");
 ok((await b("/api/account", { action: "verify", token })).status === 200, "the button signs you in on another device");
 ok((await b("/api/account", { action: "verify", token })).status === 410, "the button works once");
 ok((await b("/api/account", { action: "code", email: "mary@example.ie", code: codeOf(m) })).status === 410, "and its code is used up with it");
@@ -45,6 +46,19 @@ const wrong = codeOf(m5) === "123456" ? "654321" : "123456";
 for (let i = 0; i < 5; i++) await c5("/api/account", { action: "code", email: "five@example.ie", code: wrong });
 ok((await c5("/api/account", { action: "code", email: "five@example.ie", code: codeOf(m5) })).status === 410, "after five wrong tries the code stops working");
 ok((await a("/api/account", { action: "signout" })).status === 200 && !(await a("/api/account")).j.account, "sign out");
+// Guessing: twenty wrong codes sent all at once still only get five tries
+const g = agent();
+await g("/api/account", { action: "send", email: "guess@example.ie" });
+const mg = await lastMailTo("guess@example.ie");
+const bad6 = codeOf(mg) === "999999" ? "888888" : "999999";
+await Promise.all(Array.from({ length: 20 }, () => g("/api/account", { action: "code", email: "guess@example.ie", code: bad6 })));
+ok((await g("/api/account", { action: "code", email: "guess@example.ie", code: codeOf(mg) })).status === 410, "twenty guesses at once: still only five tries, then the code is done");
+ok(Number(sql(`select max(tries) from account_tokens where email='guess@example.ie'`)) === 5, "and exactly five were counted");
+// Another site's form can't post to sign-in
+const plain = await fetch(`${BASE}/api/account`, { method: "POST", headers: { "content-type": "text/plain" }, body: JSON.stringify({ action: "send", email: "x@example.ie" }) });
+ok(plain.status === 403, "a post that isn't from this site's pages (plain text) is refused");
+const evil = await fetch(`${BASE}/api/account`, { method: "POST", headers: { "content-type": "application/json", origin: "https://evil.example" }, body: JSON.stringify({ action: "send", email: "x@example.ie" }) });
+ok(evil.status === 403, "and so is one from another site");
 
 // ================================================================ the site owner: email, then the second check
 const owner = agent();
@@ -178,6 +192,15 @@ ok((await other("/api/login", { t: T, mode: "link", code })).status === 410, "th
 r = await other("/api/login", { t: T, mode: "link", code: url2.split("/in/")[1], step: "confirm" });
 ok(r.status === 200 && (await ses(other, T))?.playerId === NEIL, "the new link works on the new phone");
 ok(!(await pat("/api/admin", { t: T, action: "state" })).j.pinSet[NEIL], "no PINs");
+// Someone sends Neil's phone a sign-in link for their own email: tapping it joins nothing of Neil's to them
+const sneak = agent();
+await sneak("/api/account", { action: "send", email: "sneak@example.ie" });
+const sneakTok = new URL(linkOf(await lastMailTo("sneak@example.ie"))).searchParams.get("token");
+await other("/api/account", { action: "verify", token: sneakTok });
+golf = (await other("/api/account")).j;
+ok(golf.account?.email === "sneak@example.ie" && !golf.playing.length && golf.here.some((h) => h.slug === T && h.as === "Neil Byrne"), "a sign-in link from someone else joins nothing by itself (it only offers Add to My golf)");
+ok((await ses(other, T))?.playerId === NEIL, "and the phone is still Neil");
+await other("/api/account", { action: "signout" });
 
 // ================================================================ joining a spot to a person
 // Mary is signed in on her phone and taps Aoife's link (she's Aoife's... no: she is Aoife, using her usual email)
@@ -238,7 +261,12 @@ ok((await old("/api/admin", { t: T, action: "state" })).j.needEmail === true, "t
 const oldPin2 = agent();
 await oldPin2("/api/login", { t: T, mode: "organiser", pin: "4321" });
 await signInWithEmail(old, "seamus@example.ie");
-ok(sql(`select organiser_pin_hash is null from tournaments where id='${tid}'`) === "t", "once the email's confirmed, the PIN is retired");
+ok(sql(`select organiser_pin_hash is null from tournaments where id='${tid}'`) === "f", "signing in alone doesn't move the tournament");
+golf = (await old("/api/account")).j;
+ok(golf.here.some((h) => h.slug === T && h.role === "organiser"), "My golf offers: Add to My golf");
+ok((await old("/api/admin", { t: T, action: "state" })).j.accountEmail === "seamus@example.ie", "the organiser home offers it too");
+await old("/api/account", { action: "claim", tournament: tid });
+ok(sql(`select organiser_pin_hash is null from tournaments where id='${tid}'`) === "t", "added: the PIN is retired");
 ok((await old("/api/admin", { t: T, action: "state" })).status === 200 && (await old("/api/account")).j.running.some((x) => x.slug === T), "and the tournament is in Seamus's My golf");
 ok((await agent()("/api/login", { t: T, mode: "organiser", pin: "4321" })).status === 401, "the PIN no longer works");
 ok((await oldPin2("/api/admin", { t: T, action: "state" })).status === 403, "other phones signed in with the PIN are signed out");
@@ -266,7 +294,7 @@ await p.getByRole("heading", { name: "Check your email" }).waitFor();
 await shot(p, "2-check-email");
 m = await lastMailTo("rory@example.ie");
 await p.getByLabel("The code from the email").fill(codeOf(m));
-await p.getByRole("button", { name: "Sign in" }).click();
+await p.getByRole("button", { name: "Sign in", exact: true }).click();
 await p.getByRole("heading", { name: "My golf" }).waitFor();
 ok(/Nothing here yet/.test(await p.locator("main").innerText()), "a new person's My golf: nothing yet");
 // Rory is added to Pat Cup as an organiser and as Dara... as Neil's brother: organiser
@@ -327,7 +355,7 @@ await op.getByRole("button", { name: "Email me a sign-in link" }).click();
 await op.getByLabel("The code from the email").waitFor();
 m = await lastMailTo("owner@test.ie");
 await op.getByLabel("The code from the email").fill(codeOf(m));
-await op.getByRole("button", { name: "Sign in" }).click();
+await op.getByRole("button", { name: "Sign in", exact: true }).click();
 await op.getByRole("heading", { name: "Confirm it's you" }).waitFor();
 await shot(op, "12-owner-check");
 const before = mails().length;
@@ -351,7 +379,7 @@ await op.getByRole("button", { name: "Email me a sign-in link" }).click();
 await op.getByLabel("The code from the email").waitFor();
 m = await lastMailTo("owner@test.ie");
 await op.getByLabel("The code from the email").fill(codeOf(m));
-await op.getByRole("button", { name: "Sign in" }).click();
+await op.getByRole("button", { name: "Sign in", exact: true }).click();
 await op.getByRole("button", { name: "Use Face ID" }).click();
 await op.getByRole("heading", { name: "Tournaments" }).waitFor({ timeout: 15000 });
 ok(true, "Face ID passes the owner's check");

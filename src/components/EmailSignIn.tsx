@@ -18,6 +18,7 @@ export function EmailSignIn({
   next,
   button = "Email me a sign-in link",
   initialEmail = "",
+  level = 1,
   onSignedIn,
   children,
 }: {
@@ -26,6 +27,8 @@ export function EmailSignIn({
   next?: string;
   button?: string;
   initialEmail?: string;
+  /** 2 when the page already has its own main heading */
+  level?: 1 | 2;
   onSignedIn: (next: string | null) => void;
   children?: React.ReactNode;
 }) {
@@ -57,10 +60,11 @@ export function EmailSignIn({
     onSignedIn((r.j.next as string | null) ?? next ?? null);
   }
 
+  const H = level === 1 ? "h1" : "h2";
   if (sent)
     return (
       <form className="panel stack sign-in" onSubmit={check}>
-        <h1>Check your email</h1>
+        <H>Check your email</H>
         <p className="lead">
           We&apos;ve sent an email to <strong>{email}</strong>. Tap the button in it, or type the 6-digit code here.
         </p>
@@ -106,7 +110,7 @@ export function EmailSignIn({
 
   return (
     <form className="panel stack sign-in" onSubmit={send}>
-      <h1>{title}</h1>
+      <H>{title}</H>
       <p className="lead">{lead}</p>
       <div className="field">
         <label htmlFor="si-email">Your email</label>

@@ -25,6 +25,8 @@ export interface Session {
   via?: Via;
   /** Players: the player's link generation when this phone signed in (Send again raises it) */
   gen?: number;
+  /** When this phone made the tournament ("create"): good for 30 days, or until it's added to an email */
+  at?: number;
 }
 
 /** A person signed in with their email */

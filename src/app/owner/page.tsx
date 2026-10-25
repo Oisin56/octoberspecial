@@ -701,7 +701,7 @@ function OwnerGate({ gate, post, onIn }: { gate: Gate; post: (b: Record<string, 
   if (!gate.email)
     return (
       <div style={{ maxWidth: 520 }}>
-        <EmailSignIn title="Sign in" lead="The site owner signs in with their email, then confirms it's them on this device." next="/owner" onSignedIn={() => onIn()}>
+        <EmailSignIn title="Sign in" level={2} lead="The site owner signs in with their email, then confirms it's them on this device." next="/owner" onSignedIn={() => onIn()}>
           {gate.pin && (
             <button type="button" className="linklike" onClick={() => setStep("pin")}>
               Use the site owner PIN
