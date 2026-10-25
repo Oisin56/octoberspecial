@@ -257,6 +257,7 @@ await tile(p, "Random").click();
 await next(p, "No prizes");
 await p.locator(".wz-yn").nth(1).locator(".pick-tile", { hasText: "No" }).click();
 await next(p);
+await next(p); // who can watch: Friends and family
 await p.locator(".wz-theme").first().click();
 await next(p, "Skip");
 await p.fill("#wz-email", "captain@example.com");
@@ -301,6 +302,7 @@ await next(p, "Skip for now");
 ok((await q(p)) === "The extras", "no draw, no prizes");
 await p.locator(".wz-yn").nth(0).locator(".pick-tile", { hasText: "No" }).click();
 await next(p);
+await next(p); // who can watch: Friends and family
 await p.locator(".wz-theme").first().click();
 await p.fill("#wz-email", "vlogger@example.com");
 await p.fill("#wz-owner", OWNER);

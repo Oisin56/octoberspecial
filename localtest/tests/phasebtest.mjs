@@ -3,6 +3,7 @@
 import { chromium, devices } from "playwright";
 import { execSync } from "node:child_process";
 import fs from "node:fs";
+import { codeOf, lastMailTo } from "./signin-helpers.mjs";
 const BASE = "http://127.0.0.1:3100", T = "october-special-2026";
 let fails = 0;
 const ok = (c, m) => (console.log(`${c ? "PASS" : "FAIL"}  ${m}`), c || fails++);
@@ -132,9 +133,8 @@ setLive(0);
 
 // ---- Fans: photos and comments
 const fan = agent();
-await fan("/api/fans", { name: "Aisling", email: "aisling@example.com", over16: true, consent: true });
-const ftok = sql(`select token from fans where lower(email)='aisling@example.com'`);
-await fan("/api/fans", { action: "verify", token: ftok });
+await fan("/api/fans", { action: "profile", name: "Aisling", how: "Neil's neighbour", email: "aisling@example.com", over16: true });
+await fan("/api/account", { action: "code", email: "aisling@example.com", code: codeOf(await lastMailTo("aisling@example.com")) });
 const fpage = await phone(fan.cookie());
 await fpage.goto(`${BASE}/t/${T}/feed`, { waitUntil: "networkidle" });
 await fpage.locator(".sf-share-photo").waitFor();
