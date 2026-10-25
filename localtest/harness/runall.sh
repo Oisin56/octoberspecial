@@ -24,6 +24,8 @@ for t in phaseftest; do fresh; run $t.mjs; done
 for t in setupwalk researchtest; do fresh; run $t.mjs; done
 # sign-in: emails and codes, My golf, co-organisers, one-use player links, the owner's second check
 for t in signintest; do fresh; run $t.mjs; done
+# who can watch: private tournaments locked everywhere, asking to follow, followers
+for t in privacytest; do fresh; run $t.mjs; done
 for t in sampletest; do fresh; run $t.mjs; done
 # the sample film's commentary and sound, with the voice stand-in on; then the app back to normal
 voice() { ps -eo pid,comm | awk '$2 ~ /^next-server/ {print $1}' | xargs -r kill; sleep 1; VOICE=1 bash startapp.sh; sleep 6; bash fresh.sh; node e2e.mjs | tail -1; }
