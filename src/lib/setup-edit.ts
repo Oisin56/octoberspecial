@@ -337,10 +337,17 @@ export async function applySetupEdit(t: TournamentRow, raw: unknown, scope: stri
       // Private (or back to Friends and family): the files move to the locked store (or out of it) first
       const toPrivate = w.privacy === "private";
       if (toPrivate !== (t.privacy === "private")) {
-        await updateT({ privacy: w.privacy, players_need_email: !!w.playersNeedEmail });
-        await moveFiles(t.slug, toPrivate);
+        await updateT({ privacy: w.privacy, players_need_email: toPrivate && !!w.playersNeedEmail });
+        // People who followed while anyone could watch weren't let in by anyone: going private, they ask (the players
+        // see them under Who's following). Going back, everyone asking is in
+        const { error } = toPrivate
+          ? await db.from("fans").update({ status: "asking", reminded_at: null }).eq("tournament_id", t.id).eq("status", "approved").is("decided_by", null)
+          : await db.from("fans").update({ status: "approved" }).eq("tournament_id", t.id).eq("status", "asking");
+        if (error) throw new Error(error.message);
         notes.push(toPrivate ? "It's private now: only the players and the people they let in can see it." : "Anyone with the link can watch it now.");
       } else await updateT({ players_need_email: toPrivate && !!w.playersNeedEmail });
+      // Every save puts the files where the setting says (again, if a move was cut short)
+      await moveFiles(t.slug, toPrivate);
       break;
     }
 

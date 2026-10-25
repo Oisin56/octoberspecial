@@ -23,7 +23,7 @@ const post = async (path, body) => {
   return { status: r.status, j: await r.json().catch(() => ({})) };
 };
 await post("/api/login", { mode: "organiser", pin: "1234" });
-const tid = (await rest(`public_tournaments?slug=eq.${T}&select=id`))[0].id;
+const tid = (await rest(`open_tournaments?slug=eq.${T}&select=id`))[0].id;
 const rounds = await rest(`rounds?tournament_id=eq.${tid}&select=id,number,course_guide&order=number`);
 const r1 = rounds[0], r2 = rounds[1];
 

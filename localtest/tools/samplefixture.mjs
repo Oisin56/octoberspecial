@@ -19,8 +19,8 @@ const slug = made.slug;
 const tid = sql(`select id from tournaments where slug='${slug}'`);
 sql(`update tournaments set published=true where id='${tid}'; update rounds set status='live' where tournament_id='${tid}'`);
 const rest = async (q) => (await fetch(`http://127.0.0.1:54321/rest/v1/${q}`, { headers: { apikey: process.env.ANON, authorization: `Bearer ${process.env.ANON}` } })).json();
-const tournament = (await rest(`public_tournaments?slug=eq.${slug}&select=*`))[0];
-const players = await rest(`public_players?tournament_id=eq.${tid}&select=*&order=sort`);
+const tournament = (await rest(`open_tournaments?slug=eq.${slug}&select=*`))[0];
+const players = await rest(`open_players?tournament_id=eq.${tid}&select=*&order=sort`);
 const rounds = await rest(`rounds?tournament_id=eq.${tid}&select=*&order=number`);
 // the greens, as the GPS tab loads them
 const login = await fetch(`${BASE}/api/login`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ t: slug, mode: "organiser", pin: OWNER }) });

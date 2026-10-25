@@ -582,7 +582,7 @@ export async function writePlan(tournamentId: string, brief: Brief, probes: Clip
       id: rid(),
       kind: "clip",
       postId: c.id,
-      src: mediaUrl(c.media_path)!,
+      src: plainUrl(c.media_path!),
       clipType: clipTypeOf(c),
       caption: (pick.caption?.trim() || [who, TYPE_NAME[clipTypeOf(c)]].filter(Boolean).join(" · ")).slice(0, 40),
       sub: c.details?.when === "pre" || !r ? "Before Round 1" : `After Round ${r.number}`,
@@ -648,7 +648,7 @@ export async function writePlan(tournamentId: string, brief: Brief, probes: Clip
         id: rid(),
         kind: "clip",
         postId: c.id,
-        src: mediaUrl(c.media_path)!,
+        src: plainUrl(c.media_path!),
         caption: (pick.caption ?? defaultCaption(s, c)).slice(0, 40),
         sub: (pick.sub ?? c.body ?? "").slice(0, 50) || undefined,
         // trimmed on the phone: the film uses the same part

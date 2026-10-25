@@ -1,19 +1,29 @@
 import { adminClient } from "@/lib/admin";
 import { followWaitingEmail, mailConfigured, sendOne } from "@/lib/email";
 import { json, siteOrigin } from "@/lib/server-data";
+import { moveFiles } from "@/lib/files";
 import type { TournamentRow } from "@/lib/types";
 
 export const maxDuration = 60;
 
 /**
- * Once a day (Vercel runs it each morning): organisers of private tournaments hear about anyone who has been waiting
- * more than 12 hours to follow. Each request is mentioned once, so running it again sends nothing new.
+ * Once a day (Vercel runs it each morning, sending the CRON_SECRET setting):
+ *  - any photo or clip that reached the open store after its tournament went private moves to the locked one
+ *  - organisers of private tournaments hear about anyone who has been waiting more than 12 hours to follow. Each
+ *    request is mentioned once, so running it again sends nothing new.
  */
 export async function GET(req: Request) {
   const secret = process.env.CRON_SECRET;
-  if (secret && req.headers.get("authorization") !== `Bearer ${secret}`) return json({ error: "Not allowed" }, 401);
-  if (!mailConfigured()) return json({ ok: true, sent: 0 });
+  if (!secret) {
+    console.error("[cron] CRON_SECRET isn't set in Vercel, so the daily jobs didn't run");
+    return json({ error: "Not set up" }, 503);
+  }
+  if (req.headers.get("authorization") !== `Bearer ${secret}`) return json({ error: "Not allowed" }, 401);
   const db = adminClient();
+  let moved = 0;
+  const { data: priv } = await db.from("tournaments").select("slug").eq("privacy", "private");
+  for (const t of priv ?? []) moved += await moveFiles(t.slug, true).catch((e) => (console.error("[cron] files", t.slug, e), 0));
+  if (!mailConfigured()) return json({ ok: true, sent: 0, moved });
   const before = new Date(Date.now() - 12 * 3600e3).toISOString();
   const { data: waiting } = await db.from("fans").select("id,name,tournament_id,email,verified_at").eq("status", "asking").is("reminded_at", null).lt("created_at", before);
   const ready = (waiting ?? []).filter((f) => !f.email || f.verified_at);
@@ -30,5 +40,5 @@ export async function GET(req: Request) {
     for (const a of accts ?? []) if (await sendOne(t, a.email, msg).then(() => true, () => false)) sent++;
     await db.from("fans").update({ reminded_at: new Date().toISOString() }).in("id", fans.map((f) => f.id));
   }
-  return json({ ok: true, sent });
+  return json({ ok: true, sent, moved });
 }

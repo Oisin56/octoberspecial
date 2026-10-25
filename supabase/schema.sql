@@ -384,12 +384,8 @@ begin
   begin alter publication supabase_realtime add table comments; exception when others then null; end;
   begin alter publication supabase_realtime add table ai_pieces; exception when others then null; end;
   begin alter publication supabase_realtime add table rounds; exception when others then null; end;
-  begin alter publication supabase_realtime add table attestations; exception when others then null; end;
   begin alter publication supabase_realtime add table votes; exception when others then null; end;
   begin alter publication supabase_realtime add table shots; exception when others then null; end;
-  begin alter publication supabase_realtime add table likes; exception when others then null; end;
-  begin alter publication supabase_realtime add table cards; exception when others then null; end;
-  begin alter publication supabase_realtime add table card_signatures; exception when others then null; end;
 end $$;
 
 -- ------------------------------------------------------------ storage
@@ -722,4 +718,53 @@ grant all on viewers to service_role;
 insert into storage.buckets (id, name, public, file_size_limit)
 values ('media-private', 'media-private', false, 52428800)
 on conflict (id) do update set public = false, file_size_limit = 52428800;
+-- Live updates. Supabase sends a deleted row's key to anyone listening, whatever tournament it was in, and the keys of
+-- signed scores, cards, signatures and likes have players' names in them. So those tables aren't sent live: a change to
+-- them pings its tournament instead (and a private tournament's pings are only seen by the site's server).
+create table if not exists live_pings (
+  tournament_id uuid primary key,
+  at timestamptz not null default now()
+);
+alter table live_pings enable row level security;
+grant select on live_pings to anon, authenticated;
+grant all on live_pings to service_role;
+drop policy if exists live_pings_read on live_pings;
+create policy live_pings_read on live_pings for select using (not private_tournament(tournament_id));
+
+create or replace function ping_tournament() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare
+  r jsonb;
+  tid uuid;
+begin
+  r := to_jsonb(case when tg_op = 'DELETE' then old else new end);
+  tid := (r ->> 'tournament_id')::uuid;
+  if tid is null and r ? 'round_id' then
+    select tournament_id into tid from rounds where id = (r ->> 'round_id')::uuid;
+  end if;
+  if tid is not null and exists (select 1 from tournaments where id = tid) then
+    insert into live_pings (tournament_id, at) values (tid, now())
+    on conflict (tournament_id) do update set at = excluded.at;
+  end if;
+  return null;
+end $$;
+
+drop trigger if exists ping_attestations on attestations;
+create trigger ping_attestations after insert or update or delete on attestations for each row execute function ping_tournament();
+drop trigger if exists ping_likes on likes;
+create trigger ping_likes after insert or update or delete on likes for each row execute function ping_tournament();
+drop trigger if exists ping_cards on cards;
+create trigger ping_cards after insert or update or delete on cards for each row execute function ping_tournament();
+drop trigger if exists ping_card_signatures on card_signatures;
+create trigger ping_card_signatures after insert or update or delete on card_signatures for each row execute function ping_tournament();
+
+do $$
+begin
+  begin alter publication supabase_realtime drop table attestations; exception when others then null; end;
+  begin alter publication supabase_realtime drop table likes; exception when others then null; end;
+  begin alter publication supabase_realtime drop table cards; exception when others then null; end;
+  begin alter publication supabase_realtime drop table card_signatures; exception when others then null; end;
+  begin alter publication supabase_realtime add table live_pings; exception when others then null; end;
+end $$;
+
 notify pgrst, 'reload schema';

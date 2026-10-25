@@ -4,8 +4,7 @@ import { adminClient } from "./admin";
 import { loadServerState, type TournamentPrivate } from "./server-data";
 import { buildTimeline, clipBugs, configured, shotstackRender, shotstackStatus } from "./director";
 import { segmentSeconds, type CardSegment, type ClipSegment, type Plan } from "./director-types";
-import { mediaUrl } from "./supabase";
-import { storeFor } from "./files";
+import { plainUrl, storeFor } from "./files";
 import { gameHole, gameShots } from "./engine";
 import { toEntries, toRoundCfg, toTournamentCfg, type PostRow, type TournamentState } from "./types";
 
@@ -78,7 +77,7 @@ export function clipPlan(s: TournamentState, p: PostRow): Plan {
     id: "clip",
     kind: "clip",
     postId: p.id,
-    src: mediaUrl(p.media_path)!,
+    src: plainUrl(p.media_path!),
     caption: caption.slice(0, 90),
     sub: [d.shot && d.result && caption !== `${d.shot}, ${d.result}` ? `${d.shot}, ${d.result.toLowerCase()}` : null, d.club].filter(Boolean).join(" · ") || undefined,
     in: tin,

@@ -1,8 +1,7 @@
 import { adminClient } from "@/lib/admin";
-import { withSignedLinks } from "@/lib/files";
+import { plainUrl, withSignedLinks } from "@/lib/files";
 import { isOrganiser } from "@/lib/auth";
 import { bad, context, json, DEMO_READONLY } from "@/lib/server-data";
-import { mediaUrl } from "@/lib/supabase";
 import { loadServerState } from "@/lib/server-data";
 import { cardUrl } from "@/lib/cards";
 import { clipBugs, configured, listVoices, fitCommentary, sanitisePlan } from "@/lib/director";
@@ -104,7 +103,7 @@ async function handle(req: Request) {
         if (s.kind === "clip") {
           const mp = byId.get(s.postId);
           if (!mp) return false;
-          s.src = mediaUrl(mp)!;
+          s.src = plainUrl(mp);
         }
         return true;
       });
@@ -133,7 +132,7 @@ async function handle(req: Request) {
         const keys = part === "voice" ? ["voiceSrc", "voiceFor", "voiceSec"] : part === "payoff" ? ["payoffSrc", "payoffFor", "payoffSec"] : ["replaySrc", "replayFor", "replaySec"];
         if (path) {
           s.own = { ...(s.own ?? {}), [part]: true };
-          rec[keys[0]] = mediaUrl(path);
+          rec[keys[0]] = plainUrl(path);
           rec[keys[1]] = "own|";
           rec[keys[2]] = sec;
           // the line needs words for the film to place it: keep what was there, or a placeholder

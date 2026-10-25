@@ -150,7 +150,8 @@ export function useTournament(slug: string): LiveTournament {
   useEffect(() => {
     if (isPrivate) return;
     const db = publicClient();
-    const tables = ["rounds", "hole_entries", "attestations", "posts", "comments", "ai_pieces", "votes", "shots", "likes", "cards", "card_signatures"];
+    // (scores signed, cards and likes arrive as a ping for the tournament: their own rows aren't sent live)
+    const tables = ["rounds", "hole_entries", "posts", "comments", "ai_pieces", "votes", "shots", "live_pings"];
     const channel = db.channel(`t-${slug}`);
     for (const t of tables) {
       channel.on("postgres_changes", { event: "*", schema: "public", table: t }, () => {

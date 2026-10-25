@@ -1,3 +1,4 @@
+import { RESERVED_SLUGS } from "@/lib/files";
 import { checkOwnerPin, getAccount, isOwner, setOwner, setSession } from "@/lib/auth";
 import { SignInError, cleanEmail, linkRole, linkTournament, makeOffer, organiserSession, sendSignIn } from "@/lib/accounts";
 import { inviteFor, spendInvite } from "@/lib/invites";
@@ -35,7 +36,7 @@ async function bare(b: Record<string, unknown>) {
   const db = adminClient();
   let slug = slugify(String(b.slug || name)) || "tournament";
   const { data: clash } = await db.from("tournaments").select("id").eq("slug", slug).maybeSingle();
-  if (clash) slug = `${slug}-${Math.random().toString(36).slice(2, 6)}`;
+  if (clash || RESERVED_SLUGS.has(slug)) slug = `${slug}-${Math.random().toString(36).slice(2, 6)}`;
   const { data, error } = await db
     .from("tournaments")
     .insert({ slug, name, subtitle: b.subtitle ? String(b.subtitle).slice(0, 120) : null, published: false })

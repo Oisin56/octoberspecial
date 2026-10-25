@@ -1,5 +1,5 @@
 import { adminClient } from "@/lib/admin";
-import { bad, context, json, siteOrigin, DEMO_READONLY, crossSite, CROSS_SITE, canSee } from "@/lib/server-data";
+import { bad, context, json, siteOrigin, DEMO_READONLY, crossSite, CROSS_SITE, canSee, fanStatus } from "@/lib/server-data";
 import { EMAIL_RE, followApprovedEmail, sendOne } from "@/lib/email";
 import { isCrew, isOrganiser, setSession } from "@/lib/auth";
 import { SignInError, cleanEmail, sendSignIn, signIn } from "@/lib/accounts";
@@ -46,14 +46,23 @@ export async function POST(req: Request) {
       const marketing = !!email && b.marketing === true ? { marketing_at: new Date().toISOString(), marketing_wording: MARKETING_WORDING } : {};
 
       // Someone already following (or asking) with this email, confirmed: they get in by confirming it again, never by
-      // typing it. Not confirmed yet: whoever typed it before loses it, and this phone starts again
-      const { data: existing } = email ? await db.from("fans").select("id,status,verified_at").eq("tournament_id", t.id).eq("email", email).maybeSingle() : { data: null };
+      // typing it. Not confirmed yet: after half an hour (the code's run out) whoever typed it before loses it
+      // (A private tournament's name is never in these emails: whoever typed the address may not be let in)
+      const called = ask ? "the tournament" : t.name;
+      const { data: existing } = email ? await db.from("fans").select("id,status,verified_at,created_at").eq("tournament_id", t.id).eq("email", email).maybeSingle() : { data: null };
       if (existing?.verified_at) {
-        await sendSignIn(origin, email, { next: `/t/${t.slug}`, intro: `Tap the button to confirm your email and carry on to ${t.name}.` });
+        await sendSignIn(origin, email, { next: `/t/${t.slug}`, intro: `Tap the button to confirm your email and carry on to ${called}.` });
         return json({ ok: true, confirm: true });
       }
-      if (existing && existing.id !== here) await db.from("fans").delete().eq("id", existing.id).eq("tournament_id", t.id).is("verified_at", null);
-      const row = { name, how_known: how || null, email: email || null, verified_at: null, status: ask ? "asking" : "approved", ...marketing };
+      if (existing && existing.id !== here) {
+        // Someone else's request with this email, still waiting for its code: theirs stands until the code runs out
+        if (Date.now() - new Date(existing.created_at).getTime() < 30 * 60e3) return bad("A code was sent to that email a moment ago. Check the inbox, or try again in half an hour.", 409);
+        await db.from("fans").delete().eq("id", existing.id).eq("tournament_id", t.id).is("verified_at", null);
+      }
+      // Turned down: asking again changes nothing (they still see "waiting")
+      const was = here ? await fanStatus(t.id, here) : null;
+      const status = was === "declined" ? "declined" : ask ? "asking" : "approved";
+      const row = { name, how_known: how || null, email: email || null, verified_at: null, status, ...marketing };
       let fanId: string;
       if (here) {
         // Changing what this phone said before (still waiting, say)
@@ -68,7 +77,7 @@ export async function POST(req: Request) {
       if (email) {
         await sendSignIn(origin, email, {
           next: `/t/${t.slug}`,
-          intro: ask ? `To ask to follow ${t.name}, confirm your email. Tap the button, or type the code where you asked.` : `Confirm your email to comment on ${t.name} from any phone, and to get the trip film.`,
+          intro: ask ? `To ask to follow, confirm your email. Tap the button, or type the code where you asked.` : `Confirm your email to comment on ${t.name} from any phone, and to get the trip film.`,
         });
       }
       return json({ ok: true, confirm: !!email });

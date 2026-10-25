@@ -28,8 +28,9 @@ export async function GET() {
   const db: Record<string, unknown> = {};
   try {
     const a = adminClient();
-    const t = await a.from("tournaments").select("slug,published");
-    db.server_tournaments = t.error ? `ERROR: ${t.error.message}` : t.data.map((x) => `${x.slug}${x.published ? "" : " (unpublished)"}`);
+    // A count only: the addresses (and so the names) of tournaments are nobody's business here
+    const t = await a.from("tournaments").select("id", { count: "exact", head: true });
+    db.server_tournaments = t.error ? `ERROR: ${t.error.message}` : t.count;
     const r = await a.from("rounds").select("id", { count: "exact", head: true });
     db.server_rounds = r.error ? `ERROR: ${r.error.message}` : r.count;
     const p = await a.from("players").select("id", { count: "exact", head: true });

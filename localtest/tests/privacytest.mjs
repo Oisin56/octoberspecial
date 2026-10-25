@@ -112,7 +112,12 @@ ok((await mum(`/api/state?t=${T}`)).j.status === "confirm", "she's asked to conf
 let list = (await ann("/api/fans", { t: T, action: "list" })).j;
 ok(list.asking.length === 0, "the players don't see the request until her email's confirmed");
 const mm = await lastMailTo("mum@example.ie");
-ok(/ask to follow Hush Cup/.test(mm.text) && !!codeOf(mm), "she gets a code");
+ok(/ask to follow, confirm/.test(mm.text) && !/Hush Cup/.test(mm.text + mm.subject) && !!codeOf(mm), "she gets a code (the email doesn't name the tournament)");
+// Someone else types an email that's still waiting for its code: the first request stands
+const ghost = agent();
+await ghost("/api/fans", { t: T, action: "ask", name: "Gary", how: "Bea's friend", email: "gary@example.ie", over16: true });
+r = await agent()("/api/fans", { t: T, action: "ask", name: "Not Gary", how: "x", email: "gary@example.ie", over16: true });
+ok(r.status === 409 && sql(`select name from fans where email='gary@example.ie'`) === "Gary", "someone else typing an email still waiting for its code can't take it over");
 await mum("/api/account", { action: "code", email: "mum@example.ie", code: codeOf(mm) });
 ok((await mum(`/api/state?t=${T}`)).j.status === "asking", "confirmed: waiting for approval");
 list = (await ann("/api/fans", { t: T, action: "list" })).j;
@@ -145,6 +150,10 @@ await owner("/api/fans", { t: T, action: "decide", fanId: ned.id, decision: "dec
 ok(!mails().slice(b2).some((x) => x.to.includes("ned@example.ie")), "declined: no email");
 r = await nosy(`/api/state?t=${T}`);
 ok(r.status === 403 && r.j.status === "asking", "and he just sees: waiting for approval");
+await nosy("/api/fans", { t: T, action: "ask", name: "Nosy Ned", how: "Lives nearby, honest", email: "ned@example.ie", over16: true });
+await nosy("/api/account", { action: "code", email: "ned@example.ie", code: codeOf(await lastMailTo("ned@example.ie")) });
+list = (await owner("/api/fans", { t: T, action: "list" })).j;
+ok(!list.asking.some((f) => f.name === "Nosy Ned") && sql(`select status from fans where id='${ned.id}'`) === "declined", "asking again after being turned down changes nothing");
 // Removed: back to nothing
 list = (await owner("/api/fans", { t: T, action: "list" })).j;
 await owner("/api/fans", { t: T, action: "decide", fanId: list.following.find((f) => f.name === "Ann's Mum").id, decision: "remove" });
@@ -157,12 +166,22 @@ await late("/api/fans", { t: T, action: "ask", name: "Late Larry", how: "Bea's c
 await late("/api/account", { action: "code", email: "larry@example.ie", code: codeOf(await lastMailTo("larry@example.ie")) });
 sql(`update fans set created_at = now() - interval '13 hours' where email='larry@example.ie'`);
 const b3 = mails().length;
-r = await (await fetch(`${BASE}/api/cron/daily`)).json();
+ok((await fetch(`${BASE}/api/cron/daily`)).status === 401, "the daily jobs don't run for anyone without the secret");
+const CRON = { headers: { authorization: "Bearer local-cron-secret" } };
+r = await (await fetch(`${BASE}/api/cron/daily`, CRON)).json();
 const rem = mails().slice(b3).find((x) => x.to.includes("owner@test.ie"));
 ok(r.sent >= 1 && !!rem && /Larry is waiting to follow Hush Cup/.test(rem.text), `the organiser hears after 12 hours (${rem?.subject})`);
 const b4 = mails().length;
-await fetch(`${BASE}/api/cron/daily`);
+await fetch(`${BASE}/api/cron/daily`, CRON);
 ok(mails().length === b4, "once only");
+// A photo that reached the open store anyway (an upload link from before it went private) is moved by the daily job
+const stray = `photo/${T}/stray-${Date.now()}.jpg`;
+fs.mkdirSync(`${FILES}/photo/${T}`, { recursive: true });
+fs.copyFileSync("/var/tmp/ospg/hero.jpg", `${FILES}/${stray}`);
+await fetch(`${BASE}/api/cron/daily`, CRON);
+ok(!fs.existsSync(`${FILES}/${stray}`) && fs.existsSync(`${FILES}/__private__/${stray}`), "a stray photo in the open store is moved to the locked one each day");
+const health = await (await fetch(`${BASE}/api/health`)).text();
+ok(!health.includes(T) && !/hush/i.test(health), "the setup check doesn't list tournaments");
 
 // ================================================================ players sign in with their email too
 sql(`update tournaments set players_need_email = true where id='${tid}'`);
@@ -218,8 +237,29 @@ if (file) {
 } else ok(false, "(no photo on the October Special to check)");
 ok((await rest(`rounds?tournament_id=eq.${os}`)).j?.length === 0, "its rounds are no longer readable from a browser");
 await p.screenshot({ path: `${SHOTS}/privacy-2-setup.png`, fullPage: true });
-// A follower from before is in (Clodagh was let in already as a follower)
-ok((await fan(`/api/state?t=${OS}`)).status === 200, "a follower from before it went private keeps seeing it");
+// Followers from before weren't let in by anyone: now they ask, and the players decide
+r = await fan(`/api/state?t=${OS}`);
+ok(r.status === 403 && r.j.status === "asking", "a follower from before it went private has to be let in");
+list = (await owner("/api/fans", { t: OS, action: "list" })).j;
+const clo = list.asking?.find((f) => f.name === "Clodagh");
+ok(!!clo, "the organiser sees her asking");
+// Email subscribers from before get nothing, unless they're let in
+sql(`update fans set email='clodagh@example.ie', verified_at=now() where id='${clo?.id}'`);
+sql(`insert into subscribers (tournament_id, email) values ('${os}', 'outsider@example.ie'), ('${os}', 'clodagh@example.ie') on conflict do nothing`);
+const pieceId = sql(`select id from ai_pieces where tournament_id='${os}' and status='published' limit 1`);
+if (pieceId) {
+  const b5 = mails().length;
+  await owner("/api/admin", { t: OS, action: "emailPiece", id: pieceId });
+  ok(!mails().slice(b5).some((x) => x.to.includes("outsider@example.ie") || x.to.includes("clodagh@example.ie")), "a report emailed now doesn't go to subscribers who aren't let in");
+  await owner("/api/fans", { t: OS, action: "decide", fanId: clo.id, decision: "approve" });
+  const b6 = mails().length;
+  await owner("/api/admin", { t: OS, action: "emailPiece", id: pieceId });
+  ok(mails().slice(b6).some((x) => x.to.includes("clodagh@example.ie")) && !mails().slice(b6).some((x) => x.to.includes("outsider@example.ie")), "once she's let in, she gets it (the outsider still doesn't)");
+} else {
+  ok(false, "(no published piece on the October Special)");
+  await owner("/api/fans", { t: OS, action: "decide", fanId: clo.id, decision: "approve" });
+}
+ok((await fan(`/api/state?t=${OS}`)).status === 200, "let in: she sees it again");
 // Back again
 await p.goto(`${BASE}/t/${OS}/setup`, { waitUntil: "networkidle" });
 await p.getByRole("button", { name: /Who can watch/ }).click();

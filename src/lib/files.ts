@@ -1,6 +1,6 @@
 import "server-only";
 import { adminClient } from "./admin";
-import { mediaUrl, rememberSigned } from "./supabase";
+import { forgetSigned, mediaUrl, rememberSigned } from "./supabase";
 
 /**
  * Photos, clips and films. A Friends and family tournament's files sit in the public store ("media"); a private
@@ -16,38 +16,48 @@ export const VIEW_SECS = 3600;
 export const WORK_SECS = 24 * 3600;
 export const EMAIL_SECS = 30 * 24 * 3600;
 
+/** Folders the site keeps its own files in (music, sounds, the sample round): never a tournament's slug */
+export const RESERVED_SLUGS = new Set(["site", "samples", "sfx", "t"]);
+
 const privateSlugs = new Map<string, { at: number; v: boolean }>();
 
-/** Is this slug's tournament private? (remembered for 20 seconds) */
-export async function slugPrivate(slug: string): Promise<boolean> {
+/**
+ * Is this slug's tournament private? Remembered for 20 seconds, except where a file is about to be stored (fresh).
+ * If the database can't say, it throws rather than guess "not private".
+ */
+export async function slugPrivate(slug: string, opts: { fresh?: boolean } = {}): Promise<boolean> {
   const c = privateSlugs.get(slug);
-  if (c && Date.now() - c.at < 20e3) return c.v;
+  if (!opts.fresh && c && Date.now() - c.at < 20e3) return c.v;
   const { data, error } = await adminClient().from("tournaments").select("privacy").eq("slug", slug).maybeSingle();
-  const v = !error && data?.privacy === "private";
+  if (error) throw new Error(`Couldn't check the tournament: ${error.message}`);
+  const v = data?.privacy === "private";
   privateSlugs.set(slug, { at: Date.now(), v });
   return v;
 }
 
 export function forgetPrivacy(slug: string) {
   privateSlugs.delete(slug);
+  for (const k of primed.keys()) if (k.startsWith(`${slug}:`)) primed.delete(k);
+  for (const k of signed.keys()) if (k.split(":")[1]?.split("/")[1] === slug) signed.delete(k);
+  forgetSigned(slug);
 }
 
 export const slugOf = (path: string) => path.match(PATH)?.[2] ?? null;
 
-/** Which store a tournament's files go in */
+/** Which store a tournament's files go in (checked fresh: a file put in the wrong one would be open to anyone) */
 export async function bucketFor(slug: string | null | undefined): Promise<string> {
-  return slug && (await slugPrivate(slug)) ? PRIVATE_BUCKET : "media";
+  return slug && (await slugPrivate(slug, { fresh: true })) ? PRIVATE_BUCKET : "media";
 }
 
 const signed = new Map<string, { url: string; until: number }>();
 
-/** Links to private files, reused while they've at least 10 minutes left. */
+/** Links to private files, reused while they've at least half their time left. */
 export async function signedUrls(paths: string[], secs = VIEW_SECS): Promise<Record<string, string>> {
   const out: Record<string, string> = {};
   const need: string[] = [];
   for (const p of new Set(paths)) {
     const c = signed.get(`${secs}:${p}`);
-    if (c && c.until - Date.now() > 10 * 60e3) out[p] = c.url;
+    if (c && c.until - Date.now() > (secs * 1000) / 2) out[p] = c.url;
     else need.push(p);
   }
   for (let i = 0; i < need.length; i += 100) {
@@ -85,8 +95,12 @@ export function pathsIn(x: unknown, slug: string, out = new Set<string>()): Set<
   return out;
 }
 
-/** Move a tournament's files between the stores when it becomes private (or stops being). */
+/**
+ * Move a tournament's files into the store its setting says (the locked one when it's private). Safe to run again:
+ * on every save of the setting, and each day, it picks up any file that landed in the wrong store.
+ */
 export async function moveFiles(slug: string, toPrivate: boolean): Promise<number> {
+  if (RESERVED_SLUGS.has(slug)) return 0;
   const db = adminClient();
   const from = toPrivate ? "media" : PRIVATE_BUCKET;
   const to = toPrivate ? PRIVATE_BUCKET : "media";
@@ -134,7 +148,7 @@ export async function primeFiles(slug: string | null | undefined, secs = WORK_SE
       if (names.length < 1000) break;
     }
   }
-  rememberSigned(await signedUrls(paths, secs));
+  rememberSigned(await signedUrls(paths, secs), secs / 2);
   primed.set(key, Date.now());
 }
 
@@ -142,7 +156,7 @@ export async function primeFiles(slug: string | null | undefined, secs = WORK_SE
  * Links kept in a film's plan are the plain (public-store) form, which never expires. Before they're handed to the
  * renderer or a phone, those that point at a private tournament's files become links that work for a while.
  */
-export async function signStoredLinks<T>(x: T, secs = WORK_SECS): Promise<T> {
+export async function signStoredLinks<T>(x: T, secs = WORK_SECS, onlySlug?: string): Promise<T> {
   const prefix = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/media/`;
   const found = new Set<string>();
   const walk = (v: unknown) => {
@@ -154,7 +168,7 @@ export async function signStoredLinks<T>(x: T, secs = WORK_SECS): Promise<T> {
   const priv: string[] = [];
   for (const p of found) {
     const slug = slugOf(p);
-    if (slug && (await slugPrivate(slug))) priv.push(p);
+    if (slug && (!onlySlug || slug === onlySlug) && (await slugPrivate(slug))) priv.push(p);
   }
   if (!priv.length) return x;
   const map = await signedUrls(priv, secs);
@@ -172,17 +186,24 @@ export async function signStoredLinks<T>(x: T, secs = WORK_SECS): Promise<T> {
 
 /** A file's plain (public-store) address, never a link that expires: for keeping in a plan. */
 export function plainUrl(path: string) {
+  if (path.startsWith("http") || path.startsWith("/")) return path;
   return `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/media/${path}`;
 }
 
 /** A route answering a private tournament's phone: links to its files in the answer work for an hour. */
 export function withSignedLinks(handler: (req: Request) => Promise<Response>) {
   return async (req: Request) => {
+    const asked = await req
+      .clone()
+      .json()
+      .catch(() => ({}));
+    const slug = String(asked?.t ?? new URL(req.url).searchParams.get("t") ?? "");
     const res = await handler(req);
+    if (!slug) return res;
     if (!(res.headers.get("content-type") ?? "").includes("application/json")) return res;
     const body = await res.json().catch(() => null);
     if (body === null) return res;
-    const signed = await signStoredLinks(body, VIEW_SECS);
+    const signed = await signStoredLinks(body, VIEW_SECS, slug);
     return Response.json(signed, { status: res.status, headers: { "cache-control": res.headers.get("cache-control") ?? "no-store" } });
   };
 }

@@ -429,8 +429,14 @@ export async function emailPiece(t: TournamentRow, pieceId: string, site: string
   let list: { email: string; token: string }[];
   if (onlyTo) list = [{ email: onlyTo, token: "test" }];
   else {
-    const { data } = await db.from("subscribers").select("email,token").eq("tournament_id", t.id).is("unsubscribed_at", null);
+    const { data } = await db.from("subscribers").select("email,token,added_by").eq("tournament_id", t.id).is("unsubscribed_at", null);
     list = data ?? [];
+    // Private: only people let in get it, and anyone the organiser added to the list themselves (someone who signed up
+    // while anyone could watch, and hasn't been let in since, doesn't)
+    if (t.privacy === "private") {
+      const inside = await letInEmails(t.id);
+      list = (data ?? []).filter((s) => s.added_by === "organiser" || inside.has(s.email.toLowerCase()));
+    }
   }
   // Build once; only the unsubscribe link differs per person
   const marker = "__UNSUB__";
@@ -450,4 +456,19 @@ export async function emailPiece(t: TournamentRow, pieceId: string, site: string
   // Only mark it emailed if someone actually got it, so "Email it" stays on offer after a failed send
   if (!onlyTo && sent > 0) await db.from("ai_pieces").update({ emailed_at: new Date().toISOString(), emailed_count: sent }).eq("id", pieceId);
   return { sent, failed };
+}
+
+/** The emails of everyone let into a tournament: its players and organisers, and followers let in with a confirmed email. */
+export async function letInEmails(tournamentId: string): Promise<Set<string>> {
+  const db = adminClient();
+  const [joined, players, fans] = await Promise.all([
+    db.from("account_tournaments").select("account_id").eq("tournament_id", tournamentId),
+    db.from("players").select("email").eq("tournament_id", tournamentId).not("email", "is", null),
+    db.from("fans").select("email").eq("tournament_id", tournamentId).eq("status", "approved").not("verified_at", "is", null).not("email", "is", null),
+  ]);
+  const ids = (joined.data ?? []).map((r) => r.account_id);
+  const accts = ids.length ? (await db.from("accounts").select("email").in("id", ids)).data ?? [] : [];
+  const out = new Set<string>();
+  for (const r of [...accts, ...(players.data ?? []), ...(fans.data ?? [])]) if (r.email) out.add(String(r.email).toLowerCase());
+  return out;
 }

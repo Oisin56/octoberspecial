@@ -1,3 +1,4 @@
+import { RESERVED_SLUGS } from "./files";
 import "server-only";
 import { adminClient } from "./admin";
 import { getCourse, validStrokeIndexes } from "./courses";
@@ -224,7 +225,7 @@ export async function createFromWizard(w: Wizard): Promise<Created> {
   const dates = w.rounds.map((r) => r.date).filter((d): d is string => !!d).sort();
   let slug = slugify(w.name) || "tournament";
   const { data: clash } = await db.from("tournaments").select("id").eq("slug", slug).maybeSingle();
-  if (clash) slug = `${slug}-${Math.random().toString(36).slice(2, 6)}`;
+  if (clash || RESERVED_SLUGS.has(slug)) slug = `${slug}-${Math.random().toString(36).slice(2, 6)}`;
   const teams = w.teams.map((t, i) => ({ id: `team-${i + 1}`, name: t.name, color: t.color }));
 
   // Players' ids now, so the knockout's bracket can name them
