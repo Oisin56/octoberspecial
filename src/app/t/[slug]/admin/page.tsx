@@ -292,7 +292,7 @@ function KeepSafe({ data }: { data: AdminData }) {
   const [err, setErr] = useState<string | null>(null);
   const email = data.accountEmail;
   return (
-    <section className="next-up keep-safe" aria-label="Keep it safe">
+    <section className="keep-safe" aria-label="Keep it safe">
       <h2>Keep it safe</h2>
       <p>{email ? `Add this tournament to your email, ${email}, so you can run it from any phone.` : "Add your email, so you can run this tournament from any phone. You'll sign in with it from now on."}</p>
       {err && <p className="error">{err}</p>}

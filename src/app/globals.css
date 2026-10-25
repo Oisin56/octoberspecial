@@ -480,6 +480,9 @@ main.wrap { padding-top: 28px; padding-bottom: 72px; }
 .next-up h2 { font-size: 22px; margin-bottom: 6px; }
 .next-up p { margin: 0; color: var(--ink-soft); }
 .next-up ul { list-style: none; margin: 0; padding: 0; }
+.keep-safe { background: var(--paper); border-radius: var(--radius); padding: 16px 18px; box-shadow: var(--shadow-sm); border: 2px solid var(--board); margin-bottom: 14px; display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
+.keep-safe h2 { font-size: 22px; margin: 0; }
+.keep-safe p { margin: 0; color: var(--ink-soft); }
 .next-up li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; padding: 10px 0; font-size: 18px; }
 .next-up li + li { border-top: 1px solid color-mix(in srgb, var(--rule) 70%, transparent); }
 .next-up li span { flex: 1 1 220px; }
