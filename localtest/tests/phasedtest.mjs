@@ -36,7 +36,7 @@ if (games) {
   for (const g of games) if (g.sides.some((s) => (s.playerIds ?? [s.id]).includes("oisin"))) g.scorerId = "oisin";
   q(`update rounds set games='${JSON.stringify(games)}'::jsonb where id='${r2}'`);
 } else q(`update rounds set scorer_id='oisin' where id='${r2}'`);
-q(`update players set link_code='neil-phase-d-link-0001' where id='neil'`);
+q(`update players set link_code='neil-phase-d-link-0001', link_used_at=null where id='neil'`);
 const h1par = Number(q(`select (holes->0->>'par') from rounds where id='${r2}'`));
 
 // Hole 1 on the stub's course: the tee (between its two markers) and the middle of the green
@@ -198,7 +198,7 @@ ok(shot2 && shot2.startsWith("2|oisin|") && shot2.endsWith(tiles[0]), `saved on 
 const nctx = await browser.newContext({ ...devices["iPhone 13"] });
 const np = await nctx.newPage();
 await np.goto(`${BASE}/t/${T}`);
-const lr = await np.request.post(`${BASE}/api/login`, { data: { t: T, mode: "link", code: "neil-phase-d-link-0001" } });
+const lr = await np.request.post(`${BASE}/api/login`, { data: { t: T, mode: "link", code: "neil-phase-d-link-0001", step: "confirm" } });
 ok(lr.ok() && (await lr.json()).playerId === "neil", "Neil logged in on his own phone");
 await np.goto(`${BASE}/t/${T}/shots?round=2&hole=1`, { waitUntil: "networkidle" });
 const nmo = np.locator(".shotcard");
