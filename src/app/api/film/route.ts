@@ -1,4 +1,5 @@
 import { after } from "next/server";
+import { withSignedLinks } from "@/lib/files";
 import { adminClient } from "@/lib/admin";
 import { isOrganiser } from "@/lib/auth";
 import { bad, context, json, loadServerState, siteOrigin, DEMO_READONLY } from "@/lib/server-data";
@@ -22,7 +23,7 @@ const SAMPLES: Record<string, [string, string]> = {
 const REEL_FIELDS = "id,status,stage,error,brief,plan,video_path,post_id,created_at,updated_at,done_at,renders,render_id,stage_at,cost_cents";
 
 /** The organiser's film: what's ready, the questions' answers, making it, its progress. */
-export async function POST(req: Request) {
+async function handle(req: Request) {
   const b = await req.json().catch(() => ({}));
   const { t, session, demo } = await context(req, b);
   if (!t) return bad("Tournament not found", 404);
@@ -160,3 +161,6 @@ export async function POST(req: Request) {
       return bad("Unknown action");
   }
 }
+
+/** Links to a private tournament's files in the answer work for an hour */
+export const POST = withSignedLinks(handle);

@@ -1292,6 +1292,25 @@ export function ExtrasScreen({ d, set, done, nextLabel }: StepProps) {
   );
 }
 
+/** Who can watch: anyone with the link (the default), or only the players and the people they let in. */
+export function WatchScreen({ d, set, done, nextLabel }: StepProps) {
+  const priv = d.privacy === "private";
+  return (
+    <Screen q="Who can watch?" hint="You can change this any time.">
+      <Tiles>
+        <Tile on={!priv} title="Friends and family" note="Anyone you send the link to can watch and comment. It isn't listed anywhere or on Google." onClick={() => set((x) => ({ ...x, privacy: "friends", playersNeedEmail: false }))} />
+        <Tile on={priv} title="Private" note="Only the players and the people they let in. Others ask to follow, and a player or organiser says yes." onClick={() => set((x) => ({ ...x, privacy: "private" }))} />
+      </Tiles>
+      {priv && d.who !== "solo" && (
+        <div className="wz-yns">
+          <YN q="Players sign in with their email too" note="As well as their personal link, for extra safety. Most groups leave this off." value={!!d.playersNeedEmail} onChange={(v) => set((x) => ({ ...x, playersNeedEmail: v }))} />
+        </div>
+      )}
+      <Next onClick={() => done()} label={nextLabel} />
+    </Screen>
+  );
+}
+
 export function LookScreen({ d, done }: StepProps) {
   const ps = named(d);
   const a = ps[0]?.name || "Neil";

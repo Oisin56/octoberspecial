@@ -230,7 +230,7 @@ function LoginInner() {
           {back()}
           <h1>Following</h1>
           <p className="lead">You don&apos;t need to sign in to follow: the scores, the feed and the highlights are open to everyone with the link.</p>
-          <p>To share photos and comment, join the conversation with your name and email. We&apos;ll email you a link: no password.</p>
+          <p>To share photos and comment, just tell the players who you are the first time: your name, and how you know them.</p>
           <Link className="btn block big" href={href("/feed?join=1")}>
             Join the conversation
           </Link>

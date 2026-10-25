@@ -90,6 +90,10 @@ export interface Draft {
   tone: Tone;
   units: "yards" | "metres";
   share: "portrait" | "landscape";
+  /** Who can watch: anyone with the link, or only the people let in */
+  privacy: "friends" | "private";
+  /** Private: players sign in with their email as well as their link */
+  playersNeedEmail: boolean;
   theme: ThemeId | null;
   keep: "email" | "pin" | null;
   email: string;
@@ -129,6 +133,8 @@ export const fresh = (): Draft => ({
   tone: "broadsheet",
   units: "yards",
   share: "portrait",
+  privacy: "friends",
+  playersNeedEmail: false,
   theme: null,
   keep: null,
   email: "",
@@ -201,7 +207,7 @@ export function stepsFor(d: Draft): string[] {
   if (!solo && usesPoints(d.win)) s.push("points");
   if (needsGroups(d)) s.push("groups");
   if (!solo) s.push("prizes");
-  s.push("extras", "look");
+  s.push("extras", "watch", "look");
   if (!solo) s.push("about");
   s.push("safe");
   return s;
@@ -269,5 +275,7 @@ export function toWizard(d: Draft): Wizard {
     theme: d.theme ?? "spring",
     units: d.units,
     share: d.share,
+    privacy: d.privacy ?? "friends",
+    playersNeedEmail: d.privacy === "private" && !!d.playersNeedEmail,
   };
 }

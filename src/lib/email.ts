@@ -7,6 +7,7 @@ import { paletteFor } from "./themes";
 import type { AiPieceRow, TournamentRow } from "./types";
 import { coursePhotoFor } from "@/data/course-photos";
 import { mediaUrl } from "./supabase";
+import { EMAIL_SECS, primeFiles } from "./files";
 import { cleanBody, cleanTitle } from "./cleanText";
 import { newsletterEmail, type NewsletterData } from "./newsletter";
 import { loadServerState } from "./server-data";
@@ -191,6 +192,21 @@ export function playerLinkEmail(t: TournamentRow, name: string, link: string) {
   return { subject: `Your link for ${t.name}`, html, text };
 }
 
+/** A follower asked to follow a private tournament, and a player or organiser let them in. */
+export function followApprovedEmail(t: TournamentRow, name: string, link: string) {
+  const html = brandEmail([`Hi ${name.split(" ")[0]},`, `You're in. You can follow ${t.name} now: the scores, the feed and the highlights.`], { label: `Follow ${t.name}`, href: link }, "On another phone or computer, sign in with this email to get in.");
+  const text = `Hi ${name.split(" ")[0]},\n\nYou're in. You can follow ${t.name} now:\n\n${link}\n\nOn another phone or computer, sign in with this email to get in.\n`;
+  return { subject: `You're in: ${t.name}`, html, text };
+}
+
+/** Organisers: people have been waiting more than 12 hours to follow a private tournament. */
+export function followWaitingEmail(t: TournamentRow, names: string[], link: string) {
+  const who = names.length === 1 ? `${names[0]} is` : `${names.length} people are`;
+  const html = brandEmail([`${who} waiting to follow ${t.name}.`, "Any player or organiser can let them in, or decline, from Who's following."], { label: "See who's asking", href: link });
+  const text = `${who} waiting to follow ${t.name}. Any player or organiser can let them in, or decline, from Who's following:\n\n${link}\n`;
+  return { subject: `Waiting to follow ${t.name}`, html, text };
+}
+
 /** A plain brand email: a heading, a few paragraphs and one big button. */
 function brandEmail(paras: string[], button: { label: string; href: string } | null, foot?: string) {
   return `<!doctype html><html><body style="margin:0;background:#e4e9e5;font-family:Georgia,serif;color:#18231d">
@@ -258,6 +274,8 @@ const LABEL: Record<AiPieceRow["kind"], string> = { preview: "Preview", report: 
 /** Email a published piece to every active subscriber. Returns how many were sent. */
 /** Gather everything the newsletter shows, from the live tournament state. */
 export async function buildNewsletter(t: TournamentRow, piece: AiPieceRow, site: string, unsubscribe: string, issue: number) {
+  // A private tournament's photos in the email: links that work for a month
+  await primeFiles(t.slug, EMAIL_SECS);
   const st = await loadServerState(t.id);
   const cfg = toTournamentCfg(st);
   const summary = tournamentSummary(cfg, toEntries(st.entries));

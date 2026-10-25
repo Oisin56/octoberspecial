@@ -3,6 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { useTournament, type LiveTournament } from "@/lib/useTournament";
 import { rememberTournament } from "@/lib/recent";
+import { deviceId } from "@/lib/device";
 import type { CourseGeo } from "@/lib/gps";
 
 export interface ClientSession {
@@ -66,6 +67,28 @@ export function Providers({ slug, demo = false, children }: { slug: string; demo
   useEffect(() => {
     reloadSession();
   }, [reloadSession]);
+
+  // A private tournament: who's signed in decides what can be seen, so it's loaded again when that changes
+  const { isPrivate, refresh } = live;
+  const who = session ? `${session.role}:${session.playerId ?? session.fanId ?? ""}` : "";
+  useEffect(() => {
+    if (isPrivate && sessionReady) refresh();
+  }, [who, isPrivate, sessionReady, refresh]);
+
+  // Watching without a name: counted once a day for "and 23 others watching"
+  const watching = sessionReady && !session && !!tname && !demo;
+  useEffect(() => {
+    if (!watching) return;
+    try {
+      const key = `mgs_viewed_${slug}`;
+      const today = new Date().toISOString().slice(0, 10);
+      if (localStorage.getItem(key) === today) return;
+      localStorage.setItem(key, today);
+      fetch("/api/viewed", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ t: slug, device: deviceId() }) }).catch(() => {});
+    } catch {
+      /* private browsing: not counted */
+    }
+  }, [watching, slug]);
 
   const href = useCallback((path: string) => `/t/${slug}${path === "/" ? "" : path}`, [slug]);
   const api = useCallback(

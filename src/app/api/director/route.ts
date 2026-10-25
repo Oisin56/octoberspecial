@@ -1,4 +1,5 @@
 import { adminClient } from "@/lib/admin";
+import { withSignedLinks } from "@/lib/files";
 import { isOrganiser } from "@/lib/auth";
 import { bad, context, json, DEMO_READONLY } from "@/lib/server-data";
 import { mediaUrl } from "@/lib/supabase";
@@ -32,7 +33,7 @@ function origin(req: Request) {
   return `${proto}://${host}`;
 }
 
-export async function POST(req: Request) {
+async function handle(req: Request) {
   const b = await req.json().catch(() => ({}));
   const { t, session, demo } = await context(req, b);
   if (!t) return bad("Tournament not found", 404);
@@ -181,3 +182,6 @@ export async function POST(req: Request) {
       return bad("Unknown action");
   }
 }
+
+/** Links to a private tournament's files in the answer work for an hour */
+export const POST = withSignedLinks(handle);

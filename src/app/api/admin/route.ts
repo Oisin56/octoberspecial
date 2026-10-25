@@ -80,10 +80,10 @@ export async function POST(req: Request) {
       type AccessRow = { id: string; pin_hash: string | null; link_code?: string | null; link_used_at?: string | null; email?: string | null };
       const full = await db.from("players").select("id,pin_hash,link_code,link_used_at,email").eq("tournament_id", t.id);
       const rows: AccessRow[] = full.error ? ((await db.from("players").select("id,pin_hash,link_code").eq("tournament_id", t.id)).data ?? []) : (full.data ?? []);
-      const fans = await db.from("fans").select("id,name,blocked,created_at").eq("tournament_id", t.id).order("created_at");
+      const fans = await db.from("fans").select("id,name,blocked,created_at,status,verified_at,email").eq("tournament_id", t.id).order("created_at");
       return json({
         state,
-        fans: fans.error ? [] : (fans.data ?? []),
+        fans: fans.error ? [] : (fans.data ?? []).map((f: { id: string; name: string; blocked: boolean; created_at: string; status?: string; verified_at?: string | null; email?: string | null }) => ({ id: f.id, name: f.name, blocked: f.blocked, created_at: f.created_at, status: f.status ?? "approved", asking: f.status === "asking" && (!!f.verified_at || !f.email) })),
         pinSet: Object.fromEntries(rows.map((p) => [p.id, !!p.pin_hash])),
         // A personal link made (and so, almost always, sent): the player can get in
         linkSet: Object.fromEntries(rows.map((p) => [p.id, !!p.link_code])),

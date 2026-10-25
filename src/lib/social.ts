@@ -32,10 +32,14 @@ export function tooFast(key: string, n: number, ms: number) {
   return false;
 }
 
-/** A fan who has been blocked by the organiser (or removed) can't post. */
+/** A follower can post and comment unless the organiser stopped them, removed them, or (private) hasn't let them in. */
 export async function fanAllowed(tournamentId: string, fanId: string) {
-  const { data } = await adminClient().from("fans").select("id,blocked").eq("id", fanId).eq("tournament_id", tournamentId).maybeSingle();
-  return !!data && !data.blocked;
+  const { data, error } = await adminClient().from("fans").select("id,blocked,status").eq("id", fanId).eq("tournament_id", tournamentId).maybeSingle();
+  if (error) {
+    const { data: old } = await adminClient().from("fans").select("id,blocked").eq("id", fanId).eq("tournament_id", tournamentId).maybeSingle();
+    return !!old && !old.blocked;
+  }
+  return !!data && !data.blocked && (data.status ?? "approved") === "approved";
 }
 
 /** Three reports from different people hide a post or comment until the organiser looks. */

@@ -145,6 +145,11 @@ function MoreSheet({ onClose }: { onClose: () => void }) {
               Organiser: run the tournament
             </Link>
           )}
+          {(session?.role === "organiser" || session?.role === "player") && (
+            <Link className="more-link" href={href("/following")} onClick={onClose}>
+              Who&apos;s following
+            </Link>
+          )}
           {PAGES.filter(([p]) => p !== "/feed" || state?.tournament.feed_on !== false).map(([p, label]) => (
             <Link key={p} className="more-link" href={href(p)} onClick={onClose}>
               {label}

@@ -188,6 +188,9 @@ function OrganiserHome({ data }: { data: AdminData }) {
   if (drafts.length && !firstPreview && !todo.some((x) => x.to === "#write"))
     todo.push({ text: `${drafts.length} ${drafts.length === 1 ? "draft is" : "drafts are"} waiting to be read.`, action: "Read them", to: "#write" });
 
+  const asking = (data.fans ?? []).filter((f) => f.asking).length;
+  const following = (data.fans ?? []).filter((f) => (f.status ?? "approved") === "approved").length;
+  if (asking) todo.unshift({ text: `${asking === 1 ? "Someone is" : `${asking} people are`} asking to follow.`, action: "See who", to: href("/following"), external: true });
   const theme = THEMES.find((x) => x.id === t.theme)?.name ?? "Custom";
   const tone = TONE_LABEL[t.tone]?.split(":")[0] ?? "";
   const posts = st.posts.length;
@@ -273,6 +276,10 @@ function OrganiserHome({ data }: { data: AdminData }) {
             <span>{status}</span>
           </a>
         ))}
+        <Link href={href("/following")} className={`org-tile org-tile-following${asking ? " attn" : ""}`}>
+          <strong>Who&apos;s following</strong>
+          <span>{asking ? `${asking} asking to follow` : following ? `${following} following` : t.privacy === "private" ? "Private: only people you let in" : "Friends and family"}</span>
+        </Link>
       </nav>
 
       <p className="org-foot">

@@ -215,9 +215,12 @@ export async function sessionsFor(a: Account): Promise<Record<string, Session>> 
     const s = r.role === "organiser" ? await organiserSession(r.tournament_id, "account", r.player_id) : r.player_id ? await playerSession(r.tournament_id, r.player_id, "account") : null;
     if (s) out[r.tournament_id] = s;
   }
-  // Followers who joined a tournament's conversation with this email
-  const { data: fans } = await adminClient().from("fans").select("id,name,tournament_id,blocked,verified_at").eq("email", String(a.email).toLowerCase());
-  for (const f of fans ?? []) if (!out[f.tournament_id] && f.verified_at && !f.blocked) out[f.tournament_id] = { role: "fan", name: f.name, fanId: f.id };
+  // Followers whose email was confirmed on the phone that gave it (never a row someone else typed this email into)
+  const { data: fans, error } = await adminClient().from("fans").select("id,name,tournament_id,blocked,verified_at,status").eq("email", String(a.email).toLowerCase());
+  for (const f of fans ?? []) {
+    const st = error ? "approved" : (f.status ?? "approved");
+    if (!out[f.tournament_id] && f.verified_at && (st === "approved" || st === "asking")) out[f.tournament_id] = { role: "fan", name: f.name, fanId: f.id };
+  }
   return out;
 }
 
@@ -233,6 +236,12 @@ export async function signIn(email: string): Promise<Account> {
     if (s.role !== "organiser" || s.via !== "create") continue;
     const { data: offer } = await db.from("account_offers").select("id").eq("tournament_id", tid).eq("role", "organiser").eq("email", a.email.toLowerCase()).is("answered_at", null).maybeSingle();
     if (offer) await answerOffer(a, offer.id, true).catch(() => {});
+  }
+  // A follower who gave this email on this phone: it's confirmed now (works on any phone, and lets a request to follow
+  // a private tournament reach the players)
+  for (const [tid, s] of Object.entries(await allSessions())) {
+    if (s.role === "fan" && s.fanId)
+      await db.from("fans").update({ verified_at: new Date().toISOString() }).eq("id", s.fanId).eq("tournament_id", tid).eq("email", a.email.toLowerCase()).is("verified_at", null);
   }
   await setAccount(a, await sessionsFor(a));
   await db.from("accounts").update({ last_seen_at: new Date().toISOString() }).eq("id", a.id).then(() => null, () => null);

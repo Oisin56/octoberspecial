@@ -45,7 +45,7 @@ export async function GET() {
   }
   try {
     const pub = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { auth: { persistSession: false } });
-    const v = await pub.from("public_tournaments").select("slug");
+    const v = await pub.from("open_tournaments").select("slug");
     db.public_read = v.error ? `ERROR: ${v.error.message}` : `${v.data.length} tournament(s) visible`;
     const r = await pub.from("rounds").select("id", { count: "exact", head: true });
     db.public_rounds = r.error ? `ERROR: ${r.error.message}` : r.count;

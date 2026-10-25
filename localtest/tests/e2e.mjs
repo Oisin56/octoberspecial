@@ -90,18 +90,14 @@ ok(vpost.status === 200, "a player posts a clip");
 ok((await post(neil, "/api/posts", { roundId: r1.id, hole: 9, body: "Trees off 9.", visibility: "report" })).status === 200, "report-only note");
 ok((await post(neil, "/api/posts", { body: "x", mediaPath: "../../etc/passwd" })).status === 400, "path traversal rejected");
 ok((await post(anon, "/api/posts", { body: "spam" })).status === 401, "anonymous can't post");
-// --- followers: join with name + email (16+, agree), confirmed by an emailed link; comment and post text only
-ok((await post(anon, "/api/comments", { postId: vpost.j.post.id, body: "Come on!" })).status === 401, "follower must join before commenting");
-ok((await post(anon, "/api/fans", { name: "Clodagh", email: "clodagh@example.com", consent: true })).status === 400, "joining needs the 16+ tick");
-ok((await post(anon, "/api/fans", { name: "Clodagh", email: "clodagh@example.com", over16: true })).status === 400, "joining needs the consent tick");
-const joined = await post(anon, "/api/fans", { name: "Clodagh", email: "Clodagh@Example.com", over16: true, consent: true });
-ok(joined.status === 200 && joined.j.sent === true, "join emails a sign-in link");
-const { execSync } = await import("node:child_process");
-const fanToken = execSync(`psql -h 127.0.0.1 -p 5433 -U postgres -tAc "select token from fans where lower(email)='clodagh@example.com'"`).toString().trim();
-ok(fanToken.length > 20, "link token stored");
-ok((await post(anon, "/api/fans", { action: "verify", token: "x".repeat(32) })).status === 410, "a made-up link is refused");
-const ver = await post(anon, "/api/fans", { action: "verify", token: fanToken });
-ok(ver.status === 200, "the emailed link signs the fan in");
+// --- followers: the first comment asks for a name and how they know the group (16+); an email is optional
+ok((await post(anon, "/api/comments", { postId: vpost.j.post.id, body: "Come on!" })).status === 401, "follower must say who they are before commenting");
+ok((await post(anon, "/api/fans", { action: "profile", name: "Clodagh", how: "Oisin's sister" })).status === 400, "it needs the 16+ tick");
+ok((await post(anon, "/api/fans", { action: "profile", name: "", over16: true })).status === 400, "and a name");
+ok((await post(anon, "/api/fans", { action: "ask", name: "Clodagh", how: "x", email: "c@example.com", over16: true })).status === 400, "asking to follow is for private tournaments");
+const joined = await post(anon, "/api/fans", { action: "profile", name: "Clodagh", how: "Oisin's sister", over16: true });
+ok(joined.status === 200 && !joined.j.confirm, "a name and how she knows them: in, no email needed");
+ok((await post(anon, "/api/fans", { action: "verify", token: "x".repeat(32) })).status === 410, "a made-up old join link is refused");
 const fanSess = await anon(`/api/login?t=${T}`);
 ok(fanSess.j.session?.role === "fan" && fanSess.j.session?.name === "Clodagh", "fan session");
 const fc = await post(anon, "/api/comments", { postId: vpost.j.post.id, body: "Come on!" });

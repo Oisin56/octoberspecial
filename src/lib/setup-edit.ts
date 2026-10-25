@@ -6,6 +6,7 @@ import { syncTripDates } from "./trip-dates";
 import { slugify } from "./server-data";
 import { drawBracket, knockoutGames, type Entrant, type Game, type RoundCfg, type TournamentCfg, type WinRule } from "./engine";
 import { normalizeRound, type CourseTee, type PlayerRow, type RoundRow, type TournamentRow } from "./types";
+import { moveFiles } from "./files";
 import { WizardError, cleanWizard, roundCourse } from "./wizard-server";
 import {
   courseRefOf,
@@ -25,7 +26,7 @@ import {
   type DayFormat,
 } from "./wizard";
 
-const SCOPES = /^(name|players|teams|win|points|groups|prizes|extras|look|about|addround|round:\d+|removeround:\d+)$/;
+const SCOPES = /^(name|players|teams|win|points|groups|prizes|extras|watch|look|about|addround|round:\d+|removeround:\d+)$/;
 export const validScope = (s: string) => SCOPES.test(s);
 
 /**
@@ -331,6 +332,17 @@ export async function applySetupEdit(t: TournamentRow, raw: unknown, scope: stri
     case "extras":
       await updateT({ feed_on: w.extras.feed, ai_on: w.extras.ai, auto_bulletins: w.extras.ai, video_enabled: w.extras.video, tone: w.tone, units: w.units, share_shape: w.share });
       break;
+
+    case "watch": {
+      // Private (or back to Friends and family): the files move to the locked store (or out of it) first
+      const toPrivate = w.privacy === "private";
+      if (toPrivate !== (t.privacy === "private")) {
+        await updateT({ privacy: w.privacy, players_need_email: !!w.playersNeedEmail });
+        await moveFiles(t.slug, toPrivate);
+        notes.push(toPrivate ? "It's private now: only the players and the people they let in can see it." : "Anyone with the link can watch it now.");
+      } else await updateT({ players_need_email: toPrivate && !!w.playersNeedEmail });
+      break;
+    }
 
     case "look": {
       // Their own colours stay until another look is picked

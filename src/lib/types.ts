@@ -61,6 +61,10 @@ export interface TournamentRow {
   win?: WinRule | null;
   /** Prizes alongside the winner */
   prizes?: Prize[] | null;
+  /** Who can watch: anyone with the link ("friends", the default) or only people let in ("private") */
+  privacy?: "friends" | "private";
+  /** Private: players sign in with their email as well as their link */
+  players_need_email?: boolean;
 }
 
 export interface SetupJob {

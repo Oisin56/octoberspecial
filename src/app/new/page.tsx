@@ -23,6 +23,7 @@ import {
   Screen,
   TeamsScreen,
   TeeScreen,
+  WatchScreen,
   WhenScreen,
   WhoScreen,
   WinMoreScreen,
@@ -229,6 +230,7 @@ export default function NewTournament() {
         {kind === "groups" && <GroupsScreen {...props} />}
         {kind === "prizes" && <PrizesScreen {...props} />}
         {kind === "extras" && <ExtrasScreen {...props} />}
+        {kind === "watch" && <WatchScreen {...props} />}
         {kind === "look" && <LookScreen {...props} />}
         {kind === "about" && <AboutScreen {...props} />}
         {kind === "safe" && <SafeStep d={d} setD={setD} me={me} onDone={(slug) => (forget(), router.push(`/t/${slug}/ready`))} onFix={go} />}
@@ -345,6 +347,9 @@ function Summary({ d, onFix }: { d: Draft; onFix: (step: string) => void }) {
           </Line>
         ))}
         {d.who !== "solo" && <Line step="prizes" onFix={onFix}>Prizes: {d.prizes.length ? d.prizes.map((p) => ({ ctp: "closest the pin", ld: "long drive", nines: "front 9 and back 9", birdies: "most birdies", gir: "most greens", skins: "skins", bestround: "best round" })[p.kind]).join(", ") : "none"}</Line>}
+        <Line step="watch" onFix={onFix}>
+          Who can watch: {d.privacy === "private" ? `private${d.playersNeedEmail ? ", players sign in with their email" : ""}` : "friends and family (anyone with the link)"}
+        </Line>
       </ul>
     </details>
   );

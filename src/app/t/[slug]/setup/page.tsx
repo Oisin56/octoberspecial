@@ -19,6 +19,7 @@ import {
   HandicapScreen,
   HolesScreen,
   LookScreen,
+  WatchScreen,
   NameScreen,
   PlayersScreen,
   PointsScreen,
@@ -324,6 +325,7 @@ export default function TournamentSetup() {
             {kind === "groups" && <GroupsScreen {...props} />}
             {kind === "prizes" && <PrizesScreen {...props} />}
             {kind === "extras" && <ExtrasScreen {...props} />}
+            {kind === "watch" && <WatchScreen {...props} />}
             {kind === "look" && <LookScreen {...props} />}
             {kind === "about" && <AboutScreen {...props} />}
             {kind !== "name" && <Problems d={edit.d} />}
@@ -498,6 +500,7 @@ export default function TournamentSetup() {
       <h2 className="su-h">Extras and look</h2>
       <ul className="su-list">
         <Row label="The extras" value={extras ? extras.charAt(0).toUpperCase() + extras.slice(1) : "All off"} onChange={() => open("extras")} saved={tick("extras")} />
+        <Row label="Who can watch" value={t.privacy === "private" ? (t.players_need_email ? "Private, players sign in with their email" : "Private") : "Friends and family"} onChange={() => open("watch")} saved={tick("watch")} />
         <Row label="Look" value={THEMES.find((x) => x.id === t.theme)?.name ?? "Your own colours"} onChange={() => open("look")} saved={tick("look")} />
         {!solo && <Row label="About the players" value={lines ? `${lines} of ${ps.length} with a nickname or a line` : "Nothing yet"} onChange={() => open("about")} saved={tick("about")} />}
       </ul>

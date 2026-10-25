@@ -31,16 +31,38 @@ function body(req) {
   });
 }
 
+/** A stored file, with byte ranges (video seeking) */
+function serveFile(req, res, f) {
+  if (!fs.existsSync(f)) {
+    res.writeHead(404);
+    return res.end();
+  }
+  const buf = fs.readFileSync(f);
+  const ext = f.split(".").pop();
+  const ct = { webm: "video/webm", mp4: "video/mp4", mov: "video/quicktime", mp3: "audio/mpeg", jpg: "image/jpeg", png: "image/png", json: "application/json" }[ext] ?? "application/octet-stream";
+  const range = req.headers.range?.match(/bytes=(\d*)-(\d*)/);
+  if (range) {
+    const start = range[1] ? Number(range[1]) : 0;
+    const end = range[2] ? Math.min(Number(range[2]), buf.length - 1) : buf.length - 1;
+    res.writeHead(206, { "access-control-allow-origin": "*", "content-type": ct, "accept-ranges": "bytes", "content-range": `bytes ${start}-${end}/${buf.length}`, "content-length": end - start + 1 });
+    return res.end(buf.subarray(start, end + 1));
+  }
+  res.writeHead(200, { "access-control-allow-origin": "*", "content-type": ct, "accept-ranges": "bytes", "content-length": buf.length });
+  return res.end(req.method === "HEAD" ? undefined : buf);
+}
+
 http
   .createServer(async (req, res) => {
     const u = new URL(req.url, "http://x");
     if (u.pathname.startsWith("/rest/v1/")) return proxy(req, res, req.url.replace("/rest/v1", ""));
 
-    // storage: create signed upload url
-    let m = u.pathname.match(/^\/storage\/v1\/object\/upload\/sign\/media\/(.+)$/);
+    // storage: two buckets, "media" (public) and "media-private" (locked: read with signed links only)
+    const fileOf = (bucket, key) => path.join(FILES, bucket === "media-private" ? "__private__" : "", decodeURIComponent(key));
+    const BK = "(media|media-private)";
+    let m = u.pathname.match(new RegExp(`^/storage/v1/object/upload/sign/${BK}/(.+)$`));
     if (m && req.method === "POST") {
       res.writeHead(200, { "content-type": "application/json" });
-      return res.end(JSON.stringify({ url: `/object/upload/sign/media/${m[1]}?token=tok123` }));
+      return res.end(JSON.stringify({ url: `/object/upload/sign/${m[1]}/${m[2]}?token=tok123` }));
     }
     if (m && req.method === "PUT") {
       let b = await body(req);
@@ -61,39 +83,67 @@ http
         const hdrEnd = filePart.indexOf("\r\n\r\n");
         b = filePart.subarray(hdrEnd + 4);
       }
-      const f = path.join(FILES, m[1]);
+      const f = fileOf(m[1], m[2]);
       fs.mkdirSync(path.dirname(f), { recursive: true });
       fs.writeFileSync(f, b);
       res.writeHead(200, { "content-type": "application/json", "access-control-allow-origin": "*" });
-      return res.end(JSON.stringify({ Key: `media/${m[1]}` }));
+      return res.end(JSON.stringify({ Key: `${m[1]}/${m[2]}` }));
+    }
+    // signed links to read (createSignedUrls / createSignedUrl), and reading through them
+    m = u.pathname.match(new RegExp(`^/storage/v1/object/sign/${BK}$`));
+    if (m && req.method === "POST") {
+      const b = JSON.parse((await body(req)).toString() || "{}");
+      res.writeHead(200, { "content-type": "application/json" });
+      return res.end(JSON.stringify((b.paths || []).map((p) => ({ path: p, signedURL: `/object/sign/${m[1]}/${p}?token=signed-${b.expiresIn}`, error: null }))));
+    }
+    m = u.pathname.match(new RegExp(`^/storage/v1/object/sign/${BK}/(.+)$`));
+    if (m && req.method === "POST") {
+      const b = JSON.parse((await body(req)).toString() || "{}");
+      res.writeHead(200, { "content-type": "application/json" });
+      return res.end(JSON.stringify({ signedURL: `/object/sign/${m[1]}/${m[2]}?token=signed-${b.expiresIn}` }));
+    }
+    if (m && (req.method === "GET" || req.method === "HEAD")) {
+      if (!/^signed-/.test(u.searchParams.get("token") || "")) { res.writeHead(400); return res.end(); }
+      return serveFile(req, res, fileOf(m[1], m[2]));
+    }
+    if (u.pathname === "/storage/v1/object/copy" && req.method === "POST") {
+      const b = JSON.parse((await body(req)).toString() || "{}");
+      const from = fileOf(b.bucketId, b.sourceKey), to = fileOf(b.destinationBucket || b.bucketId, b.destinationKey);
+      if (!fs.existsSync(from)) { res.writeHead(404, { "content-type": "application/json" }); return res.end(JSON.stringify({ message: "Object not found" })); }
+      fs.mkdirSync(path.dirname(to), { recursive: true });
+      fs.copyFileSync(from, to);
+      res.writeHead(200, { "content-type": "application/json" });
+      return res.end(JSON.stringify({ Key: `${b.destinationBucket || b.bucketId}/${b.destinationKey}` }));
     }
     // storage.list(prefix) and storage.remove([paths]) (supabase-js)
-    if (u.pathname === "/storage/v1/object/list/media" && req.method === "POST") {
+    m = u.pathname.match(new RegExp(`^/storage/v1/object/list/${BK}$`));
+    if (m && req.method === "POST") {
       const b = JSON.parse((await body(req)).toString() || "{}");
-      const dir = path.join(FILES, b.prefix || "");
-      const names = fs.existsSync(dir) ? fs.readdirSync(dir, { withFileTypes: true }).map((d) => ({ name: d.name, id: d.isFile() ? "f-" + d.name : null })) : [];
+      const dir = fileOf(m[1], b.prefix || "");
+      const names = fs.existsSync(dir) ? fs.readdirSync(dir, { withFileTypes: true }).filter((d) => d.name !== "__private__").map((d) => ({ name: d.name, id: d.isFile() ? "f-" + d.name : null })) : [];
       res.writeHead(200, { "content-type": "application/json" });
-      return res.end(JSON.stringify(names.slice(0, b.limit || 100)));
+      return res.end(JSON.stringify(names.slice(b.offset || 0, (b.offset || 0) + (b.limit || 100))));
     }
-    if (u.pathname === "/storage/v1/object/media" && req.method === "DELETE") {
+    m = u.pathname.match(new RegExp(`^/storage/v1/object/${BK}$`));
+    if (m && req.method === "DELETE") {
       const b = JSON.parse((await body(req)).toString() || "{}");
       const gone = [];
-      for (const k of b.prefixes || []) { const f = path.join(FILES, k); if (fs.existsSync(f)) { fs.unlinkSync(f); gone.push({ name: k }); } }
+      for (const k of b.prefixes || []) { const f = fileOf(m[1], k); if (fs.existsSync(f)) { fs.unlinkSync(f); gone.push({ name: k }); } }
       res.writeHead(200, { "content-type": "application/json" });
       return res.end(JSON.stringify(gone));
     }
-    // direct server-side upload (supabase-js storage.upload)
-    let dm = u.pathname.match(/^\/storage\/v1\/object\/media\/(.+)$/);
+    // direct server-side upload (supabase-js storage.upload) and download
+    let dm = u.pathname.match(new RegExp(`^/storage/v1/object/${BK}/(.+)$`));
     if (dm && (req.method === "POST" || req.method === "PUT")) {
       const b = await body(req);
-      const f = path.join(FILES, decodeURIComponent(dm[1]));
+      const f = fileOf(dm[1], dm[2]);
       fs.mkdirSync(path.dirname(f), { recursive: true });
       fs.writeFileSync(f, b);
       res.writeHead(200, { "content-type": "application/json" });
-      return res.end(JSON.stringify({ Key: `media/${dm[1]}`, Id: "x" }));
+      return res.end(JSON.stringify({ Key: `${dm[1]}/${dm[2]}`, Id: "x" }));
     }
     if (dm && req.method === "GET") {
-      const f = path.join(FILES, decodeURIComponent(dm[1]));
+      const f = fileOf(dm[1], dm[2]);
       if (!fs.existsSync(f)) { res.writeHead(404, { "content-type": "application/json" }); return res.end(JSON.stringify({ statusCode: "404", error: "not_found", message: "Object not found" })); }
       res.writeHead(200, { "content-type": "application/octet-stream" });
       return res.end(fs.readFileSync(f));
@@ -107,25 +157,7 @@ http
       return res.end();
     }
     m = u.pathname.match(/^\/storage\/v1\/object\/(?:public|authenticated)\/media\/(.+)$/);
-    if (m) {
-      const f = path.join(FILES, m[1]);
-      if (!fs.existsSync(f)) {
-        res.writeHead(404);
-        return res.end();
-      }
-      const buf = fs.readFileSync(f);
-      const ext = f.split(".").pop();
-      const ct = { webm: "video/webm", mp4: "video/mp4", mov: "video/quicktime", mp3: "audio/mpeg", jpg: "image/jpeg", png: "image/png" }[ext] ?? "application/octet-stream";
-      const range = req.headers.range?.match(/bytes=(\d*)-(\d*)/);
-      if (range) {
-        const start = range[1] ? Number(range[1]) : 0;
-        const end = range[2] ? Math.min(Number(range[2]), buf.length - 1) : buf.length - 1;
-        res.writeHead(206, { "access-control-allow-origin": "*", "content-type": ct, "accept-ranges": "bytes", "content-range": `bytes ${start}-${end}/${buf.length}`, "content-length": end - start + 1 });
-        return res.end(buf.subarray(start, end + 1));
-      }
-      res.writeHead(200, { "access-control-allow-origin": "*", "content-type": ct, "accept-ranges": "bytes", "content-length": buf.length });
-      return res.end(buf);
-    }
+    if (m) return serveFile(req, res, path.join(FILES, m[1]));
 
     // ---- fake ElevenLabs Music
     if (u.pathname === "/v1/music") {

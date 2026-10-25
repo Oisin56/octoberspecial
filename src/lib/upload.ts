@@ -1,5 +1,7 @@
 "use client";
 
+import { rememberSigned } from "./supabase";
+
 /** Upload a file straight to storage with a one-time signed URL (asked for with `body`: t, contentType, filename). */
 export async function uploadBlob(file: Blob, body: Record<string, unknown>): Promise<string> {
   const r = await fetch("/api/upload-url", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
@@ -10,6 +12,8 @@ export async function uploadBlob(file: Blob, body: Record<string, unknown>): Pro
   fd.append("", file);
   const up = await fetch(String(j.signedUrl), { method: "PUT", body: fd, headers: { apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, "x-upsert": "false" } });
   if (!up.ok) throw new Error("Upload failed");
+  // A private tournament's file: the link to show it here straight away
+  if (j.readUrl) rememberSigned({ [String(j.path)]: String(j.readUrl) });
   return String(j.path);
 }
 

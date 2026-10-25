@@ -9,6 +9,7 @@ import { Paras, timeAgo } from "./ui";
 import { cleanBody, cleanTitle } from "@/lib/cleanText";
 import { clipUrl, mediaUrl } from "@/lib/supabase";
 import { deviceId, myLikerKey, readIds, writeIds } from "@/lib/device";
+import { MARKETING_WORDING } from "@/lib/consent";
 import { setPendingClip } from "@/lib/pendingClip";
 import { clipFile, prefetchClip } from "@/lib/shareFile";
 import { currentHole } from "@/lib/scorePos";
@@ -818,66 +819,101 @@ function MenuSheet({
   );
 }
 
+/**
+ * The first time a follower comments or shares a photo: their name and how they know the group, once (remembered on
+ * this phone). An email is optional: confirmed with a code, it works on any phone and gets them the trip film.
+ */
 function JoinSheet({ why, onClose, say }: { why: string; onClose: () => void; say: (m: string) => void }) {
   const { state, api, reloadSession } = useT();
   const [name, setName] = useState("");
+  const [how, setHow] = useState("");
   const [email, setEmail] = useState("");
+  const [marketing, setMarketing] = useState(false);
   const [over16, setOver16] = useState(false);
-  const [consent, setConsent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [sentTo, setSentTo] = useState<string | null>(null);
+  const [codeFor, setCodeFor] = useState<string | null>(null);
+  const [code, setCode] = useState("");
   const hp = useRef<HTMLInputElement>(null);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setErr(null);
-    if (!over16 || !consent) return setErr("Tick both boxes to join");
+    if (!over16) return setErr("Tick the box to say you're 16 or over");
     setBusy(true);
-    const r = await api("/api/fans", { name, email, over16, consent, website: hp.current?.value ?? "" });
+    const r = await api("/api/fans", { action: "profile", name, how, email: email.trim(), marketing, over16, website: hp.current?.value ?? "" });
     setBusy(false);
     if (!r.ok) return setErr(String(r.j.error ?? "That didn't work. Try again."));
-    if (r.j.signedIn) {
-      await reloadSession();
-      onClose();
-      return say(`You're in, ${name.split(" ")[0]}`);
-    }
-    setSentTo(email.trim());
+    await reloadSession();
+    if (r.j.confirm) return setCodeFor(email.trim());
+    onClose();
+    say(`You're in, ${name.split(" ")[0]}`);
+  }
+
+  async function confirm(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setErr(null);
+    const r = await fetch("/api/account", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "code", email: codeFor, code }) }).catch(() => null);
+    const j = r ? await r.json().catch(() => ({})) : {};
+    setBusy(false);
+    if (!r?.ok) return setErr(String(j.error ?? "That code didn't work."));
+    await reloadSession();
+    onClose();
+    say("Your email's confirmed");
   }
 
   const tname = state?.tournament.name ?? "this tournament";
-  if (sentTo)
+  if (codeFor)
     return (
-      <Sheet label="Check your email" onClose={onClose}>
-        <div className="sf-join">
-          <p className="sf-join-big">
-            We&apos;ve sent a link to <strong>{sentTo}</strong>.
+      <Sheet label="Confirm your email" onClose={onClose}>
+        <form className="sf-join" onSubmit={confirm}>
+          <p className="sf-join-big">You&apos;re in. One more thing:</p>
+          <p>
+            We&apos;ve emailed a code to <strong>{codeFor}</strong>. Type it here to comment from any phone and get the trip film. Or do it later from the email.
           </p>
-          <p>Tap the button in the email and you&apos;re in. It works for 2 days. Nothing there? Look in junk or spam.</p>
-          <button className="btn block" onClick={onClose}>
-            Done
+          <label className="sf-field">
+            <span>The code from the email</span>
+            <input className="si-code" value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))} inputMode="numeric" autoComplete="one-time-code" />
+          </label>
+          {err && <p className="error">{err}</p>}
+          <button className="btn block" disabled={busy || code.length !== 6}>
+            {busy ? "Checking…" : "Confirm my email"}
           </button>
-          <button className="btn secondary block" onClick={() => setSentTo(null)}>
-            Use a different email
+          <button type="button" className="btn secondary block" onClick={onClose}>
+            Later
           </button>
-        </div>
+        </form>
       </Sheet>
     );
 
   return (
-    <Sheet label="Join the conversation" onClose={onClose}>
+    <Sheet label="Before you comment" onClose={onClose}>
       <form className="sf-join" onSubmit={submit}>
         <p className="sf-join-lede">
-          {why === "comment" ? "Comment" : "Share photos and comment"} on {tname}. Use your own name. We&apos;ll email you a link to sign in: no password.
+          {why === "comment" ? "Before your first comment" : "Before your first photo"} on {tname}, tell the players who you are. We&apos;ll remember it on this phone.
         </p>
         <label className="sf-field">
           <span>Your name</span>
           <input value={name} onChange={(e) => setName(e.target.value)} maxLength={40} autoComplete="name" required />
         </label>
         <label className="sf-field">
-          <span>Your email</span>
-          <input type="email" inputMode="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" autoCapitalize="none" required />
+          <span>How do you know the group?</span>
+          <input value={how} onChange={(e) => setHow(e.target.value)} maxLength={60} placeholder="For example, Neil's brother" />
         </label>
+        <label className="sf-field">
+          <span>Your email (optional)</span>
+          <input type="email" inputMode="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" autoCapitalize="none" />
+          <small>Comment from any phone, and get the trip film.</small>
+        </label>
+        {email.trim() && (
+          <button type="button" className="cd-film-only" role="switch" aria-checked={marketing} onClick={() => setMarketing((v) => !v)}>
+            <span className="box" aria-hidden="true">
+              {marketing ? "✓" : ""}
+            </span>
+            <span>{MARKETING_WORDING}</span>
+          </button>
+        )}
         <input ref={hp} name="website" tabIndex={-1} autoComplete="off" className="sf-hp" aria-hidden="true" />
         <button type="button" className="cd-film-only" role="switch" aria-checked={over16} onClick={() => setOver16((v) => !v)}>
           <span className="box" aria-hidden="true">
@@ -887,19 +923,13 @@ function JoinSheet({ why, onClose, say }: { why: string; onClose: () => void; sa
             <strong>I&apos;m 16 or over</strong>
           </span>
         </button>
-        <button type="button" className="cd-film-only" role="switch" aria-checked={consent} onClick={() => setConsent((v) => !v)}>
-          <span className="box" aria-hidden="true">
-            {consent ? "✓" : ""}
-          </span>
-          <span>
-            <strong>I agree</strong>
-            <small>My name, posts and comments are shown on this page. My email is only used to sign me in.</small>
-          </span>
-        </button>
         {err && <p className="error">{err}</p>}
         <button className="btn block sf-join-go" disabled={busy}>
-          {busy ? "Sending…" : "Email me a link"}
+          {busy ? "Saving…" : "Carry on"}
         </button>
+        <p className="small muted" style={{ margin: 0 }}>
+          The players will see you&apos;re following. By continuing you agree to the <Link href="/privacy">privacy policy</Link>.
+        </p>
       </form>
     </Sheet>
   );

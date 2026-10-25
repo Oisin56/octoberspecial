@@ -219,6 +219,8 @@ function Inner({ onStep }: { onStep?: (s: SampleStep) => void }) {
       names: Object.fromEntries(state.players.map((p) => [p.id, p.name])),
       loading: false,
       error: null,
+      gate: null,
+      isPrivate: false,
       refresh: async () => {},
       patch,
       demo: false,

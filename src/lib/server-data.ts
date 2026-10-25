@@ -21,15 +21,42 @@ export async function tournamentById(id: string): Promise<TournamentPrivate | nu
   return data;
 }
 
-/** Resolve the tournament named in a request (body.t or ?t=) + the caller's session for it. */
-export async function context(req: Request, body?: Record<string, unknown>) {
+/**
+ * Resolve the tournament named in a request (body.t or ?t=) + the caller's session for it. A private tournament is
+ * "not found" for anyone not let in, except on the routes that let people in (open: signing in, asking to follow).
+ */
+export async function context(req: Request, body?: Record<string, unknown>, opts: { open?: boolean } = {}) {
   const url = new URL(req.url);
   const slug = String(body?.t ?? url.searchParams.get("t") ?? "");
-  const t = await tournamentBySlug(slug);
-  const session: Session | null = t ? await stillGood(t, await getSession(t.id)) : null;
+  let t = await tournamentBySlug(slug);
+  let session: Session | null = t ? await stillGood(t, await getSession(t.id)) : null;
+  if (t && t.privacy === "private" && !opts.open && !(await canSee(t, session))) {
+    t = null;
+    session = null;
+  }
   // The example tournament on the front page can be looked at, never changed (except by the site owner)
   const demo = !!t && req.method !== "GET" && (await isDemo(t.slug)) && !(await isOwner());
   return { t, session: demo ? null : session, demo };
+}
+
+/** This phone's role in a tournament, checked (for pages and files outside the API). */
+export async function checkedSession(t: TournamentPrivate): Promise<Session | null> {
+  return stillGood(t, await getSession(t.id));
+}
+
+/** Who can look at a tournament: anyone in Friends and family; in a private one, its players and organisers, approved
+ *  followers, and the site owner. */
+export async function canSee(t: Pick<TournamentRow, "id" | "privacy">, s: Session | null): Promise<boolean> {
+  if (t.privacy !== "private") return true;
+  if (s?.role === "organiser" || s?.role === "player") return true;
+  if (s?.role === "fan" && s.fanId && (await fanStatus(t.id, s.fanId)) === "approved") return true;
+  return isOwner();
+}
+
+export async function fanStatus(tournamentId: string, fanId: string): Promise<"approved" | "asking" | "declined" | "removed" | null> {
+  const { data, error } = await adminClient().from("fans").select("status").eq("id", fanId).eq("tournament_id", tournamentId).maybeSingle();
+  if (error) return data ? "approved" : null;
+  return (data?.status as "approved") ?? null;
 }
 
 /**
@@ -45,7 +72,22 @@ async function stillGood(t: TournamentPrivate, s: Session | null): Promise<Sessi
     const { data: p, error } = await db.from("players").select("id,link_gen").eq("id", s.playerId).eq("tournament_id", t.id).maybeSingle();
     if (error) return s; // before the database update
     if (!p) return null;
-    return (s.gen ?? 0) === (p.link_gen ?? 0) ? s : null;
+    if ((s.gen ?? 0) !== (p.link_gen ?? 0)) return null;
+    // Private, with players signing in by email: their spot has to be joined to the email signed in here
+    if (t.players_need_email && t.privacy === "private") {
+      const a = await getAccount();
+      if (!a) return null;
+      const { data: j } = await db.from("account_tournaments").select("player_id").eq("account_id", a.id).eq("tournament_id", t.id).maybeSingle();
+      if (j?.player_id !== s.playerId) return null;
+    }
+    return s;
+  }
+  if (s.role === "fan") {
+    // A follower the organiser removed (or turned down) is just someone with the link now
+    if (!s.fanId) return null;
+    const st = await fanStatus(t.id, s.fanId);
+    // (turned down: still shown "waiting", but can't see or say anything)
+    return st === "approved" || st === "asking" || st === "declined" ? s : null;
   }
   if (s.role === "organiser") {
     switch (s.via) {
@@ -68,8 +110,8 @@ async function stillGood(t: TournamentPrivate, s: Session | null): Promise<Sessi
 
 export const DEMO_READONLY = "This is an example tournament, so nothing can be changed here. Start your own to try it for real.";
 
-/** Full state including hidden/report-only posts and drafts. Server only. */
-export async function loadServerState(tournamentId: string): Promise<TournamentState> {
+/** Full state including hidden/report-only posts and drafts (asPublic: only what followers see). Server only. */
+export async function loadServerState(tournamentId: string, opts: { asPublic?: boolean } = {}): Promise<TournamentState> {
   const db = adminClient();
   const { data: tournament, error } = await db.from("public_tournaments").select("*").eq("id", tournamentId).single();
   if (error || !tournament) throw new Error("Tournament not found");
@@ -77,9 +119,15 @@ export async function loadServerState(tournamentId: string): Promise<TournamentS
   const [players, rounds, posts, comments, pieces, votes] = await Promise.all([
     db.from("public_players").select("*").eq("tournament_id", tid).order("sort"),
     db.from("rounds").select("*").eq("tournament_id", tid).order("number"),
-    db.from("posts").select("*").eq("tournament_id", tid).order("created_at", { ascending: false }),
-    db.from("comments").select("*").eq("tournament_id", tid).order("created_at", { ascending: false }),
-    db.from("ai_pieces").select("*").eq("tournament_id", tid).order("created_at", { ascending: false }),
+    opts.asPublic
+      ? db.from("posts").select("*").eq("tournament_id", tid).eq("hidden", false).eq("visibility", "public").order("created_at", { ascending: false }).limit(500)
+      : db.from("posts").select("*").eq("tournament_id", tid).order("created_at", { ascending: false }),
+    opts.asPublic
+      ? db.from("comments").select("*").eq("tournament_id", tid).eq("hidden", false).order("created_at", { ascending: false }).limit(300)
+      : db.from("comments").select("*").eq("tournament_id", tid).order("created_at", { ascending: false }),
+    opts.asPublic
+      ? db.from("ai_pieces").select("*").eq("tournament_id", tid).eq("status", "published").order("created_at", { ascending: false })
+      : db.from("ai_pieces").select("*").eq("tournament_id", tid).order("created_at", { ascending: false }),
     db.from("votes").select("*").eq("tournament_id", tid),
   ]);
   const roundIds = (rounds.data ?? []).map((r: RoundRow) => r.id);

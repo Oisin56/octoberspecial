@@ -5,6 +5,7 @@ import { adminClient } from "./admin";
 import { loadServerState } from "./server-data";
 import { cardUrl, type CardSpec } from "./cards";
 import { mediaUrl } from "./supabase";
+import { fileUrl, plainUrl, primeFiles, signStoredLinks, slugOf, storeFor } from "./files";
 import { gameSummary, tournamentSummary } from "./engine";
 import { TONES, courseInfo, forecast } from "./ai";
 import { cleanBody, cleanTitle } from "./cleanText";
@@ -297,6 +298,8 @@ export function clipBugs(s: TournamentState, plan: Plan): Record<string, { befor
 /** What the server can see of each clip without a browser: its shape and length (noted when filmed) and its still. */
 export async function serverProbes(clips: PostRow[]): Promise<ClipProbe[]> {
   const out: ClipProbe[] = [];
+  const slug = clips.map((c) => slugOf(c.media_path ?? "")).find(Boolean);
+  await primeFiles(slug);
   let stills = 0;
   await Promise.all(
     clips.map(async (c) => {
@@ -321,7 +324,9 @@ export async function serverProbes(clips: PostRow[]): Promise<ClipProbe[]> {
 async function clipTranscript(slug: string, c: PostRow): Promise<{ text: string; words: { w: string; s: number; e: number }[] } | null> {
   if (!process.env.ELEVENLABS_API_KEY || !c.media_path) return null;
   const path = `transcripts/${slug}/${c.id}.json`;
-  const kept = await fetch(mediaUrl(path)!).catch(() => null);
+  await primeFiles(slug);
+  const keptUrl = await fileUrl(path);
+  const kept = keptUrl ? await fetch(keptUrl).catch(() => null) : null;
   if (kept?.ok) return (await kept.json().catch(() => null)) as { text: string; words: { w: string; s: number; e: number }[] } | null;
   try {
     const base = process.env.ELEVENLABS_BASE_URL || "https://api.elevenlabs.io";
@@ -334,7 +339,7 @@ async function clipTranscript(slug: string, c: PostRow): Promise<{ text: string;
     if (!r.ok) return null;
     const j = (await r.json()) as { text?: string; words?: { text: string; start: number; end: number; type?: string }[] };
     const out = { text: (j.text ?? "").trim(), words: (j.words ?? []).filter((w) => w.type !== "spacing" && w.text?.trim()).map((w) => ({ w: w.text.trim(), s: w.start, e: w.end })) };
-    await adminClient().storage.from("media").upload(path, JSON.stringify(out), { contentType: "application/json", upsert: true });
+    await (await storeFor(path)).upload(path, JSON.stringify(out), { contentType: "application/json", upsert: true });
     return out;
   } catch {
     return null;
@@ -729,9 +734,10 @@ export function defaultVoices() {
 }
 
 async function uploadBuffer(path: string, buf: ArrayBuffer | Buffer, contentType: string, upsert = false) {
-  const { error } = await adminClient().storage.from("media").upload(path, buf, { contentType, upsert });
+  const { error } = await (await storeFor(path)).upload(path, buf, { contentType, upsert });
   if (error) throw new Error(`Storage: ${error.message}`);
-  return mediaUrl(path)!;
+  // The plain address is kept in the film's plan; it becomes a working link when it's used (signStoredLinks)
+  return plainUrl(path);
 }
 
 /** The voice model: expressive Eleven v3 (understands delivery tags) unless ELEVENLABS_MODEL says otherwise. */
@@ -1239,10 +1245,12 @@ export async function whooshSound(): Promise<string | null> {
 }
 
 export async function shotstackRender(edit: Json): Promise<string> {
+  // A private tournament's clips and voices: links that work long enough for the render
+  const signedEdit = await signStoredLinks(edit);
   const r = await fetch(`${SHOTSTACK()}/render`, {
     method: "POST",
     headers: { "x-api-key": process.env.SHOTSTACK_API_KEY!, "content-type": "application/json" },
-    body: JSON.stringify(edit),
+    body: JSON.stringify(signedEdit),
   });
   const j = await r.json().catch(() => ({}));
   if (!r.ok || !j.response?.id) throw new Error(`Shotstack didn't accept the edit (${r.status}): ${JSON.stringify(j).slice(0, 300)}`);
@@ -1265,11 +1273,11 @@ export async function publishReel(tournamentId: string, slug: string, reelId: st
       const buf = await v.arrayBuffer();
       if (buf.byteLength <= 50 * 1024 * 1024) {
         path = `video/${slug}/reel-${reelId}.mp4`;
-        await adminClient().storage.from("media").upload(path, buf, { contentType: "video/mp4", upsert: true });
+        await (await storeFor(path)).upload(path, buf, { contentType: "video/mp4", upsert: true });
         // its still frame sits next to it, like a clip's
         if (posterUrl) {
           const pr = await fetch(posterUrl).catch(() => null);
-          if (pr?.ok) await adminClient().storage.from("media").upload(`${path}.jpg`, await pr.arrayBuffer(), { contentType: "image/jpeg", upsert: true });
+          if (pr?.ok) await (await storeFor(path)).upload(`${path}.jpg`, await pr.arrayBuffer(), { contentType: "image/jpeg", upsert: true });
         }
       }
     }

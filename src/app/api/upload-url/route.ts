@@ -2,6 +2,7 @@ import { adminClient } from "@/lib/admin";
 import { isCrew, isOwner } from "@/lib/auth";
 import { bad, context, json } from "@/lib/server-data";
 import { tooFast } from "@/lib/social";
+import { PRIVATE_BUCKET, VIEW_SECS, bucketFor } from "@/lib/files";
 
 const ALLOWED = /^(image\/(jpeg|png|webp|heic|heif)|video\/(mp4|quicktime|webm)|audio\/(mpeg|mp3|mp4|x-m4a|aac|wav|x-wav))$/;
 
@@ -24,7 +25,10 @@ export async function POST(req: Request) {
   const isPoster = type === "image/jpeg" && new RegExp(`^video/${t?.slug ?? "site"}/[\\w-]+\\.[a-z0-9]+$`).test(posterFor);
   if (body.posterFor && !isPoster) return bad("Bad poster");
   const path = isPoster ? `${posterFor}.jpg` : `${folder}/${t?.slug ?? "site"}/${crypto.randomUUID()}.${ext}`;
-  const { data, error } = await adminClient().storage.from("media").createSignedUploadUrl(path);
+  // A private tournament's files go in the locked store, and the phone gets a link to show what it just sent
+  const bucket = await bucketFor(t?.slug);
+  const { data, error } = await adminClient().storage.from(bucket).createSignedUploadUrl(path);
   if (error || !data) return bad(error?.message ?? "Upload not available", 500);
-  return json({ path, token: data.token, signedUrl: data.signedUrl });
+  const readUrl = bucket === PRIVATE_BUCKET ? ((await adminClient().storage.from(bucket).createSignedUrl(path, VIEW_SECS)).data?.signedUrl ?? null) : null;
+  return json({ path, token: data.token, signedUrl: data.signedUrl, readUrl });
 }

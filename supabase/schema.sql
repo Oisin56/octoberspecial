@@ -335,7 +335,10 @@ create policy read_all on votes for select using (true);
 -- tournaments + players: public reads go through views without the PIN columns
 drop policy if exists read_all on tournaments;
 revoke select on tournaments from anon, authenticated;
-drop view if exists public_tournaments;
+-- Stage 2 (who can watch): the view below shows these
+alter table tournaments add column if not exists privacy text not null default 'friends';
+alter table tournaments add column if not exists players_need_email boolean not null default false;
+drop view if exists public_tournaments cascade;
 -- Phase C: how it's won (points, or running Stableford / stroke-play totals), the extras switched on,
 -- and what's still being got ready after the setup wizard
 alter table tournaments add column if not exists standings text not null default 'points';
@@ -358,13 +361,14 @@ alter table hole_entries add constraint hole_entries_hole_check check (hole betw
 create view public_tournaments with (security_invoker = false) as
   select id, slug, name, subtitle, start_date, end_date, theme, custom_colors, logo_path, hero_path, tone,
          side_games, side_games_by, teams, auto_bulletins, video_enabled, organiser_player_id, published, created_at, reel_music_path,
-         require_attestation, broadcast_on, broadcast_cap_cents, standings, feed_on, ai_on, setup_jobs, units, share_shape, win, prizes
+         require_attestation, broadcast_on, broadcast_cap_cents, standings, feed_on, ai_on, setup_jobs, units, share_shape, win, prizes,
+         privacy, players_need_email
   from tournaments;
 grant select on public_tournaments to anon, authenticated;
 
 drop policy if exists read_all on players;
 revoke select on players from anon, authenticated;
-drop view if exists public_players;
+drop view if exists public_players cascade;
 create view public_players with (security_invoker = false) as
   select id, tournament_id, name, nickname, handicap, home_club, bio, best_club,
          worst_club, weakness, quote, photo_path, sort, team_id,
@@ -484,7 +488,7 @@ create table if not exists gps_readings (
 create index if not exists gps_readings_round_idx on gps_readings (round_id, hole, player_id);
 alter table gps_readings enable row level security;
 -- Public reads leave out where people were standing
-drop view if exists public_gps;
+drop view if exists public_gps cascade;
 create view public_gps with (security_invoker = false) as
   select id, tournament_id, round_id, hole, player_id, client_id, accuracy, to_front, to_middle, to_back, from_tee, source, seq, ignored, author_name, taken_at
   from gps_readings;
@@ -634,3 +638,88 @@ notify pgrst, 'reload schema';
 update accounts set email = lower(email) where email <> lower(email);
 update fans set email = lower(email) where email <> lower(email);
 update subscribers set email = lower(email) where email <> lower(email);
+
+-- ------------------------------------------------------------ stage 2: who can watch
+-- Friends and family (anyone with the link) or Private (players, organisers and approved followers only).
+alter table tournaments add column if not exists privacy text not null default 'friends';
+alter table tournaments drop constraint if exists tournaments_privacy_check;
+alter table tournaments add constraint tournaments_privacy_check check (privacy in ('friends', 'private'));
+alter table tournaments add column if not exists players_need_email boolean not null default false;
+
+create or replace function private_tournament(tid uuid) returns boolean language sql stable security definer set search_path = public as
+  $$ select exists (select 1 from tournaments where id = tid and privacy = 'private') $$;
+create or replace function private_round(rid uuid) returns boolean language sql stable security definer set search_path = public as
+  $$ select exists (select 1 from rounds r join tournaments t on t.id = r.tournament_id where r.id = rid and t.privacy = 'private') $$;
+grant execute on function private_tournament(uuid), private_round(uuid) to anon, authenticated, service_role;
+
+-- What the browser can read directly: never anything from a private tournament (the site's server serves those to
+-- the people let in). Live updates follow the same rules.
+drop policy if exists read_all on rounds;
+create policy read_all on rounds for select using (not private_tournament(tournament_id));
+drop policy if exists read_all on hole_entries;
+create policy read_all on hole_entries for select using (not private_round(round_id));
+drop policy if exists read_all on attestations;
+create policy read_all on attestations for select using (not private_round(round_id));
+drop policy if exists read_all on cards;
+create policy read_all on cards for select using (not private_round(round_id));
+drop policy if exists read_all on card_signatures;
+create policy read_all on card_signatures for select using (not private_round(round_id));
+drop policy if exists read_all on likes;
+create policy read_all on likes for select using (not private_tournament(tournament_id));
+drop policy if exists read_all on shots;
+create policy read_all on shots for select using (not private_tournament(tournament_id));
+drop policy if exists read_public on posts;
+create policy read_public on posts for select using (not hidden and visibility = 'public' and not private_tournament(tournament_id));
+drop policy if exists read_public on comments;
+create policy read_public on comments for select using (not hidden and not private_tournament(tournament_id));
+drop policy if exists read_published on ai_pieces;
+create policy read_published on ai_pieces for select using (status = 'published' and not private_tournament(tournament_id));
+drop policy if exists read_all on votes;
+create policy read_all on votes for select using (not private_tournament(tournament_id));
+
+-- The browser's views: the same columns as the server's, without private tournaments. The server's own views
+-- (public_*) are no longer readable from the browser.
+drop view if exists open_tournaments;
+create view open_tournaments with (security_invoker = false) as
+  select * from public_tournaments where not private_tournament(id);
+drop view if exists open_players;
+create view open_players with (security_invoker = false) as
+  select * from public_players where not private_tournament(tournament_id);
+drop view if exists open_gps;
+create view open_gps with (security_invoker = false) as
+  select * from public_gps where not private_tournament(tournament_id);
+grant select on open_tournaments, open_players, open_gps to anon, authenticated;
+revoke select on public_tournaments, public_players, public_gps from anon, authenticated;
+grant select on public_tournaments, public_players, public_gps to service_role;
+
+-- Followers: a name and how they know the group is enough (an email is optional, and confirmed before it counts).
+-- In a private tournament they ask to follow, with an email, and a player or organiser approves.
+alter table fans alter column email drop not null;
+alter table fans add column if not exists how_known text;
+alter table fans add column if not exists photo_path text;
+alter table fans add column if not exists status text not null default 'approved';
+alter table fans drop constraint if exists fans_status_check;
+alter table fans add constraint fans_status_check check (status in ('approved', 'asking', 'declined', 'removed'));
+alter table fans add column if not exists decided_by text;
+alter table fans add column if not exists decided_at timestamptz;
+alter table fans add column if not exists reminded_at timestamptz;     -- organisers told it's waiting
+alter table fans add column if not exists marketing_at timestamptz;    -- ticked "send me news", and the words they saw
+alter table fans add column if not exists marketing_wording text;
+
+-- Phones that opened a tournament without giving a name ("and 23 others watching")
+create table if not exists viewers (
+  tournament_id uuid not null references tournaments(id) on delete cascade,
+  device text not null,
+  first_seen timestamptz not null default now(),
+  last_seen timestamptz not null default now(),
+  primary key (tournament_id, device)
+);
+alter table viewers enable row level security;   -- server only
+revoke all on viewers from anon, authenticated;
+grant all on viewers to service_role;
+
+-- Private tournaments' photos, clips and films: a locked store, opened by links that expire
+insert into storage.buckets (id, name, public, file_size_limit)
+values ('media-private', 'media-private', false, 52428800)
+on conflict (id) do update set public = false, file_size_limit = 52428800;
+notify pgrst, 'reload schema';

@@ -149,6 +149,8 @@ export function cleanWizard(raw: unknown): Wizard {
     tone: (Object.keys(TONE_LABEL) as Tone[]).includes(w.tone as Tone) ? w.tone : "broadsheet",
     units: w.units === "metres" ? "metres" : "yards",
     share: w.share === "landscape" ? "landscape" : "portrait",
+    privacy: w.privacy === "private" ? "private" : "friends",
+    playersNeedEmail: w.privacy === "private" && w.playersNeedEmail === true,
     theme: THEMES.some((t) => t.id === w.theme) && w.theme !== "custom" ? (w.theme as ThemeId) : "spring",
   };
   const p = problems(out);
@@ -262,6 +264,8 @@ export async function createFromWizard(w: Wizard): Promise<Created> {
     auto_bulletins: w.extras.ai,
     standings: standingsOf(w.win),
     feed_on: w.extras.feed,
+    privacy: w.privacy ?? "friends",
+    players_need_email: !!w.playersNeedEmail,
     ai_on: w.extras.ai,
     units: w.units ?? "yards",
     share_shape: w.share ?? "portrait",

@@ -78,6 +78,8 @@ export function fromState(s: Pick<TournamentState, "tournament" | "players" | "r
     tone: t.tone ?? "broadsheet",
     units: t.units ?? "yards",
     share: t.share_shape ?? "portrait",
+    privacy: t.privacy === "private" ? "private" : "friends",
+    playersNeedEmail: !!t.players_need_email,
     theme: t.theme,
     rounds: rounds.map((r) => {
       const format = formatOfRound(r, who);

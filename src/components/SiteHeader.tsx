@@ -19,7 +19,7 @@ const TABS = [
 
 export function SiteHeader() {
   const path = usePathname();
-  const { state, session, href } = useT();
+  const { state, session, href, gate } = useT();
   const live = state?.rounds.some((r) => r.status === "live");
   const canScore = session?.role === "organiser" || session?.role === "player";
   // Computers: the top tabs, plus Score during a round and Organiser for the organiser (phones use the bar at the foot)
@@ -42,7 +42,7 @@ export function SiteHeader() {
               <img src={logo} alt="" width={40} height={40} style={{ borderRadius: 6, objectFit: "cover" }} />
             )}
             <span>
-              {t?.name ?? "…"}
+              {t?.name ?? (gate ? "A private tournament" : "…")}
               {t?.subtitle && <small>{t.subtitle}</small>}
             </span>
           </Link>

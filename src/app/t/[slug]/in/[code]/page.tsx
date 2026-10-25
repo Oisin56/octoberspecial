@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useT } from "@/components/Providers";
 import { Loading } from "@/components/ui";
 import { landingPath } from "@/lib/landing";
+import { EmailSignIn } from "@/components/EmailSignIn";
 
 interface Look {
   name: string;
@@ -13,6 +14,9 @@ interface Look {
   signedInAs: string | null;
   joined: boolean;
   already: boolean;
+  privacy?: "friends" | "private";
+  /** Private, with players signing in by email too */
+  needEmail?: boolean;
 }
 
 /**
@@ -20,7 +24,7 @@ interface Look {
  * an email already? It asks whether this is them, so the tournament joins their My golf.
  */
 function LinkInner({ code }: { code: string }) {
-  const { state, api, reloadSession, href } = useT();
+  const { state, api, reloadSession, href, refresh } = useT();
   const router = useRouter();
   const e = useSearchParams().get("e") ?? undefined;
   const [look, setLook] = useState<Look | null>(null);
@@ -56,6 +60,8 @@ function LinkInner({ code }: { code: string }) {
     setBusy(false);
     if (!r.ok) return setErr({ used: r.status === 409, text: String(r.j.error ?? "That link didn't work.") });
     await reloadSession();
+    // A private tournament opens now that this phone is let in
+    await refresh();
     if (join || e) setSignedIn(true);
     setDone({ name: String(r.j.name), role: r.j.role === "organiser" ? "organiser" : "player", playerId: r.j.playerId ? String(r.j.playerId) : undefined });
   }
@@ -109,13 +115,36 @@ function LinkInner({ code }: { code: string }) {
         <p className="lead">
           You&apos;re signed in as <strong>{look.signedInAs}</strong>. Is this you playing in {state?.tournament.name ?? "this tournament"} as <strong>{look.name}</strong>?
         </p>
+        {look.privacy === "private" && <p className="link-watch">This tournament is private.</p>}
         <button className="btn block big" disabled={busy} onClick={() => confirm(true)}>
           Yes, that&apos;s me
         </button>
-        <button className="btn secondary block" disabled={busy} onClick={() => confirm(false)}>
-          No, just sign this phone in as {look.name.split(" ")[0]}
-        </button>
+        {!look.needEmail && (
+          <button className="btn secondary block" disabled={busy} onClick={() => confirm(false)}>
+            No, just sign this phone in as {look.name.split(" ")[0]}
+          </button>
+        )}
         {privacy}
+      </div>
+    );
+
+  const who = (
+    <p className="link-watch">{look.privacy === "private" ? "This tournament is private: only the players and the people they let in can see it." : "Friends and family can follow this tournament."}</p>
+  );
+
+  if (look.needEmail && !look.signedInAs)
+    return (
+      <div className="stack link-in">
+        <div className="panel stack">
+          <h1>This link is for {look.name}</h1>
+          {who}
+        </div>
+        <EmailSignIn
+          level={2}
+          title="Sign in with your email"
+          lead="This tournament asks players to sign in with their email as well as their link. We'll send you a code."
+          onSignedIn={() => window.location.reload()}
+        />
       </div>
     );
 
@@ -123,6 +152,7 @@ function LinkInner({ code }: { code: string }) {
     <div className="panel stack link-in">
       <p className="link-for">{state?.tournament.name ?? ""}</p>
       <h1>This link is for {look.name}</h1>
+      {who}
       <button className="btn block big link-me" disabled={busy} onClick={() => confirm(!!look.signedInAs)}>
         {busy ? "Signing in…" : `I'm ${look.name.split(" ")[0]}`}
       </button>

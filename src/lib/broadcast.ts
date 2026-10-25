@@ -5,6 +5,7 @@ import { loadServerState, type TournamentPrivate } from "./server-data";
 import { buildTimeline, clipBugs, configured, shotstackRender, shotstackStatus } from "./director";
 import { segmentSeconds, type CardSegment, type ClipSegment, type Plan } from "./director-types";
 import { mediaUrl } from "./supabase";
+import { storeFor } from "./files";
 import { gameHole, gameShots } from "./engine";
 import { toEntries, toRoundCfg, toTournamentCfg, type PostRow, type TournamentState } from "./types";
 
@@ -153,14 +154,14 @@ export async function finishRender(postId: string): Promise<string> {
   const v = await fetch(st.url).catch(() => null);
   if (!v?.ok) return "rendering";
   const path = `video/${t!.slug}/bc-${postId}.mp4`;
-  const { error } = await db.storage.from("media").upload(path, await v.arrayBuffer(), { contentType: "video/mp4", upsert: true });
+  const { error } = await (await storeFor(path)).upload(path, await v.arrayBuffer(), { contentType: "video/mp4", upsert: true });
   if (error) {
     console.error("[broadcast] store failed", error.message);
     return "rendering";
   }
   if (st.poster) {
     const pr = await fetch(st.poster).catch(() => null);
-    if (pr?.ok) await db.storage.from("media").upload(`${path}.jpg`, await pr.arrayBuffer(), { contentType: "image/jpeg", upsert: true });
+    if (pr?.ok) await (await storeFor(path)).upload(`${path}.jpg`, await pr.arrayBuffer(), { contentType: "image/jpeg", upsert: true });
   }
   await db.from("posts").update({ broadcast_status: "done", broadcast_path: path }).eq("id", postId);
   return "done";

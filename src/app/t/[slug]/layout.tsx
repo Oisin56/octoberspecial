@@ -8,6 +8,7 @@ import { SignPrompt } from "@/components/SignPrompt";
 import { LiveStrip } from "@/components/LiveStrip";
 import { TabBar } from "@/components/TabBar";
 import { GpsTab } from "@/components/GpsTab";
+import { PrivateGate } from "@/components/PrivateGate";
 import type { Metadata, Viewport } from "next";
 import { tournamentBySlug } from "@/lib/server-data";
 import { paletteFor } from "@/lib/themes";
@@ -19,7 +20,7 @@ export async function generateMetadata({ params }: LayoutProps<"/t/[slug]">): Pr
   return {
     // Add to Home Screen: a full-screen app that opens straight into the live round
     manifest: `/t/${slug}/app.webmanifest`,
-    appleWebApp: { capable: true, title: t?.name ?? BRAND.short, statusBarStyle: "default" },
+    appleWebApp: { capable: true, title: t && t.privacy !== "private" ? t.name : BRAND.short, statusBarStyle: "default" },
     icons: { apple: "/api/app-icon?s=180" },
     // Seen only by people given the link: kept out of search engines
     robots: { index: false, follow: false },
@@ -48,7 +49,9 @@ export default async function TournamentLayout({ children, params }: LayoutProps
         <LiveStrip />
         <ClipQueue />
         <SignPrompt />
-        <main className="wrap">{children}</main>
+        <main className="wrap">
+          <PrivateGate>{children}</PrivateGate>
+        </main>
         <TabBar />
         <GpsTab />
         <footer className="made-with">

@@ -264,6 +264,10 @@ export interface Wizard {
   units?: "yards" | "metres";
   /** Where the videos will mostly be shared: upright for phones (default), wide for YouTube and TV */
   share?: "portrait" | "landscape";
+  /** Who can watch: anyone with the link (default) or only the people let in */
+  privacy?: "friends" | "private";
+  /** Private: players sign in with their email as well as their link */
+  playersNeedEmail?: boolean;
 }
 
 /** The engine's win rule for these answers (the knockout's bracket is added when the players have ids). */

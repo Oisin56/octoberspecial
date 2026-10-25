@@ -6,7 +6,7 @@ import { clientIp, tooFast } from "@/lib/social";
 
 export async function GET(req: Request) {
   const account = await touch();
-  const { t, session } = await context(req);
+  const { t, session } = await context(req, undefined, { open: true });
   // The old PINs, while any are still in use here (the sign-in page offers them quietly)
   let pins = { organiser: false, players: false };
   if (t && new URL(req.url).searchParams.get("pins")) {
@@ -17,7 +17,7 @@ export async function GET(req: Request) {
 }
 
 export async function DELETE(req: Request) {
-  const { t } = await context(req);
+  const { t } = await context(req, undefined, { open: true });
   if (t) await clearSession(t.id);
   return json({ ok: true });
 }
@@ -26,7 +26,7 @@ export async function POST(req: Request) {
   if (crossSite(req)) return bad(CROSS_SITE, 403);
   const body = await req.json().catch(() => ({}));
   const mode = body.mode as "organiser" | "player" | "link";
-  const { t, session, demo } = await context(req, body);
+  const { t, session, demo } = await context(req, body, { open: true });
   if (!t) return bad("Tournament not found", 404);
   if (demo) return bad(DEMO_READONLY, 403);
   const db = adminClient();
@@ -47,9 +47,21 @@ export async function POST(req: Request) {
     if (p.link_used_at && !thisPhone && !theirs) return bad("This link has already been used. Ask the organiser for a new one.", 409);
 
     if (body.step !== "confirm") {
-      return json({ ok: true, name: p.name, playerId: p.id, signedInAs: account?.email ?? null, joined: theirs, already: thisPhone });
+      return json({
+        ok: true,
+        name: p.name,
+        playerId: p.id,
+        signedInAs: account?.email ?? null,
+        joined: theirs,
+        already: thisPhone,
+        privacy: t.privacy ?? "friends",
+        // Private, with players signing in by email too
+        needEmail: t.privacy === "private" && !!t.players_need_email,
+      });
     }
 
+    // Private, with players signing in by email too: only once they're signed in, and it's theirs
+    if (t.privacy === "private" && t.players_need_email && !emailed && !(account && (body.join === true || theirs))) return bad("Sign in with your email first", 403);
     // "I'm Neil": the link is used now (two phones at once: only the first gets it)
     if (!p.link_used_at) {
       const { data: took } = await db.from("players").update({ link_used_at: new Date().toISOString() }).eq("id", p.id).eq("tournament_id", t.id).is("link_used_at", null).select("id");

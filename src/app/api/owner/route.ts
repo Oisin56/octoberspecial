@@ -1,6 +1,7 @@
 import { adminClient } from "@/lib/admin";
 import { checkOwnerPin, getAccount, isOwner, isOwnerEmail, ownerClaimed, setOwner, setSession } from "@/lib/auth";
 import { SignInError, organiserSession } from "@/lib/accounts";
+import { FOLDERS, PRIVATE_BUCKET } from "@/lib/files";
 import { checkOwnerCode, checkOwnerLink, passkeyAnswer, passkeyCount, passkeyQuestion, passkeySave, passkeySetup, sendOwnerCode } from "@/lib/owner-check";
 import { bad, json, crossSite, CROSS_SITE } from "@/lib/server-data";
 import { clientIp, tooFast } from "@/lib/social";
@@ -34,7 +35,6 @@ const TABLES = [
 ] as const;
 /** Kept by round rather than by tournament. */
 const ROUND_TABLES = ["hole_entries", "attestations", "cards", "card_signatures"] as const;
-const FOLDERS = ["photo", "video", "audio", "image"];
 
 /** Site owner: am I the owner, and (if so) every tournament on the site. */
 export async function GET() {
@@ -288,17 +288,18 @@ export async function POST(req: Request) {
     if (String(b.name ?? "").trim().toLowerCase() !== String(t.name).trim().toLowerCase()) return bad("Type the tournament's name exactly to confirm");
     // Files first (photos, clips, films, music), then the tournament: everything else goes with it
     let files = 0;
-    for (const folder of FOLDERS) {
-      const prefix = `${folder}/${t.slug}`;
-      for (let round = 0; round < 50; round++) {
-        const { data: list } = await db.storage.from("media").list(prefix, { limit: 1000 });
-        const names = (list ?? []).filter((f) => f.name && f.id !== null).map((f) => `${prefix}/${f.name}`);
-        if (!names.length) break;
-        const { error } = await db.storage.from("media").remove(names);
-        if (error) break;
-        files += names.length;
+    for (const bucket of ["media", PRIVATE_BUCKET])
+      for (const folder of FOLDERS) {
+        const prefix = `${folder}/${t.slug}`;
+        for (let round = 0; round < 50; round++) {
+          const { data: list } = await db.storage.from(bucket).list(prefix, { limit: 1000 });
+          const names = (list ?? []).filter((f) => f.name && f.id !== null).map((f) => `${prefix}/${f.name}`);
+          if (!names.length) break;
+          const { error } = await db.storage.from(bucket).remove(names);
+          if (error) break;
+          files += names.length;
+        }
       }
-    }
     const { error } = await db.from("tournaments").delete().eq("id", t.id);
     if (error) return bad(error.message, 500);
     return json({ ok: true, files });
