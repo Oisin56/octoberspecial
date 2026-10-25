@@ -51,6 +51,11 @@ Oisin is a GP in Ireland, not a developer. Talk in plain words about what people
   wizard. `src/app/try` the sample round. `src/app/owner` the site owner's page.
 - `src/lib/research.ts` course research in the background (club site, hole pages, history), kept in the course
   library (`course_library` table) for every tournament at that course.
+- Sign-in: one per person, by email (a link and a 6-digit code, no password). `src/lib/accounts.ts` (codes, My golf,
+  "Is this you?" offers, joining player spots), `src/lib/auth.ts` (the cookie: a role per tournament, plus the account),
+  checked on every request by `context()` in `src/lib/server-data.ts`. Players get in with one-use personal links (Send
+  again bumps `players.link_gen`, signing old phones out). The site owner is the account with `OWNER_EMAIL`, plus a
+  second check (`src/lib/owner-check.ts`: passkey or emailed code); the old owner PIN works only until that's done once.
 - `src/lib/engine.ts` scoring (stroke, Stableford, match, team formats, handicaps); `live.ts` leaderboards;
   `sample.ts` the sample round; `screens.json` front page screen sizes and status bar colours.
 - `src/components/front/` the front page. Its phone screens are real app screens taken by
@@ -65,3 +70,4 @@ Oisin is a GP in Ireland, not a developer. Talk in plain words about what people
 - A test runner that crashes prints `Error`, not `FAIL`: check for both.
 - CSS class names are global; check a new class isn't already used (`.ph`, `.sf-label` have bitten before).
 - Times are Europe/Dublin.
+- Sign-in emails link to `SITE_URL`, so on a preview use the 6-digit code rather than the button.

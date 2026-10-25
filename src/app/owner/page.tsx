@@ -6,6 +6,7 @@ import { BRAND } from "@/lib/brand";
 import { useRouter } from "next/navigation";
 import { BRAND_SLOTS, MAX_TRACKS, dollars, type BrandSlot, type Shape } from "@/lib/film";
 import { mediaSeconds, uploadBlob } from "@/lib/upload";
+import { EmailSignIn } from "@/components/EmailSignIn";
 
 interface Films {
   brand: Partial<Record<BrandSlot, Partial<Record<Shape, { path: string; sec: number; src: string } | null>>>>;
@@ -61,7 +62,7 @@ export default function OwnerPage() {
   const [demo, setDemo] = useState<string | null>(null);
   const [mail, setMail] = useState<Mail | null>(null);
   const [library, setLibrary] = useState<LibraryRow[]>([]);
-  const [pin, setPin] = useState("");
+  const [gate, setGate] = useState<Gate | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [del, setDel] = useState<Row | null>(null);
@@ -71,6 +72,7 @@ export default function OwnerPage() {
   const load = useCallback(async () => {
     const j = await fetch("/api/owner").then((r) => r.json()).catch(() => ({ owner: false }));
     setOwner(!!j.owner);
+    setGate(j.owner ? null : { email: j.email ?? null, ownerAccount: !!j.ownerAccount, passkeys: j.passkeys ?? 0, pin: !!j.pin });
     setRows(j.tournaments ?? []);
     setFilms(j.films ?? null);
     setInvites(j.invites ?? []);
@@ -86,13 +88,21 @@ export default function OwnerPage() {
   const post = (body: Record<string, unknown>) =>
     fetch("/api/owner", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).then(async (r) => ({ ok: r.ok, j: await r.json().catch(() => ({})) }));
 
-  async function signin(e: React.FormEvent) {
-    e.preventDefault();
-    setErr(null);
-    const r = await post({ action: "signin", pin });
-    if (!r.ok) return setErr(r.j.error ?? "That didn't work");
-    load();
-  }
+  // Signed in, and through the check: on to where they were going (the wizard, say)
+  const inNow = useCallback(async () => {
+    const next = new URLSearchParams(window.location.search).get("next");
+    if (next && next.startsWith("/") && !next.startsWith("//")) return router.push(next);
+    await load();
+  }, [load, router]);
+
+  // The button in the check email lands here
+  useEffect(() => {
+    const token = new URLSearchParams(window.location.search).get("check");
+    if (!token) return;
+    history.replaceState(null, "", "/owner");
+    post({ action: "link", token }).then((r) => (r.ok ? inNow() : setErr(String(r.j.error ?? "That link didn't work. Ask for a new code.")))); 
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function open(t: Row) {
     setBusy(`open-${t.id}`);
@@ -138,16 +148,11 @@ export default function OwnerPage() {
       </header>
       <main className="wrap owner">
         <h1>Site owner</h1>
-        {owner === false && (
-          <form className="panel stack" style={{ maxWidth: 460 }} onSubmit={signin}>
-            <p className="lead">Every tournament on the site, for the site owner only.</p>
-            <div className="field">
-              <label htmlFor="opin">Site owner PIN</label>
-              <input id="opin" value={pin} onChange={(e) => setPin(e.target.value)} inputMode="numeric" autoComplete="off" autoFocus />
-            </div>
+        {owner === false && gate && (
+          <>
             {err && <p className="error">{err}</p>}
-            <button className="btn block big">Sign in</button>
-          </form>
+            <OwnerGate gate={gate} post={post} onIn={inNow} />
+          </>
         )}
         {owner && (
           <>
@@ -584,6 +589,184 @@ function FilmSettings({ films, post, reload }: { films: Films; post: Post; reloa
           </form>
         )}
       </div>
+    </section>
+  );
+}
+
+// ------------------------------------------------------------ getting in
+
+interface Gate {
+  email: string | null;
+  ownerAccount: boolean;
+  passkeys: number;
+  pin: boolean;
+}
+
+/**
+ * The site owner signs in with their email like everyone else, then a second check on this device: Face ID or
+ * Touch ID, or a code sent to their email. The old owner PIN works only until that's been done once.
+ */
+function OwnerGate({ gate, post, onIn }: { gate: Gate; post: (b: Record<string, unknown>) => Promise<{ ok: boolean; j: Record<string, unknown> }>; onIn: () => void }) {
+  const [step, setStep] = useState<"start" | "code" | "pin" | "offerFace">("start");
+  const [code, setCode] = useState("");
+  const [pin, setPin] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [face, setFace] = useState(false);
+  useEffect(() => {
+    let live = true;
+    import("@simplewebauthn/browser")
+      .then((m) => (m.browserSupportsWebAuthn() ? m.platformAuthenticatorIsAvailable() : false))
+      .then((ok) => live && setFace(!!ok))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  async function run(body: Record<string, unknown>) {
+    setBusy(true);
+    setErr(null);
+    const r = await post(body);
+    setBusy(false);
+    if (!r.ok) setErr(String(r.j.error ?? "That didn't work. Try again."));
+    return r;
+  }
+
+  async function useFace() {
+    const q = await run({ action: "faceQuestion" });
+    if (!q.ok) return;
+    try {
+      const { startAuthentication } = await import("@simplewebauthn/browser");
+      const response = await startAuthentication({ optionsJSON: q.j.options as Parameters<typeof startAuthentication>[0]["optionsJSON"] });
+      const a = await run({ action: "faceAnswer", response });
+      if (a.ok) onIn();
+    } catch {
+      setErr("Face ID was cancelled. Try again, or use the emailed code.");
+    }
+  }
+
+  async function setUpFace() {
+    const q = await run({ action: "faceSetup" });
+    if (!q.ok) return;
+    try {
+      const { startRegistration } = await import("@simplewebauthn/browser");
+      const response = await startRegistration({ optionsJSON: q.j.options as Parameters<typeof startRegistration>[0]["optionsJSON"] });
+      const a = await run({ action: "faceSave", response });
+      if (a.ok) onIn();
+    } catch {
+      setErr("Face ID wasn't set up. You can do it next time.");
+    }
+  }
+
+  if (step === "offerFace")
+    return (
+      <section className="panel stack sign-in" style={{ maxWidth: 480 }}>
+        <h2>Use Face ID next time?</h2>
+        <p className="lead">On this device, Face ID or Touch ID can do the check instead of an emailed code.</p>
+        {err && <p className="error">{err}</p>}
+        <button className="btn block big" disabled={busy} onClick={setUpFace}>
+          Set up Face ID
+        </button>
+        <button className="btn secondary block" onClick={onIn}>
+          Not now
+        </button>
+      </section>
+    );
+
+  if (step === "pin")
+    return (
+      <form
+        className="panel stack sign-in"
+        style={{ maxWidth: 480 }}
+        onSubmit={async (e) => {
+          e.preventDefault();
+          if ((await run({ action: "signin", pin })).ok) onIn();
+        }}
+      >
+        <div className="field">
+          <label htmlFor="opin">Site owner PIN</label>
+          <input id="opin" value={pin} onChange={(e) => setPin(e.target.value)} inputMode="numeric" autoComplete="off" autoFocus />
+        </div>
+        {err && <p className="error">{err}</p>}
+        <button className="btn block big" disabled={busy}>
+          Sign in
+        </button>
+        <button type="button" className="linklike" onClick={() => (setStep("start"), setErr(null))}>
+          Sign in with the owner&apos;s email instead
+        </button>
+      </form>
+    );
+
+  if (!gate.email)
+    return (
+      <div style={{ maxWidth: 520 }}>
+        <EmailSignIn title="Sign in" lead="The site owner signs in with their email, then confirms it's them on this device." next="/owner" onSignedIn={() => onIn()}>
+          {gate.pin && (
+            <button type="button" className="linklike" onClick={() => setStep("pin")}>
+              Use the site owner PIN
+            </button>
+          )}
+        </EmailSignIn>
+      </div>
+    );
+
+  if (!gate.ownerAccount)
+    return (
+      <section className="panel stack" style={{ maxWidth: 480 }}>
+        <p className="lead">
+          You&apos;re signed in as <strong>{gate.email}</strong>, which isn&apos;t the site owner&apos;s email.
+        </p>
+        <Link className="btn secondary block" href="/account">
+          Go to My golf
+        </Link>
+      </section>
+    );
+
+  if (step === "code")
+    return (
+      <form
+        className="panel stack sign-in"
+        style={{ maxWidth: 480 }}
+        onSubmit={async (e) => {
+          e.preventDefault();
+          if (!(await run({ action: "code", code })).ok) return;
+          if (face) setStep("offerFace");
+          else onIn();
+        }}
+      >
+        <h2>Check your email</h2>
+        <p className="lead">We&apos;ve sent a code to {gate.email}. Type it here, or tap the button in the email.</p>
+        <div className="field">
+          <label htmlFor="ow-code">The code from the email</label>
+          <input id="ow-code" className="si-code" value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))} inputMode="numeric" autoComplete="one-time-code" autoFocus />
+        </div>
+        {err && <p className="error">{err}</p>}
+        <button className="btn block big" disabled={busy || code.length !== 6}>
+          {busy ? "Checking…" : "Carry on"}
+        </button>
+      </form>
+    );
+
+  return (
+    <section className="panel stack sign-in" style={{ maxWidth: 480 }}>
+      <h2>Confirm it&apos;s you</h2>
+      <p className="lead">The site owner&apos;s page has everything on the site, so it asks for one more check on this device.</p>
+      {err && <p className="error">{err}</p>}
+      {gate.passkeys > 0 && face && (
+        <button className="btn block big" disabled={busy} onClick={useFace}>
+          Use Face ID
+        </button>
+      )}
+      <button
+        className={`btn block ${gate.passkeys > 0 && face ? "secondary" : "big"}`}
+        disabled={busy}
+        onClick={async () => {
+          if ((await run({ action: "sendCode" })).ok) setStep("code");
+        }}
+      >
+        Email me a code
+      </button>
     </section>
   );
 }

@@ -1,9 +1,8 @@
 import { after } from "next/server";
 import { adminClient } from "@/lib/admin";
 import { bad, context, json, loadServerState, type TournamentPrivate, DEMO_READONLY } from "@/lib/server-data";
-import { hashPin, isOrganiser, safeEqual, type Session } from "@/lib/auth";
+import { isOrganiser, type Session } from "@/lib/auth";
 import { cardInfo, roundStage } from "@/lib/scorecards";
-import { clientIp, tooFast } from "@/lib/social";
 import { roundFinal } from "@/lib/ai";
 import { toRoundCfg } from "@/lib/types";
 
@@ -12,7 +11,7 @@ export const maxDuration = 60;
 /**
  * A match's card at the end of the round.
  *   submit   the scorer hands the card in (final straight away, or once every player signs)
- *   sign     a player agrees with it: on their own phone, or on the scorer's with their PIN
+ *   sign     a player agrees with it: on their own phone, or with a tap on the scorer's
  *   flag     "something's not right": the scorer is told who and why
  *   reopen   take the card back to change it (signatures are cleared)
  *   finalise the organiser makes it final without every signature
@@ -81,7 +80,7 @@ export async function POST(req: Request) {
       if (info.stage !== "submitted") return bad(info.stage === "final" ? "This card is already final" : "The card hasn't been submitted yet");
       const playerId = String(b.playerId ?? "");
       if (!info.players.includes(playerId)) return bad("That player isn't in this match", 400);
-      const who = await mayActFor(t, session, playerId, String(b.pin ?? ""), scorer, req);
+      const who = await mayActFor(t, session, playerId, scorer);
       if (who !== true) return who;
       const name = s.players.find((p) => p.id === playerId)?.name ?? playerId;
       if (b.action === "flag") {
@@ -132,14 +131,10 @@ function allFinal(s: Parameters<typeof roundStage>[0], roundId: string) {
   return toRoundCfg(round, s.players).games.every((g) => cardInfo(s, roundId, g.id).stage === "final");
 }
 
-/** Signing or flagging for a player: that player on their own phone, their PIN on someone else's, or a tap if they have no PIN. */
-async function mayActFor(t: TournamentPrivate, session: Session, playerId: string, pin: string, scorer: boolean, req: Request): Promise<true | Response> {
+/** Signing or flagging for a player: that player on their own phone, or with a tap on the scorer's phone. */
+async function mayActFor(t: TournamentPrivate, session: Session, playerId: string, scorer: boolean): Promise<true | Response> {
   if (session.playerId === playerId) return true;
-  const { data: p } = await adminClient().from("players").select("pin_hash").eq("id", playerId).eq("tournament_id", t.id).maybeSingle();
+  const { data: p } = await adminClient().from("players").select("id").eq("id", playerId).eq("tournament_id", t.id).maybeSingle();
   if (!p) return bad("Player not found", 404);
-  if (!p.pin_hash) return scorer ? true : bad("Sign on the scorer's phone", 403);
-  if (!pin) return bad("Enter the PIN to sign", 401);
-  if (tooFast(`sign:${clientIp(req)}:${playerId}`, 8, 10 * 60e3)) return bad("Too many tries. Wait a few minutes.", 429);
-  if (!safeEqual(hashPin(pin), p.pin_hash)) return bad("That PIN isn't right", 401);
-  return true;
+  return scorer ? true : bad("Sign on the scorer's phone", 403);
 }

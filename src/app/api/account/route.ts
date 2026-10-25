@@ -1,78 +1,72 @@
-import { BRAND } from "@/lib/brand";
 import { adminClient } from "@/lib/admin";
-import { checkOwnerPin, clearAccount, getAccount, getSession, hashPin, safeEqual, setAccount, setSession } from "@/lib/auth";
-import { LINK_MINUTES, accountTournaments, linkTournament, newToken, organiserSession, organiserSessions, tokenHash } from "@/lib/accounts";
-import { EMAIL_RE, accountLinkEmail, mailConfigured, sendOne } from "@/lib/email";
-import { bad, json, siteOrigin, tournamentBySlug } from "@/lib/server-data";
+import { clearAccount, getAccount, getSession, isOwnerEmail, setSession, touch } from "@/lib/auth";
+import { SignInError, answerOffer, cleanEmail, myGolf, organiserSession, playerSession, redeemCode, redeemToken, sendSignIn, signIn } from "@/lib/accounts";
+import { bad, json, siteOrigin } from "@/lib/server-data";
 import { clientIp, tooFast } from "@/lib/social";
 
-/** Who's signed in, and their tournaments */
+/** Who's signed in, and My golf: the tournaments they run, play in and follow, and anything asking "Is this you?" */
 export async function GET() {
-  const account = await getAccount();
-  if (!account) return json({ account: null, tournaments: [] });
-  return json({ account, tournaments: await accountTournaments(account.id) });
+  const account = await touch();
+  if (!account) return json({ account: null });
+  const golf = await myGolf(account);
+  return json({ account, owner: isOwnerEmail(account.email), ...golf });
 }
 
 /**
- *   send    email a one-tap sign-in link
- *   verify  sign in from the link (works once, for 30 minutes)
- *   link    add a tournament you organise to your account (organiser already, or its organiser PIN)
+ *   send     {email, next?}   email a sign-in link and a 6-digit code
+ *   verify   {token}          sign in from the link (works once, for 30 minutes)
+ *   code     {email, code}    sign in with the code from the same email
+ *   answer   {offer, yes}     "Is this you?" on a tournament someone added you to
  *   signout
  */
 export async function POST(req: Request) {
   const b = await req.json().catch(() => ({}));
-  const db = adminClient();
-
-  if (b.action === "send") {
-    const email = String(b.email ?? "").trim().toLowerCase().slice(0, 200);
-    if (!EMAIL_RE.test(email)) return bad("That email address doesn't look right");
-    if (!mailConfigured()) return bad("Email isn't set up on this site yet, so sign-in by email isn't available.", 503);
-    if (tooFast(`acct:${clientIp(req)}`, 8, 3600e3) || tooFast(`acct:${email}`, 4, 3600e3)) return bad("Too many sign-in emails. Try again in a while.", 429);
-    const token = newToken();
-    const { error } = await db.from("account_tokens").insert({ token_hash: tokenHash(token), email, expires_at: new Date(Date.now() + LINK_MINUTES * 60e3).toISOString() });
-    if (error) return bad(/account_tokens/.test(error.message) ? "Sign-in needs the latest database update (schema.sql)" : "Couldn't send just now. Try again.", 500);
-    const next = typeof b.next === "string" && /^\/[\w/-]*$/.test(b.next) ? `&next=${encodeURIComponent(b.next)}` : "";
-    try {
-      await sendOne({ name: BRAND.name }, email, accountLinkEmail(`${siteOrigin(req)}/account/in?token=${token}${next}`));
-    } catch {
-      return bad("Couldn't send the email just now. Check the address and try again.", 502);
+  try {
+    if (b.action === "send") {
+      const email = cleanEmail(b.email);
+      if (tooFast(`acct:${clientIp(req)}`, 40, 3600e3) || tooFast(`acct:${email}`, 5, 3600e3)) return bad("Too many sign-in emails. Try again in a while.", 429);
+      await sendSignIn(siteOrigin(req), email, { next: b.next });
+      return json({ ok: true, sent: true });
     }
-    return json({ ok: true, sent: true });
-  }
 
-  if (b.action === "verify") {
-    const token = String(b.token ?? "");
-    if (!/^[\w-]{20,64}$/.test(token)) return bad("That link isn't complete. Open it from the email again.");
-    const { data: row } = await db.from("account_tokens").select("email,expires_at,used_at").eq("token_hash", tokenHash(token)).maybeSingle();
-    if (!row || row.used_at || new Date(row.expires_at).getTime() < Date.now()) return bad("That link has expired or been used. Ask for a new one.", 410);
-    await db.from("account_tokens").update({ used_at: new Date().toISOString() }).eq("token_hash", tokenHash(token));
-    let { data: acct } = await db.from("accounts").select("id,email").ilike("email", row.email).maybeSingle();
-    if (!acct) ({ data: acct } = await db.from("accounts").insert({ email: row.email }).select("id,email").single());
-    if (!acct) return bad("Couldn't sign you in just now. Try again.", 500);
-    await setAccount({ id: acct.id, email: acct.email }, await organiserSessions(acct.id));
-    return json({ ok: true });
-  }
+    if (b.action === "verify") {
+      const { email, next } = await redeemToken(String(b.token ?? ""));
+      await signIn(email);
+      return json({ ok: true, next });
+    }
 
-  const account = await getAccount();
-  if (b.action === "signout") {
-    await clearAccount();
-    return json({ ok: true });
-  }
-  if (!account) return bad("Sign in with your email first", 401);
+    if (b.action === "code") {
+      const email = cleanEmail(b.email);
+      if (tooFast(`code:${clientIp(req)}`, 60, 3600e3)) return bad("Too many tries. Wait a while and ask for a new email.", 429);
+      const { next } = await redeemCode(email, String(b.code ?? ""));
+      await signIn(email);
+      return json({ ok: true, next });
+    }
 
-  if (b.action === "link") {
-    const slug = String(b.t ?? "").replace(/^.*\/t\//, "").replace(/[/?#].*$/, "").trim();
-    const t = await tournamentBySlug(slug);
-    if (!t) return bad("Couldn't find that tournament. Paste its link or check the name.", 404);
-    const s = await getSession(t.id);
-    const pin = String(b.pin ?? "").trim();
-    // Same as the organiser log-in: the tournament's organiser PIN (or the site owner's)
-    const ok = s?.role === "organiser" || (!!pin && (checkOwnerPin(pin) || (!!t.organiser_pin_hash && safeEqual(hashPin(pin), t.organiser_pin_hash))));
-    if (!ok) return bad(pin ? "That organiser PIN isn't right" : "Enter the tournament's organiser PIN", 401);
-    await linkTournament(account.id, t.id);
-    if (s?.role !== "organiser") await setSession(t.id, await organiserSession(t.id));
-    return json({ ok: true, tournaments: await accountTournaments(account.id) });
-  }
+    if (b.action === "signout") {
+      await clearAccount();
+      return json({ ok: true });
+    }
 
-  return bad("Unknown action");
+    const account = await getAccount();
+    if (!account) return bad("Sign in with your email first", 401);
+
+    if (b.action === "answer") {
+      const tid = await answerOffer(account, String(b.offer ?? ""), b.yes === true);
+      if (tid) {
+        // That's me: this phone gets the role straight away
+        const { data: row } = await adminClient().from("account_tournaments").select("role,player_id").eq("account_id", account.id).eq("tournament_id", tid).maybeSingle();
+        const here = await getSession(tid);
+        const s = row?.role === "organiser" ? await organiserSession(tid, "account", row.player_id) : row?.player_id ? await playerSession(tid, row.player_id, "account") : null;
+        if (s && !(here?.role === "organiser" && s.role !== "organiser")) await setSession(tid, s);
+      }
+      return json({ ok: true, ...(await myGolf(account)) });
+    }
+
+    return bad("Unknown action");
+  } catch (e) {
+    if (e instanceof SignInError) return bad(e.message, e.status);
+    console.error("[account]", e);
+    return bad("That didn't work just now. Try again.", 500);
+  }
 }

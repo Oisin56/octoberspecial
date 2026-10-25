@@ -1,9 +1,7 @@
 import "server-only";
-import { randomBytes } from "node:crypto";
 import { adminClient } from "./admin";
 import { getCourse, validStrokeIndexes } from "./courses";
 import { slugify } from "./server-data";
-import { hashPin } from "./auth";
 import { THEMES, TONE_LABEL, type SetupJob, type ThemeId, type Tone } from "./types";
 import { drawBracket, knockoutGames, type Entrant, type Knockout, type PrizeKind, type RoundCfg, type TournamentCfg, type WinRule } from "./engine";
 import {
@@ -209,11 +207,12 @@ const ratingOf = (t: Tee): CourseRating | null => (t.slope && t.rating ? { slope
 export interface Created {
   id: string;
   slug: string;
+  name: string;
   organiser: { name: string; playerId?: string };
 }
 
 /** Build the whole tournament from the wizard: tournament, players, rounds with their groups or matches. */
-export async function createFromWizard(w: Wizard, opts: { pin?: string | null }): Promise<Created> {
+export async function createFromWizard(w: Wizard): Promise<Created> {
   const db = adminClient();
   const cache = new Map<string, Awaited<ReturnType<typeof getCourse>>>();
   // Courses first: nothing is created if a card can't be loaded
@@ -225,7 +224,6 @@ export async function createFromWizard(w: Wizard, opts: { pin?: string | null })
   const { data: clash } = await db.from("tournaments").select("id").eq("slug", slug).maybeSingle();
   if (clash) slug = `${slug}-${Math.random().toString(36).slice(2, 6)}`;
   const teams = w.teams.map((t, i) => ({ id: `team-${i + 1}`, name: t.name, color: t.color }));
-  const pin = opts.pin && /^\d{4,8}$/.test(opts.pin) ? opts.pin : randomBytes(12).toString("hex");
 
   // Players' ids now, so the knockout's bracket can name them
   const ids = w.players.map((p) => `${slugify(p.name) || "player"}-${Math.random().toString(36).slice(2, 6)}`);
@@ -251,7 +249,7 @@ export async function createFromWizard(w: Wizard, opts: { pin?: string | null })
     slug,
     name: w.name,
     subtitle: w.subtitle ?? null,
-    organiser_pin_hash: hashPin(pin),
+    organiser_pin_hash: null,
     published: false,
     theme: w.theme,
     teams,
@@ -270,7 +268,7 @@ export async function createFromWizard(w: Wizard, opts: { pin?: string | null })
     win,
     prizes: w.prizes,
   };
-  const { data: t, error } = await db.from("tournaments").insert(base).select("id,slug").single();
+  const { data: t, error } = await db.from("tournaments").insert(base).select("id,slug,name").single();
   if (error && /win|prizes|tees|standings|feed_on|share_shape|units/.test(error.message))
     throw new WizardError("This needs the latest database update. Run supabase/schema.sql in Supabase, then try again.");
   if (error || !t) throw new Error(error?.message ?? "Couldn't create the tournament");
@@ -356,7 +354,7 @@ export async function createFromWizard(w: Wizard, opts: { pin?: string | null })
     }
     await db.from("tournaments").update({ organiser_player_id: organiserId }).eq("id", t.id);
     if (jobs.length > 1) await db.from("tournaments").update({ setup_jobs: jobs }).eq("id", t.id);
-    return { id: t.id, slug: t.slug, organiser: { name: w.organiserPlays ? w.players[0].name : "Organiser", playerId: organiserId ?? undefined } };
+    return { id: t.id, slug: t.slug, name: t.name, organiser: { name: w.organiserPlays ? w.players[0].name : "Organiser", playerId: organiserId ?? undefined } };
   } catch (e) {
     // Leave nothing half-made
     await db.from("tournaments").delete().eq("id", t.id);

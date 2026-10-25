@@ -103,11 +103,7 @@ ok(res.j.emailed === 2 && !mails().some((x) => x.to[0] === "fionn@example.ie"), 
 ok(mails()[0].html.includes("Tournament preview"), "tournament preview labelled");
 
 // ---- admin UI
-await page.goto(`${BASE}/t/${T}/login`);
-await page.getByRole("button", { name: "Organiser" }).click();
-await page.getByLabel("PIN").fill("1234");
-await page.getByRole("button", { name: "Log in" }).click();
-await page.waitForTimeout(1200);
+await page.request.post(`${BASE}/api/login`, { data: { t: T, mode: "organiser", pin: "1234" } });
 await page.goto(`${BASE}/t/${T}/admin`, { waitUntil: "networkidle" });
 await page.getByRole("link", { name: /Email list/ }).click();
 await page.getByText(/Email list · 2 subscribed/).waitFor({ timeout: 10000 });

@@ -132,8 +132,8 @@ ok((await q(p)) === "Last thing: keeping it safe", "keeping it safe");
 // Answers are kept on the phone
 await p.reload({ waitUntil: "networkidle" });
 ok((await q(p)) === "Last thing: keeping it safe", "a reload carries on where you were");
-await tile(p, "Use a PIN").click();
-await p.fill("#wz-pin", "2468");
+ok((await p.locator(".pick-tile", { hasText: "Use a PIN" }).count()) === 0, "no PIN: your email keeps it safe");
+await p.fill("#wz-email", "wiz@example.com");
 ok(await p.locator(".wz-create").isDisabled(), "needs the site owner PIN while invite-only");
 await p.fill("#wz-owner", OWNER);
 await p.locator(".wz-summary summary").click();
@@ -256,7 +256,6 @@ await p.locator(".wz-yn").nth(1).locator(".pick-tile", { hasText: "No" }).click(
 await next(p);
 await p.locator(".wz-theme").first().click();
 await next(p, "Skip");
-await tile(p, "Use my email").click();
 await p.fill("#wz-email", "captain@example.com");
 await p.fill("#wz-owner", OWNER);
 const mailBefore = fs.readdirSync("/var/tmp/ospg/mail").length;
@@ -269,7 +268,7 @@ ok(sql(`select ai_on || ',' || auto_bulletins || ',' || (win->>'kind') || ',' ||
 ok(sql(`select string_agg(t->>'name' || '/' || (t->>'color'), ',') from tournaments, jsonb_array_elements(teams) t where id='${tidB}'`) === "Reds/#c8102e,Blues/#1d4f91", "the teams and their colours");
 ok(sql(`select string_agg(name || '=' || team_id, ',' order by sort) from players where tournament_id='${tidB}'`) === "Ann=team-1,Bea=team-2,Cat=team-1,Dee=team-2", "each player on the side they were tapped onto");
 ok(sql(`select format || ':' || play || ':' || jsonb_array_length(games) || ':' || (points_rule->>'full') || ':' || jsonb_array_length(holes) || ':' || course_slug || ':' || (handicap_rule->>'pct') from rounds where tournament_id='${tidB}'`) === "match:fourball:1:1.5:9:manual:nowhere-golf-club:90", "fourballs at 90%, 1½ a match, the typed 9-hole card, one match drawn");
-ok(sql(`select count(*) from account_tournaments a join accounts c on c.id=a.account_id where c.email='captain@example.com' and a.tournament_id='${tidB}'`) === "1", "in My tournaments under that email");
+ok(sql(`select count(*) from account_offers where email='captain@example.com' and tournament_id='${tidB}' and role='organiser' and answered_at is null`) === "1", "it joins that email's My golf once they confirm it");
 await sleep(500);
 ok(fs.readdirSync("/var/tmp/ospg/mail").length > mailBefore, "a sign-in link was emailed");
 await p.goto(`${BASE}/t/the-cup/admin`, { waitUntil: "networkidle" });
@@ -300,8 +299,7 @@ ok((await q(p)) === "The extras", "no draw, no prizes");
 await p.locator(".wz-yn").nth(0).locator(".pick-tile", { hasText: "No" }).click();
 await next(p);
 await p.locator(".wz-theme").first().click();
-await tile(p, "Use a PIN").click();
-await p.fill("#wz-pin", "1357");
+await p.fill("#wz-email", "vlogger@example.com");
 await p.fill("#wz-owner", OWNER);
 await p.locator(".wz-create").click();
 await p.waitForURL(/\/t\/my-vlog-round\/ready$/, { timeout: 20000 });
@@ -317,7 +315,7 @@ ok((await p.locator("aside .section-head", { hasText: "Latest" }).count()) === 0
 
 // ================================================================ The API refuses what won't work
 const api = async (wizard) => {
-  const r = await fetch(`${BASE}/api/tournaments`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ wizard, pin: "1234", ownerPin: OWNER }) });
+  const r = await fetch(`${BASE}/api/tournaments`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ wizard, email: "wiz@example.com", ownerPin: OWNER }) });
   return { status: r.status, j: await r.json() };
 };
 const base = { who: "individuals", name: "Wiz Check", win: "points", rounds: [{ courseRef: "golfapi:012141520611:Ireland", courseName: "Birr", holeSet: "all", format: "match" }], players: [{ name: "A" }, { name: "B" }, { name: "C" }], draw: "random", prizes: [], extras: {}, theme: "spring" };
@@ -344,6 +342,7 @@ const own = await b.newContext({ ...devices["iPhone 13"] });
 const op = await own.newPage();
 await op.goto(`${BASE}/owner`, { waitUntil: "networkidle" });
 ok((await op.locator("h1").innerText()) === "Site owner", "the site owner page");
+await op.getByRole("button", { name: "Use the site owner PIN" }).click();
 await op.fill("#opin", OWNER);
 await op.getByRole("button", { name: "Sign in" }).click();
 await op.locator(".owner-t").first().waitFor();

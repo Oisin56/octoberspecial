@@ -167,16 +167,23 @@ export function roleOf(s: ClientSession | null): RoleKind {
   return s?.role === "organiser" ? "organiser" : s?.role === "player" ? "player" : s?.role === "fan" ? "fan" : "none";
 }
 
-/** "Organiser & Player", "Player · Scoring today", "Fan" */
+/** "You're the organiser", "You're playing, scoring today", "You're following" */
 export function roleLabel(s: ClientSession | null, scoring: boolean): string {
-  if (!s) return "Not logged in";
-  if (s.role === "organiser") return s.playerId ? "Organiser & Player" : "Organiser";
-  if (s.role === "player") return scoring ? "Player · Scoring today" : "Player";
-  return "Fan";
+  if (!s) return "You're not signed in";
+  if (s.role === "organiser") return s.playerId ? "You're the organiser, and playing" : "You're the organiser";
+  if (s.role === "player") return scoring ? "You're playing, scoring today" : "You're playing";
+  return "You're following";
+}
+
+/** The line at the top of every page: "You're the organiser", "You're playing as", "You're following as" */
+function badgeLine(s: ClientSession): string {
+  if (s.role === "organiser") return "You're the organiser";
+  if (s.role === "player") return "You're playing as";
+  return "You're following as";
 }
 
 function canDo(s: ClientSession | null, scoring: boolean): string[] {
-  if (!s) return ["Follow every score live", "Watch the clips and highlights", "Log in to play, or join to share photos and comment"];
+  if (!s) return ["Follow every score live", "Watch the clips and highlights", "Sign in to play, or join to share photos and comment"];
   if (s.role === "organiser")
     return [
       "Run the tournament from the Organiser tab",
@@ -189,7 +196,7 @@ function canDo(s: ClientSession | null, scoring: boolean): string[] {
   return ["Share photos", "Comment and like", "Follow every score live"];
 }
 
-/** The badge at the top of every page: your name and role. Tap it for what you can do, and to log out. */
+/** The line at the top of every page: who you are here. Tap it for what you can do, My golf, and to sign out. */
 export function RoleBadge() {
   const { state, session, href } = useT();
   const [open, setOpen] = useState(false);
@@ -197,14 +204,14 @@ export function RoleBadge() {
   if (!session)
     return (
       <Link className="role-badge none" href={href("/login")}>
-        Log in
+        Sign in
       </Link>
     );
   return (
     <>
       <button className={`role-badge ${roleOf(session)}`} onClick={() => setOpen(true)} aria-haspopup="dialog">
-        <span className="rb-name">{session.name}</span>
-        <span className="rb-role">{roleLabel(session, scoring).replace(" · Scoring today", "")}</span>
+        <span className="rb-role">{badgeLine(session)}</span>
+        {!(session.role === "organiser" && session.name === "Organiser") && <span className="rb-name">{session.name}</span>}
       </button>
       {open && (
         <div className="who-back" role="dialog" aria-label="Who you are" onClick={() => setOpen(false)}>
@@ -232,7 +239,7 @@ function WhoCard({ onDone }: { onDone: () => void }) {
   }
   return (
     <div className={`who-card ${roleOf(session)}`}>
-      <p className="who-name">{session?.name ?? "You're not logged in"}</p>
+      <p className="who-name">{session?.name ?? "You're not signed in"}</p>
       <p className="who-role">{roleLabel(session, scoring)}</p>
       <ul className="who-can">
         {canDo(session, scoring).map((x) => (
@@ -240,18 +247,18 @@ function WhoCard({ onDone }: { onDone: () => void }) {
         ))}
       </ul>
       <div className="who-acts">
-        {session?.role === "organiser" && (
+        {session && (
           <Link className="btn block" href="/account" onClick={onDone}>
-            My tournaments
+            My golf
           </Link>
         )}
         {session ? (
           <button className="btn secondary block" onClick={logout}>
-            {session.role === "fan" ? "Sign out" : `Not ${session.name}? Log out`}
+            {session.role === "fan" ? "Sign out" : `Not ${session.name}? Sign out`}
           </button>
         ) : (
           <Link className="btn block" href={href("/login")} onClick={onDone}>
-            Log in
+            Sign in
           </Link>
         )}
       </div>

@@ -40,7 +40,7 @@ function ShotsInner() {
   if (!session || session.role === "fan")
     return (
       <p>
-        <Link href={href(`/login?next=${encodeURIComponent(href("/shots"))}`)}>Log in</Link> to log shots.
+        <Link href={href(`/login?next=${encodeURIComponent(href("/shots"))}`)}>Sign in</Link> to log shots.
       </p>
     );
   if (!round) return <p>No round is being played.</p>;

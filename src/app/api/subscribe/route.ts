@@ -18,7 +18,7 @@ export async function POST(req: Request) {
   const { count } = await db.from("subscribers").select("id", { count: "exact", head: true }).eq("ip_hash", ip).gte("created_at", since);
   if ((count ?? 0) >= 5) return bad("Too many sign-ups from here. Try again later.", 429);
 
-  const { data: existing } = await db.from("subscribers").select("id,token,unsubscribed_at").eq("tournament_id", t.id).ilike("email", email).maybeSingle();
+  const { data: existing } = await db.from("subscribers").select("id,token,unsubscribed_at").eq("tournament_id", t.id).eq("email", String(email).toLowerCase()).maybeSingle();
   let token: string;
   if (existing) {
     if (!existing.unsubscribed_at) return json({ ok: true, already: true });

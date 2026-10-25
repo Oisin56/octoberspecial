@@ -102,7 +102,7 @@ function PostInner() {
   if (!crew)
     return (
       <p>
-        <Link href={href(`/login?next=${encodeURIComponent(href("/post"))}`)}>Log in</Link> to post from the course.
+        <Link href={href(`/login?next=${encodeURIComponent(href("/post"))}`)}>Sign in</Link> to post from the course.
       </p>
     );
 

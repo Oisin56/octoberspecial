@@ -196,7 +196,7 @@ function ScoreInner() {
   if (!session)
     return (
       <p>
-        <Link href={href(`/login?next=${encodeURIComponent(href("/score"))}`)}>Log in</Link> to see the scorecard.
+        <Link href={href(`/login?next=${encodeURIComponent(href("/score"))}`)}>Sign in</Link> to see the scorecard.
       </p>
     );
   if (!round || !rcfg) return <p>No round to score.</p>;

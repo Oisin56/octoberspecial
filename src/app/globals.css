@@ -1279,6 +1279,27 @@ table.card.compact .shotdot { display: none; }
 .sheet-card { background: var(--paper); color: var(--ink); width: 100%; max-width: 520px; border-radius: 18px 18px 0 0; padding: 18px 16px calc(18px + env(safe-area-inset-bottom)); max-height: 90vh; overflow: auto; }
 .link-in h1 { margin: 0; }
 .link-in .lead { font-size: 18px; }
+.link-in { max-width: 460px; margin: 24px auto; }
+.link-in .link-for { margin: 0; font-size: 15px; color: var(--ink-soft); font-weight: 600; }
+.link-in .link-me { min-height: 64px; font-size: 22px; }
+.link-in .big { min-height: 58px; font-size: 19px; }
+.link-privacy { margin: 4px 0 0; }
+.link-in a { text-decoration: underline; text-underline-offset: 2px; color: inherit; }
+.sign-in h1 { margin: 0; }
+.sign-in .lead { font-size: 18px; margin: 0; }
+.sign-in .big { min-height: 58px; font-size: 19px; }
+.sign-in .si-code { font-size: 30px; letter-spacing: 8px; text-align: center; font-weight: 700; padding: 12px; }
+.sign-in .si-help { margin: 0; }
+.golf h2 { font-size: 15px; font-weight: 700; color: var(--ink-soft); margin: 18px 0 6px; }
+.golf .acct-list { margin: 0; }
+.golf-offer { border: 2px solid var(--board); }
+.golf-offer p { margin: 0; font-size: 18px; }
+.golf-site { border-color: var(--board); }
+.golf-acts { margin-top: 22px; }
+.player-access { display: block; font-weight: 400; font-family: var(--font-body, inherit); }
+.org-people { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.org-people li { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--rule); }
+.org-people li > span { display: flex; flex-direction: column; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
 /* ---- Log in: three big choices, then big name tiles */
 .login h1 { margin: 0; }
 .login .lead { font-size: 18px; }
@@ -1296,7 +1317,7 @@ table.card.compact .shotdot { display: none; }
 .site-head .bar { align-items: center; }
 .role-badge { appearance: none; border: 0; cursor: pointer; display: inline-flex; flex-direction: column; align-items: flex-start; gap: 1px; padding: 6px 12px; border-radius: 12px; font-family: var(--font-display); line-height: 1.05; text-decoration: none; max-width: 46vw; }
 .role-badge .rb-name { font-size: 17px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
-.role-badge .rb-role { font-size: 13px; font-weight: 600; opacity: 0.85; }
+.role-badge .rb-role { font-size: 13px; font-weight: 600; opacity: 0.85; white-space: nowrap; }
 .role-badge.organiser, .who-card.organiser .who-role { background: #e7c66b; color: #241a05; }
 .role-badge.player, .who-card.player .who-role { background: #2e8b57; color: #fff; }
 .role-badge.fan, .who-card.fan .who-role { background: #d5dbd7; color: #1d2621; }
@@ -1857,6 +1878,8 @@ textarea.fr-input { resize: vertical; }
 .owner-about { margin: 4px 0; font-style: italic; }
 .owner-earlier ul { padding-left: 1.2em; display: grid; gap: 6px; }
 .mgs > main:not(.fr-page) { padding: 0; }
+.mgs > main.acct { padding: 24px 16px 60px; }
+.mgs > main.owner { padding: 20px 16px 64px; }
 
 /* Owner page: how email is sent */
 .owner-mail { margin: 20px 0 28px; display: grid; gap: 10px; }

@@ -1,91 +1,81 @@
-import { BRAND } from "@/lib/brand";
-import { adminClient } from "@/lib/admin";
-import { checkOwnerPin, getAccount, hashPin, isOwner, setOwner, setSession } from "@/lib/auth";
-import { linkTournament } from "@/lib/accounts";
+import { checkOwnerPin, getAccount, isOwner, setOwner, setSession } from "@/lib/auth";
+import { SignInError, cleanEmail, linkRole, linkTournament, makeOffer, organiserSession, sendSignIn } from "@/lib/accounts";
 import { inviteFor, spendInvite } from "@/lib/invites";
+import { adminClient } from "@/lib/admin";
 import { bad, json, siteOrigin, slugify } from "@/lib/server-data";
 import { WizardError, cleanWizard, createFromWizard } from "@/lib/wizard-server";
-import { LINK_MINUTES, newToken, tokenHash } from "@/lib/accounts";
-import { EMAIL_RE, accountLinkEmail, mailConfigured, sendOne } from "@/lib/email";
+import { EMAIL_RE } from "@/lib/email";
 
 export const maxDuration = 60;
 
-/** Create a new tournament. Only the site owner can (owner PIN = ORGANISER_PIN env). */
+/**
+ * Create a new tournament with the setup wizard. Invitation-only: the site owner, or someone with an approved invite
+ * link (good for one tournament).
+ */
 export async function POST(req: Request) {
   const b = await req.json().catch(() => ({}));
-  // Invitation-only: the site owner, or someone with an approved invite link (good for one tournament)
-  const invite = !(await isOwner()) && b.invite && b.wizard ? await inviteFor(String(b.invite)) : null;
-  if (!(await isOwner()) && !invite) {
+  const owner = await isOwner();
+  const invite = !owner && b.invite ? await inviteFor(String(b.invite)) : null;
+  if (!owner && !invite) {
     if (b.invite) return bad("That invite link has been used or has expired. Ask for a new one.", 410);
-    if (!b.ownerPin || !checkOwnerPin(String(b.ownerPin))) return bad("Site owner PIN needed to create a tournament", 401);
+    // The old owner PIN, only until the owner has signed in with their email
+    if (!b.ownerPin || !(await checkOwnerPin(String(b.ownerPin)))) return bad("New tournaments are invitation-only for now. Ask for an invite.", 401);
     await setOwner();
   }
   if (b.wizard) return fromWizard(req, b, invite?.id ?? null);
+  if (invite) return bad("Use the setup wizard to make your tournament");
+  return bare(b);
+}
+
+/** The site owner only: an empty tournament with just a name, set up by hand from the organiser home. */
+async function bare(b: Record<string, unknown>) {
   const name = String(b.name ?? "").trim().slice(0, 80);
   if (!name) return bad("Give the tournament a name");
-  const organiserPin = String(b.organiserPin ?? "").trim();
-  if (!/^\d{4,8}$/.test(organiserPin)) return bad("Organiser PIN must be 4–8 digits");
-  let slug = slugify(b.slug || name) || "tournament";
   const db = adminClient();
+  let slug = slugify(String(b.slug || name)) || "tournament";
   const { data: clash } = await db.from("tournaments").select("id").eq("slug", slug).maybeSingle();
   if (clash) slug = `${slug}-${Math.random().toString(36).slice(2, 6)}`;
-
   const { data, error } = await db
     .from("tournaments")
-    .insert({
-      slug,
-      name,
-      subtitle: b.subtitle ? String(b.subtitle).slice(0, 120) : null,
-      organiser_pin_hash: hashPin(organiserPin),
-      published: false,
-    })
+    .insert({ slug, name, subtitle: b.subtitle ? String(b.subtitle).slice(0, 120) : null, published: false })
     .select("id,slug")
     .single();
   if (error) return bad(error.message, 500);
-  await setSession(data.id, { role: "organiser", name: "Organiser" });
-  // Signed in by email: it goes straight into My tournaments
+  await setSession(data.id, { role: "organiser", name: "Organiser", via: "create" });
   const account = await getAccount();
   if (account) await linkTournament(account.id, data.id).catch(() => {});
   return json({ slug: data.slug });
 }
 
 /**
- * The setup wizard's "Create my tournament". Keeping it safe: the organiser's email (it goes into My tournaments,
- * with a sign-in link emailed) or an organiser PIN. Signed in already: it simply joins My tournaments.
+ * The setup wizard's "Create my tournament". The organiser's email keeps it safe: it goes into their My golf, and
+ * we email a link and code so they can get back in on any phone. Signed in already: it simply joins My golf.
  */
 async function fromWizard(req: Request, b: Record<string, unknown>, inviteId: string | null) {
-  const email = String(b.email ?? "").trim().toLowerCase().slice(0, 200);
-  const pin = String(b.pin ?? "").trim();
+  const email = cleanEmail(b.email);
   const account = await getAccount();
-  if (!account && !email && !pin) return bad("Add your email or choose a PIN, so you can get back in");
-  if (email && !EMAIL_RE.test(email)) return bad("That email address doesn't look right");
-  if (pin && !/^\d{4,8}$/.test(pin)) return bad("The PIN must be 4 to 8 numbers");
+  if (!account && !email) return bad("Add your email, so you can get back in on any phone");
+  if (!account && !EMAIL_RE.test(email)) return bad("That email address doesn't look right");
   let created;
   try {
-    created = await createFromWizard(cleanWizard(b.wizard), { pin: pin || null });
+    created = await createFromWizard(cleanWizard(b.wizard));
   } catch (e) {
     if (e instanceof WizardError) return bad(e.message);
     console.error("[wizard]", e);
     return bad("Couldn't create the tournament just now. Try again.", 500);
   }
-  const db = adminClient();
   if (inviteId) await spendInvite(inviteId, created.id).catch(() => {});
-  await setSession(created.id, { role: "organiser", name: created.organiser.name, playerId: created.organiser.playerId });
   let emailed = false;
-  if (account) await linkTournament(account.id, created.id).catch(() => {});
-  else if (email) {
-    // Into My tournaments under that email, with a link to sign in on any phone
-    let { data: acct } = await db.from("accounts").select("id").ilike("email", email).maybeSingle();
-    if (!acct) ({ data: acct } = await db.from("accounts").insert({ email }).select("id").single());
-    if (acct) await linkTournament(acct.id, created.id).catch(() => {});
-    if (acct && mailConfigured()) {
-      const token = newToken();
-      const { error } = await db.from("account_tokens").insert({ token_hash: tokenHash(token), email, expires_at: new Date(Date.now() + LINK_MINUTES * 60e3).toISOString() });
-      if (!error)
-        emailed = await sendOne({ name: BRAND.name }, email, accountLinkEmail(`${siteOrigin(req)}/account/in?token=${token}`))
-          .then(() => true)
-          .catch(() => false);
-    }
+  if (account) {
+    await linkRole(account.id, created.id, "organiser", created.organiser.playerId ?? null).catch(() => {});
+    await setSession(created.id, await organiserSession(created.id, "account", created.organiser.playerId));
+  } else {
+    // This phone runs it now. It joins that email's My golf when they confirm it (the link or the code we send)
+    await setSession(created.id, { role: "organiser", name: created.organiser.name, playerId: created.organiser.playerId, via: "create" });
+    await makeOffer(created.id, email, "organiser", created.organiser.playerId ?? null, null).catch(() => {});
+    emailed = await sendSignIn(siteOrigin(req), email, { next: `/t/${created.slug}/admin`, intro: `Your tournament ${created.name} is ready. Tap the button to confirm your email, so you can get back in to run it on any phone.` })
+      .then(() => true)
+      .catch((e) => (e instanceof SignInError ? false : Promise.reject(e)));
   }
   return json({ slug: created.slug, emailed });
 }

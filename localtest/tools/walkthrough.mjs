@@ -3,6 +3,7 @@ import { chromium, devices } from "playwright";
 import { execSync } from "node:child_process";
 import fs from "node:fs";
 const BASE = "http://127.0.0.1:3100";
+const OWNER = fs.readFileSync("/home/claude/october-special/.env.local", "utf8").match(/^ORGANISER_PIN=(.*)$/m)[1].trim();
 const sql = (q) => execSync(`psql -h 127.0.0.1 -p 5433 -U postgres -tAc "${q.replace(/"/g, '\\"')}"`).toString().trim();
 const slug = sql(`select slug from tournaments where slug like 'the-atlantic-cup%' limit 1`);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -24,7 +25,7 @@ const ctx = await b.newContext({ viewport: { width: 390, height: 844 }, deviceSc
   permissions: ["geolocation"], geolocation: { latitude: 53.09209, longitude: -7.89095, accuracy: 5 } });
 const p = await ctx.newPage();
 await p.goto(`${BASE}/t/${slug}`);
-await p.evaluate(async (t) => fetch("/api/login", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ t, mode: "organiser", pin: "2468" }) }), slug);
+await p.evaluate(async ([t, pin]) => fetch("/api/login", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ t, mode: "organiser", pin }) }), [slug, OWNER]);
 await p.evaluate(() => { localStorage.setItem("mgs-gps-tip", "1"); localStorage.setItem("mgs_install_hint", "9999999999999"); });
 await p.goto(`${BASE}/t/${slug}/score`, { waitUntil: "networkidle" });
 await p.locator(".score-step").first().waitFor();

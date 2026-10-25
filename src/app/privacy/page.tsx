@@ -37,10 +37,11 @@ export default function Privacy() {
         <ul>
           <li>
             <strong>Players:</strong> your name and handicap, which the organiser adds, and anything more you choose to share about yourself when you join. You
-            say yes or no to each part.
+            say yes or no to each part. If the organiser adds your email, it&apos;s used to send you your link, and it only joins your account when you say it&apos;s you.
           </li>
           <li>
-            <strong>Organisers:</strong> your name and, if you use it to sign in, your email address. A PIN is kept only in a scrambled form we can&apos;t read back.
+            <strong>Organisers, and anyone who signs in:</strong> your email address, used to sign you in (we send a link and a code, never a password) and to show
+            your tournaments together. Old PINs are kept only in a scrambled form we can&apos;t read back.
           </li>
           <li>
             <strong>Followers:</strong> your name and email, so we can send you the link to sign in and the tournament&apos;s emails if you ask for them.

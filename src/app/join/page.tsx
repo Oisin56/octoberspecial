@@ -19,7 +19,7 @@ export default function Join() {
         Lost the link, or on a new phone? Ask your organiser to send it again. It&apos;s one tap for them, from their list of players.
       </p>
       <p className="fr-quiet">
-        Running a tournament? <Link href="/account">Sign in</Link> to get back to it.
+        Running a tournament, or added your email before? <Link href="/account">Sign in</Link> to see all your golf.
       </p>
     </BrandShell>
   );

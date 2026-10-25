@@ -1,6 +1,7 @@
 import { adminClient } from "@/lib/admin";
-import { checkOwnerPin, isOwner, setOwner, setSession } from "@/lib/auth";
-import { organiserSession } from "@/lib/accounts";
+import { checkOwnerPin, getAccount, isOwner, isOwnerEmail, ownerClaimed, setOwner, setSession } from "@/lib/auth";
+import { SignInError, organiserSession } from "@/lib/accounts";
+import { checkOwnerCode, checkOwnerLink, passkeyAnswer, passkeyCount, passkeyQuestion, passkeySave, passkeySetup, sendOwnerCode } from "@/lib/owner-check";
 import { bad, json } from "@/lib/server-data";
 import { clientIp, tooFast } from "@/lib/social";
 import { mediaUrl } from "@/lib/supabase";
@@ -37,7 +38,12 @@ const FOLDERS = ["photo", "video", "audio", "image"];
 
 /** Site owner: am I the owner, and (if so) every tournament on the site. */
 export async function GET() {
-  if (!(await isOwner())) return json({ owner: false });
+  if (!(await isOwner())) {
+    // Not in yet: who's signed in, and what's needed (the owner's email, then the second check)
+    const a = await getAccount();
+    const mine = !!a && isOwnerEmail(a.email);
+    return json({ owner: false, email: a?.email ?? null, ownerAccount: mine, passkeys: mine ? await passkeyCount(a!.id) : 0, pin: !(await ownerClaimed()) && !!process.env.ORGANISER_PIN });
+  }
   const db = adminClient();
   const { data: ts } = await db.from("tournaments").select("id,slug,name,start_date,end_date,published,created_at").order("created_at", { ascending: false });
   const ids = (ts ?? []).map((t) => t.id);
@@ -88,12 +94,43 @@ export async function POST(req: Request) {
   const b = await req.json().catch(() => ({}));
   const db = adminClient();
   if (b.action === "signin") {
+    // The old owner PIN, only until the owner has signed in with their email
     if (tooFast(`owner:${clientIp(req)}`, 8, 600e3)) return bad("Too many tries. Wait a few minutes.", 429);
-    if (!checkOwnerPin(String(b.pin ?? ""))) return bad("That isn't the site owner PIN", 401);
+    if (!(await checkOwnerPin(String(b.pin ?? "")))) return bad("That isn't the site owner PIN", 401);
     await setOwner();
     return json({ ok: true });
   }
+  // The second check: Face ID on this device, or a code (and button) by email
+  const check: Record<string, () => Promise<unknown>> = {
+    sendCode: () => sendOwnerCode(req),
+    code: () => checkOwnerCode(String(b.code ?? "")),
+    link: () => checkOwnerLink(String(b.token ?? "")),
+    faceQuestion: () => passkeyQuestion(req),
+    faceAnswer: () => passkeyAnswer(req, b.response),
+  };
+  if (b.action in check) {
+    if (tooFast(`ownercheck:${clientIp(req)}`, 30, 3600e3)) return bad("Too many tries. Wait a while.", 429);
+    try {
+      const out = await check[b.action]();
+      return json({ ok: true, options: out ?? null });
+    } catch (e) {
+      if (e instanceof SignInError) return bad(e.message, e.status);
+      throw e;
+    }
+  }
   if (!(await isOwner())) return bad("Site owner only", 401);
+
+  // Face ID for next time, on this device
+  if (b.action === "faceSetup" || b.action === "faceSave") {
+    try {
+      if (b.action === "faceSetup") return json({ options: await passkeySetup(req) });
+      await passkeySave(req, b.response);
+      return json({ ok: true });
+    } catch (e) {
+      if (e instanceof SignInError) return bad(e.message, e.status);
+      throw e;
+    }
+  }
 
   // ---- films: the brand pack, the music, the spending limits
   const removeFile = async (path?: string) => {
@@ -228,7 +265,7 @@ export async function POST(req: Request) {
   if (!t) return bad("Tournament not found", 404);
 
   if (b.action === "open") {
-    await setSession(t.id, await organiserSession(t.id));
+    await setSession(t.id, await organiserSession(t.id, "owner"));
     return json({ slug: t.slug });
   }
 

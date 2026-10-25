@@ -182,15 +182,14 @@ export function CardPanel({
           playerId={signer}
           name={names[signer] ?? signer}
           own={session?.playerId === signer}
-          hasPin={!!state.players.find((p) => p.id === signer)?.has_pin}
           onClose={() => setSigner(null)}
-          onSign={async (pin) => {
-            const ok = await act("sign", { playerId: signer, pin });
+          onSign={async () => {
+            const ok = await act("sign", { playerId: signer });
             if (ok) setSigner(null);
             return ok;
           }}
-          onFlag={async (pin, note) => {
-            const ok = await act("flag", { playerId: signer, pin, note });
+          onFlag={async (note) => {
+            const ok = await act("flag", { playerId: signer, note });
             if (ok) setSigner(null);
             return ok;
           }}
@@ -202,11 +201,10 @@ export function CardPanel({
   );
 }
 
-/** One player signs: on their own phone with a tap, on someone else's with their PIN. Or says something's wrong. */
+/** One player signs: on their own phone, or on the scorer's, with a tap. Or says something's wrong. */
 function SignSheet({
   name,
   own,
-  hasPin,
   onClose,
   onSign,
   onFlag,
@@ -216,36 +214,18 @@ function SignSheet({
   playerId: string;
   name: string;
   own: boolean;
-  hasPin: boolean;
   onClose: () => void;
-  onSign: (pin: string) => Promise<boolean>;
-  onFlag: (pin: string, note: string) => Promise<boolean>;
+  onSign: () => Promise<boolean>;
+  onFlag: (note: string) => Promise<boolean>;
   busy: boolean;
   err: string | null;
 }) {
-  const [pin, setPin] = useState("");
   const [wrong, setWrong] = useState(false);
   const [note, setNote] = useState("");
-  const needPin = !own && hasPin;
   const first = name.split(" ")[0];
   return (
     <Sheet label={wrong ? "Something's not right" : own ? "Sign your card" : `${first} signs the card`} onClose={onClose}>
       <div className="sf-menu cp-sign">
-        {needPin && (
-          <label className="cp-pin">
-            <span>{first}, enter your PIN</span>
-            <input
-              type="password"
-              inputMode="numeric"
-              autoComplete="off"
-              pattern="[0-9]*"
-              maxLength={8}
-              value={pin}
-              onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
-              aria-label={`${name}'s PIN`}
-            />
-          </label>
-        )}
         {wrong ? (
           <>
             <label className="sf-field">
@@ -253,7 +233,7 @@ function SignSheet({
               <textarea value={note} onChange={(e) => setNote(e.target.value)} maxLength={300} rows={3} placeholder="e.g. I had a 5 on the 7th" />
             </label>
             {err && <p className="error">{err}</p>}
-            <button className="btn block" disabled={busy || (needPin && pin.length < 4)} onClick={() => onFlag(pin, note)}>
+            <button className="btn block" disabled={busy} onClick={() => onFlag(note)}>
               Tell the scorer
             </button>
             <button className="btn secondary block" onClick={() => setWrong(false)}>
@@ -264,7 +244,7 @@ function SignSheet({
           <>
             <p>{own ? "Signing says your card is right. Once everyone has signed, it's final." : `${first} agrees this card is right. Once everyone has signed, it's final.`}</p>
             {err && <p className="error">{err}</p>}
-            <button className="btn block cp-main" disabled={busy || (needPin && pin.length < 4)} onClick={() => onSign(pin)}>
+            <button className="btn block cp-main" disabled={busy} onClick={() => onSign()}>
               {busy ? "Signing…" : own ? "I agree with this card" : `Sign for ${first}`}
             </button>
             <button className="btn secondary block" onClick={() => setWrong(true)}>

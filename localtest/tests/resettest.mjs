@@ -25,7 +25,7 @@ const anon = await fetch(BASE + "/api/admin", { method: "POST", headers: { "cont
 ok(anon.status >= 401, "only the organiser can reset");
 // through the admin screen
 const b = await chromium.launch(); const pg = await (await b.newContext({ viewport: { width: 390, height: 844 } })).newPage();
-await pg.goto(`${BASE}/t/${T}/login`); await pg.getByRole("button", { name: "Organiser" }).click(); await pg.getByLabel("PIN").fill("1234"); await pg.getByRole("button", { name: "Log in" }).click(); await pg.waitForTimeout(1200);
+await pg.request.post(`${BASE}/api/login`, { data: { t: T, mode: "organiser", pin: "1234" } });
 await pg.goto(`${BASE}/t/${T}/admin`, { waitUntil: "networkidle" });
 await pg.getByRole("link", { name: /Settings and test data/ }).click();
 const btn = pg.getByRole("button", { name: "Reset test data" });

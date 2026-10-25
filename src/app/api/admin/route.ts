@@ -1,8 +1,10 @@
 import { randomBytes } from "node:crypto";
 import { adminClient } from "@/lib/admin";
-import { hashPin, isOrganiser } from "@/lib/auth";
+import { getAccount, isOrganiser } from "@/lib/auth";
+import { BRAND } from "@/lib/brand";
+import { SignInError, cleanEmail, emailProof, makeOffer, sendSignIn } from "@/lib/accounts";
 import { bad, context, json, loadServerState, siteOrigin, slugify, DEMO_READONLY } from "@/lib/server-data";
-import { EMAIL_RE, emailPiece, mailConfigured } from "@/lib/email";
+import { EMAIL_RE, emailPiece, mailConfigured, playerLinkEmail, sendOne } from "@/lib/email";
 import { draftGuide, generatePiece, type PieceKind } from "@/lib/ai";
 import { cleanGuide, normalizeRound, type CourseGuide, type RoundRow, type Tone } from "@/lib/types";
 import { guideFrom, guideStep, newGuideWork, type GuideWork } from "@/lib/guide";
@@ -68,22 +70,28 @@ export async function POST(req: Request) {
   const { t, session, demo } = await context(req, b);
   if (!t) return bad("Tournament not found", 404);
   if (demo) return bad(DEMO_READONLY, 403);
-  if (!isOrganiser(session)) return bad("Organiser only", 403);
+  if (!session || !isOrganiser(session)) return bad("Organiser only", 403);
   const db = adminClient();
 
   switch (b.action) {
     case "state": {
       const state = await loadServerState(t.id);
-      type PinRow = { id: string; pin_hash: string | null; link_code?: string | null };
-      const withLinks = await db.from("players").select("id,pin_hash,link_code").eq("tournament_id", t.id);
-      const pins: PinRow[] = withLinks.error ? ((await db.from("players").select("id,pin_hash").eq("tournament_id", t.id)).data ?? []) : (withLinks.data ?? []);
+      type AccessRow = { id: string; pin_hash: string | null; link_code?: string | null; link_used_at?: string | null; email?: string | null };
+      const full = await db.from("players").select("id,pin_hash,link_code,link_used_at,email").eq("tournament_id", t.id);
+      const rows: AccessRow[] = full.error ? ((await db.from("players").select("id,pin_hash,link_code").eq("tournament_id", t.id)).data ?? []) : (full.data ?? []);
       const fans = await db.from("fans").select("id,name,blocked,created_at").eq("tournament_id", t.id).order("created_at");
       return json({
         state,
         fans: fans.error ? [] : (fans.data ?? []),
-        pinSet: Object.fromEntries(pins.map((p) => [p.id, !!p.pin_hash])),
+        pinSet: Object.fromEntries(rows.map((p) => [p.id, !!p.pin_hash])),
         // A personal link made (and so, almost always, sent): the player can get in
-        linkSet: Object.fromEntries(pins.map((p) => [p.id, !!p.link_code])),
+        linkSet: Object.fromEntries(rows.map((p) => [p.id, !!p.link_code])),
+        // When each player's link was used (signed in on their phone)
+        linkUsed: Object.fromEntries(rows.map((p) => [p.id, p.link_used_at ?? null])),
+        emails: Object.fromEntries(rows.map((p) => [p.id, p.email ?? null])),
+        organisers: await organiserList(t.id),
+        // Signed in here without an email yet (the old organiser PIN, or this phone made it): asked to add one
+        needEmail: session.via !== "account" && session.via !== "owner",
         organiserPinSet: !!t.organiser_pin_hash,
         env: { ai: !!process.env.ANTHROPIC_API_KEY, courses: !!process.env.GOLFCOURSEAPI_KEY || !!process.env.GOLFAPI_KEY, mail: mailConfigured() },
       });
@@ -92,10 +100,6 @@ export async function POST(req: Request) {
     case "updateTournament": {
       const patch: Record<string, unknown> = {};
       for (const k of TOURNAMENT_FIELDS) if (k in (b.patch ?? {})) patch[k] = b.patch[k] === "" ? null : b.patch[k];
-      if (b.organiserPin) {
-        if (!/^\d{4,8}$/.test(String(b.organiserPin))) return bad("Organiser PIN must be 4–8 digits");
-        patch.organiser_pin_hash = hashPin(String(b.organiserPin));
-      }
       if ("units" in patch && !["yards", "metres"].includes(String(patch.units))) return bad("Yards or metres");
       if ("share_shape" in patch && patch.share_shape !== null && !["portrait", "landscape"].includes(String(patch.share_shape))) return bad("Upright or wide");
       if ("standings" in patch && !["points", "stableford", "stroke"].includes(String(patch.standings))) return bad("Unknown way of winning");
@@ -116,34 +120,105 @@ export async function POST(req: Request) {
       const patch: Record<string, unknown> = {};
       for (const k of PLAYER_FIELDS) if (k in p) patch[k] = p[k] === "" ? null : p[k];
       if ("handicap" in patch && patch.handicap != null) patch.handicap = Number(patch.handicap);
-      if (b.pin) {
-        if (!/^\d{4,8}$/.test(String(b.pin).trim())) return bad("PIN must be 4–8 digits");
-        patch.pin_hash = hashPin(String(b.pin));
+      // Their email (optional): to send their link by email. It joins their My golf only when they say it's them.
+      let newEmail: string | null = null;
+      if ("email" in p) {
+        const e = cleanEmail(p.email);
+        if (e && !EMAIL_RE.test(e)) return bad("That email address doesn't look right");
+        patch.email = e || null;
+        newEmail = e || null;
       }
       if (p.id) {
+        const { data: was } = await db.from("players").select("email").eq("id", p.id).eq("tournament_id", t.id).maybeSingle();
         const { error } = await db.from("players").update(patch).eq("id", p.id).eq("tournament_id", t.id);
-        if (error) return bad(error.message, 500);
+        if (error) return bad(/email/.test(error.message) ? "Player emails need the latest database update (schema.sql)" : error.message, 500);
+        if (newEmail && newEmail !== cleanEmail(was?.email)) await makeOffer(t.id, newEmail, "player", p.id, session.name).catch(() => {});
         return json({ ok: true, id: p.id });
       }
       if (!patch.name) return bad("Player needs a name");
       const id = `${slugify(String(patch.name)) || "player"}-${Math.random().toString(36).slice(2, 6)}`;
       const { error } = await db.from("players").insert({ ...patch, id, tournament_id: t.id });
       if (error) return bad(error.message, 500);
+      if (newEmail) await makeOffer(t.id, newEmail, "player", id, session.name).catch(() => {});
       return json({ ok: true, id });
     }
 
-    // A player's personal sign-in link: made the first time it's asked for; "reset" makes a new one (the old stops working)
+    // A player's personal link: made the first time it's asked for. "reset" is Send again: a new link, and every
+    // phone signed in as that player is signed out (the old link stops working)
     case "playerLink": {
       const pid = String(b.playerId ?? "");
-      const { data: p } = await db.from("players").select("id,link_code").eq("tournament_id", t.id).eq("id", pid).maybeSingle();
+      const { data: p } = await db.from("players").select("id,link_code,link_gen").eq("tournament_id", t.id).eq("id", pid).maybeSingle();
       if (!p) return bad("Player not found", 404);
       let code = p.link_code as string | null;
       if (!code || b.reset) {
         code = randomBytes(15).toString("base64url");
-        const { error } = await db.from("players").update({ link_code: code }).eq("id", p.id).eq("tournament_id", t.id);
-        if (error) return bad(/link_code/.test(error.message) ? "Player links need the latest database update (schema.sql)" : error.message, 500);
+        const patch: Record<string, unknown> = { link_code: code };
+        if (b.reset) Object.assign(patch, { link_used_at: null, link_gen: (p.link_gen ?? 0) + 1 });
+        const { error } = await db.from("players").update(patch).eq("id", p.id).eq("tournament_id", t.id);
+        if (error) return bad(/link_/.test(error.message) ? "Player links need the latest database update (schema.sql)" : error.message, 500);
+        if (b.reset) {
+          // Whoever had joined that spot to their email gives it up too (it may have gone to the wrong person)
+          await db.from("account_tournaments").delete().eq("tournament_id", t.id).eq("role", "player").eq("player_id", p.id);
+          await db.from("account_tournaments").update({ player_id: null }).eq("tournament_id", t.id).eq("role", "organiser").eq("player_id", p.id);
+        }
       }
       return json({ url: `${siteOrigin(req)}/t/${t.slug}/in/${code}` });
+    }
+
+    // Send a player's link by email from the site. Tapping it also confirms the email is theirs.
+    case "emailLink": {
+      const pid = String(b.playerId ?? "");
+      const { data: p } = await db.from("players").select("id,name,email,link_code").eq("tournament_id", t.id).eq("id", pid).maybeSingle();
+      if (!p) return bad("Player not found", 404);
+      if (!p.email) return bad("Add their email first");
+      if (!mailConfigured()) return bad("Email isn't set up on this site yet. Send the link by WhatsApp or text instead.", 503);
+      let code = p.link_code as string | null;
+      if (!code) {
+        code = randomBytes(15).toString("base64url");
+        await db.from("players").update({ link_code: code }).eq("id", p.id).eq("tournament_id", t.id);
+      }
+      const url = `${siteOrigin(req)}/t/${t.slug}/in/${code}?e=${emailProof(code, p.email)}`;
+      try {
+        await sendOne(t, p.email, playerLinkEmail(t, p.name, url));
+      } catch {
+        return bad("Couldn't send the email just now. Check the address and try again.", 502);
+      }
+      return json({ ok: true, to: p.email });
+    }
+
+    // Co-organisers: added by email. It joins their My golf when they sign in and say it's them.
+    case "addOrganiser": {
+      const email = cleanEmail(b.email);
+      if (!EMAIL_RE.test(email)) return bad("That email address doesn't look right");
+      if ((await organiserList(t.id)).some((o) => o.email === email)) return bad("They're already an organiser");
+      try {
+        await makeOffer(t.id, email, "organiser", null, session.name);
+        await sendSignIn(siteOrigin(req), email, {
+          next: "/account",
+          intro: `${session.name === "Organiser" ? "The organiser" : session.name} has added you as an organiser of ${t.name} on ${BRAND.name}. Tap the button to sign in, then say yes.`,
+        });
+      } catch (e) {
+        if (e instanceof SignInError) return bad(e.message, e.status);
+        throw e;
+      }
+      return json({ ok: true, organisers: await organiserList(t.id) });
+    }
+
+    case "removeOrganiser": {
+      const email = cleanEmail(b.email);
+      const list = await organiserList(t.id);
+      const o = list.find((x) => x.email === email);
+      if (!o) return bad("Not an organiser");
+      if (o.pending) {
+        await db.from("account_offers").delete().eq("tournament_id", t.id).eq("role", "organiser").eq("email", String(email).toLowerCase()).is("answered_at", null);
+      } else {
+        if (list.filter((x) => !x.pending).length < 2) return bad("A tournament needs at least one organiser");
+        const { data: row } = await db.from("account_tournaments").select("account_id,player_id").eq("tournament_id", t.id).eq("account_id", o.accountId!).maybeSingle();
+        // An organiser who plays stays a player
+        if (row?.player_id) await db.from("account_tournaments").update({ role: "player" }).eq("tournament_id", t.id).eq("account_id", o.accountId!);
+        else await db.from("account_tournaments").delete().eq("tournament_id", t.id).eq("account_id", o.accountId!);
+      }
+      return json({ ok: true, organisers: await organiserList(t.id) });
     }
 
     case "deletePlayer": {
@@ -557,7 +632,7 @@ export async function POST(req: Request) {
       }
       let added = 0;
       for (const r of rows) {
-        const { data: ex } = await db.from("subscribers").select("id").eq("tournament_id", t.id).ilike("email", r.email).maybeSingle();
+        const { data: ex } = await db.from("subscribers").select("id").eq("tournament_id", t.id).eq("email", String(r.email).toLowerCase()).maybeSingle();
         if (ex) await db.from("subscribers").update({ unsubscribed_at: null, ...(r.name ? { name: r.name } : {}) }).eq("id", ex.id);
         else await db.from("subscribers").insert(r);
         added++;
@@ -610,4 +685,17 @@ async function currentCourseRating(db: ReturnType<typeof adminClient>, roundId: 
   const { data } = await db.from("rounds").select("handicap_rule").eq("id", String(roundId)).eq("tournament_id", tournamentId).maybeSingle();
   const rule = data?.handicap_rule as HandicapRule | null;
   return rule?.mode === "allowance" ? cleanCourseRating(rule.course) : null;
+}
+
+/** Everyone who runs the tournament by email, and anyone added who hasn't said yes yet. */
+async function organiserList(tournamentId: string): Promise<{ email: string; accountId: string | null; pending: boolean; you: boolean }[]> {
+  const db = adminClient();
+  const me = await getAccount();
+  const { data: rows } = await db.from("account_tournaments").select("account_id,role").eq("tournament_id", tournamentId);
+  const ids = (rows ?? []).filter((r) => (r.role ?? "organiser") === "organiser").map((r) => r.account_id);
+  const { data: accts } = ids.length ? await db.from("accounts").select("id,email").in("id", ids) : { data: [] };
+  const { data: offers } = await db.from("account_offers").select("email").eq("tournament_id", tournamentId).eq("role", "organiser").is("answered_at", null);
+  const out: { email: string; accountId: string | null; pending: boolean; you: boolean }[] = (accts ?? []).map((a) => ({ email: cleanEmail(a.email), accountId: a.id as string, pending: false, you: me?.id === a.id }));
+  for (const o of offers ?? []) if (!out.some((x) => x.email === cleanEmail(o.email))) out.push({ email: cleanEmail(o.email), accountId: null, pending: true, you: false });
+  return out;
 }

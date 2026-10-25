@@ -48,7 +48,7 @@ const wizard = {
   units: "yards",
   share: "portrait",
 };
-const made = await fetch(`${BASE}/api/tournaments`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ wizard, pin: "2468", ownerPin: OWNER }) }).then((r) => r.json());
+const made = await fetch(`${BASE}/api/tournaments`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ wizard, email: "front@example.com", ownerPin: OWNER }) }).then((r) => r.json());
 const slug = made.slug;
 if (!slug) throw new Error(`not made: ${JSON.stringify(made)}`);
 const tid = sql(`select id from tournaments where slug='${slug}'`);
@@ -141,7 +141,7 @@ const atlantic = (p) => p.evaluate(() => {
   const ctx = await b.newContext({ ...PHONE, permissions: ["geolocation"], geolocation: { latitude: 53.09164, longitude: -7.89111, accuracy: 5 } });
   const p = await ctx.newPage();
   await p.goto(`${BASE}/t/${slug}`);
-  await p.evaluate(async (t) => fetch("/api/login", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ t, mode: "organiser", pin: "2468" }) }), slug);
+  await p.evaluate(async ([t, pin]) => fetch("/api/login", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ t, mode: "organiser", pin }) }), [slug, OWNER]);
   await p.goto(`${BASE}/t/${slug}/score`, { waitUntil: "networkidle" });
   await p.locator(".pscore.entry").first().waitFor();
   const tap = (who, n) => setScore(p, who, n);
@@ -195,7 +195,7 @@ const atlantic = (p) => p.evaluate(() => {
   const ctx = await cam.newContext({ ...PHONE, permissions: ["camera", "microphone"] });
   const p = await ctx.newPage();
   await p.goto(`${BASE}/t/${slug}`);
-  await p.evaluate(async (t) => fetch("/api/login", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ t, mode: "organiser", pin: "2468" }) }), slug);
+  await p.evaluate(async ([t, pin]) => fetch("/api/login", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ t, mode: "organiser", pin }) }), [slug, OWNER]);
   await p.evaluate(() => { localStorage.setItem("mgs_camera_tip", "1"); localStorage.setItem("mgs_install_hint", "9999999999999"); });
   await p.goto(`${BASE}/t/${slug}/record?hole=12&round=1`, { waitUntil: "networkidle" });
   await p.locator(".cam-ask-tile").first().click({ timeout: 3000 }).catch(() => {});

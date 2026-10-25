@@ -17,8 +17,8 @@ function InInner() {
       .then(async (r) => {
         const j = await r.json().catch(() => ({}));
         if (!r.ok) return setErr(j.error ?? "That link didn't work.");
-        const next = sp.get("next");
-        router.replace(next && next.startsWith("/account") ? next : "/account");
+        const next = typeof j.next === "string" && j.next.startsWith("/") && !j.next.startsWith("//") ? j.next : "/account";
+        router.replace(next);
       })
       .catch(() => setErr("No signal. Open the link again when you're back online."));
   }, [sp, router]);

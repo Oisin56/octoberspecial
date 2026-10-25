@@ -29,6 +29,14 @@ export interface AdminData {
   pinSet: Record<string, boolean>;
   /** Players whose personal link has been made */
   linkSet?: Record<string, boolean>;
+  /** When each player's link was used (signed in on their phone) */
+  linkUsed?: Record<string, string | null>;
+  /** Players' emails (added by the organiser, to send links by email) */
+  emails?: Record<string, string | null>;
+  /** Everyone who runs it by email, and anyone added who hasn't said yes yet */
+  organisers?: { email: string; pending: boolean; you: boolean }[];
+  /** Signed in here without an email yet: asked to add one */
+  needEmail?: boolean;
   organiserPinSet: boolean;
   env: { ai: boolean; courses: boolean; mail?: boolean };
   /** Followers who joined the conversation */
@@ -236,7 +244,7 @@ export function PlayersEditor({ data, onSaved }: { data: AdminData; onSaved: () 
       )}
 
       {data.state.players.map((p) => (
-        <PlayerCard key={p.id} player={p} teams={t.teams ?? []} pinSet={data.pinSet[p.id]} onSaved={onSaved} />
+        <PlayerCard key={p.id} player={p} teams={t.teams ?? []} access={{ made: !!data.linkSet?.[p.id], used: data.linkUsed?.[p.id] ?? null, email: data.emails?.[p.id] ?? null }} mail={!!data.env.mail} onSaved={onSaved} />
       ))}
       {t.win ? (
         <p className="small muted">To add or remove a player, or move them to another team, use Tournament setup: their groups are made again to fit.</p>
@@ -247,53 +255,90 @@ export function PlayersEditor({ data, onSaved }: { data: AdminData; onSaved: () 
   );
 }
 
+interface Access {
+  made: boolean;
+  used: string | null;
+  email: string | null;
+}
+
+/** "Signed in on 1 phone, Tuesday", "Link sent, not opened yet", "No link sent yet" */
+export function accessLine(a: Access, organiser: boolean): string {
+  if (organiser) return "That's you";
+  if (a.used) {
+    const d = new Date(a.used);
+    const days = (Date.now() - d.getTime()) / 864e5;
+    const when = days < 6 ? d.toLocaleDateString("en-IE", { weekday: "long" }) : d.toLocaleDateString("en-IE", { day: "numeric", month: "short" });
+    return `Signed in on 1 phone, ${when}`;
+  }
+  return a.made ? "Link sent, not opened yet" : "No link sent yet";
+}
+
 /**
- * A player's personal link: sent from the organiser's own phone (WhatsApp, Messages, Email), so no phone numbers
- * or emails are stored. Tapping it logs the player in on their phone. "New link" stops the old one working.
+ * A player's personal link: sent from the organiser's own phone (WhatsApp, Messages), or by email from the site when
+ * the player's email is added. It works once, on the first phone that says "I'm Neil". Send again makes a new link
+ * and signs out the phone signed in now (lost phone, new phone, or sent to the wrong person).
  */
-function SendLink({ player }: { player: PlayerRow }) {
+function SendLink({ player, access, mail, onSaved }: { player: PlayerRow; access: Access; mail: boolean; onSaved: () => void }) {
   const { api, state } = useT();
   const [open, setOpen] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   const tname = state?.tournament.name ?? "the tournament";
-  const text = (url: string) => `${player.name}, here's your link for ${tname}. Tap it to log in (no PIN needed): ${url}`;
+  const first = player.name.split(" ")[0];
+  const text = (url: string) => `${player.name}, here's your link for ${tname}. Tap it on your phone to sign in: ${url}`;
 
   async function get(reset = false) {
     setMsg(null);
     const r = await api("/api/admin", { action: "playerLink", playerId: player.id, reset });
     if (!r.ok) return setMsg(String(r.j.error ?? "Couldn't make the link"));
     const url = String(r.j.url);
-    if (!reset && typeof navigator !== "undefined" && navigator.share) {
-      try {
-        await navigator.share({ title: `${tname}: ${player.name}'s link`, text: text(url) });
-        return;
-      } catch {
-        /* cancelled or not allowed: show the options instead */
-      }
-    }
+    if (reset) onSaved();
     setOpen(url);
-    if (reset) setMsg("New link made. The old one no longer works.");
+  }
+
+  async function emailIt() {
+    setBusy(true);
+    setMsg(null);
+    const r = await api("/api/admin", { action: "emailLink", playerId: player.id });
+    setBusy(false);
+    setMsg(r.ok ? `Sent to ${access.email}` : String(r.j.error ?? "Couldn't send it"));
+    if (r.ok) onSaved();
   }
 
   return (
     <>
-      <button className="chip" onClick={() => get()}>
-        Send link
-      </button>
+      {access.used ? (
+        <button className="chip" onClick={() => confirm(`Send ${first} a new link? The phone signed in as ${first} now will be signed out.`) && get(true)}>
+          Send again
+        </button>
+      ) : (
+        <button className="chip" onClick={() => get()}>
+          Send link
+        </button>
+      )}
       {open && (
         <div className="sheet-back" role="dialog" aria-label={`${player.name}'s link`} onClick={() => setOpen(null)}>
           <div className="sheet-card stack" onClick={(e) => e.stopPropagation()}>
             <h3 style={{ margin: 0 }}>{player.name}&apos;s link</h3>
             <p className="small muted" style={{ margin: 0 }}>
-              Send it to {player.name} only: it logs them in as {player.name}.
+              Send it to {first} only. It works once, on the first phone that opens it.
             </p>
             <input readOnly value={open} onFocus={(e) => e.target.select()} />
             <a className="btn block" href={`https://wa.me/?text=${encodeURIComponent(text(open))}`} target="_blank" rel="noreferrer">
               WhatsApp
             </a>
-            <a className="btn secondary block" href={`mailto:?subject=${encodeURIComponent(`Your link for ${tname}`)}&body=${encodeURIComponent(text(open))}`}>
-              Email
+            <a className="btn secondary block" href={`sms:?&body=${encodeURIComponent(text(open))}`}>
+              Text message
             </a>
+            {access.email && mail ? (
+              <button className="btn secondary block" disabled={busy} onClick={emailIt}>
+                Email it to {access.email}
+              </button>
+            ) : (
+              <a className="btn secondary block" href={`mailto:?subject=${encodeURIComponent(`Your link for ${tname}`)}&body=${encodeURIComponent(text(open))}`}>
+                Email
+              </a>
+            )}
             <button
               className="btn secondary block"
               onClick={() => {
@@ -302,9 +347,6 @@ function SendLink({ player }: { player: PlayerRow }) {
               }}
             >
               Copy the link
-            </button>
-            <button className="chip" onClick={() => confirm(`Make a new link for ${player.name}? The old one stops working.`) && get(true)}>
-              New link
             </button>
             {msg && <p className="small">{msg}</p>}
             <button className="btn secondary block" onClick={() => setOpen(null)}>
@@ -327,7 +369,7 @@ const PROFILE_FIELDS = [
   ["quote", "Pre-tournament trash talk"],
 ] as const;
 
-function PlayerCard({ player, teams, pinSet, onSaved }: { player: PlayerRow; teams: Team[]; pinSet: boolean; onSaved: () => void }) {
+function PlayerCard({ player, teams, access, mail, onSaved }: { player: PlayerRow; teams: Team[]; access: Access; mail: boolean; onSaved: () => void }) {
   const { api, state } = useT();
   const [open, setOpen] = useState(false);
   const [f, setF] = useState<Record<string, string>>(() => ({
@@ -335,9 +377,9 @@ function PlayerCard({ player, teams, pinSet, onSaved }: { player: PlayerRow; tea
     handicap: player.handicap == null ? "" : String(player.handicap),
     team_id: player.team_id ?? "",
     bio: player.bio ?? "",
+    email: access.email ?? "",
     ...Object.fromEntries(PROFILE_FIELDS.map(([k]) => [k, String(player[k] ?? "")])),
   }));
-  const [pin, setPin] = useState("");
   const [photo, setPhoto] = useState<File | null>(null);
   const s = useSave();
   const isOrganiserPlayer = state?.tournament.organiser_player_id === player.id;
@@ -346,11 +388,8 @@ function PlayerCard({ player, teams, pinSet, onSaved }: { player: PlayerRow; tea
     try {
       const p: Record<string, unknown> = { ...f, id: player.id };
       if (photo) p.photo_path = await uploadFile(api, photo);
-      const r = await s.run({ action: "savePlayer", player: p, pin: pin || undefined });
-      if (r.ok) {
-        setPin("");
-        onSaved();
-      }
+      const r = await s.run({ action: "savePlayer", player: p });
+      if (r.ok) onSaved();
     } catch (e) {
       s.setMsg(e instanceof Error ? e.message : "Failed");
     }
@@ -372,10 +411,10 @@ function PlayerCard({ player, teams, pinSet, onSaved }: { player: PlayerRow; tea
           {player.name}
           {player.handicap != null && <span className="muted small"> · hcp {player.handicap}</span>}
           {teams.length > 0 && <span className="muted small"> · {teams.find((x) => x.id === player.team_id)?.name ?? "no team"}</span>}
-          {!pinSet && <span className="error small"> · no PIN</span>}
+          <span className={`small player-access${access.used || isOrganiserPlayer ? "" : " muted"}`}>{accessLine(access, isOrganiserPlayer)}</span>
         </h3>
         <span className="row">
-          <SendLink player={player} />
+          {!isOrganiserPlayer && <SendLink player={player} access={access} mail={mail} onSaved={onSaved} />}
           <button className="chip" aria-expanded={open} onClick={() => setOpen(!open)}>
             {open ? "Close" : "Edit"}
           </button>
@@ -421,9 +460,9 @@ function PlayerCard({ player, teams, pinSet, onSaved }: { player: PlayerRow; tea
               <span className="lbl">Photo</span>
               <input type="file" accept="image/*" onChange={(e) => setPhoto(e.target.files?.[0] ?? null)} />
             </label>
-            <label className="field" style={{ flex: "1 1 200px" }}>
-              <span className="lbl">{pinSet ? "Change login PIN" : "Set login PIN"}</span>
-              <input value={pin} onChange={(e) => setPin(e.target.value)} inputMode="numeric" placeholder="4–8 digits" />
+            <label className="field" style={{ flex: "1 1 240px" }}>
+              <span className="lbl">Email (optional: to send their link by email)</span>
+              <input type="email" inputMode="email" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} />
             </label>
           </div>
           <div className="row">
@@ -450,15 +489,13 @@ function NewPlayer({ teams, count, onSaved }: { teams: Team[]; count: number; on
   const [name, setName] = useState("");
   const [handicap, setHandicap] = useState("");
   const [team, setTeam] = useState("");
-  const [pin, setPin] = useState("");
   const s = useSave();
   async function add(e: React.FormEvent) {
     e.preventDefault();
-    const r = await s.run({ action: "savePlayer", player: { name, handicap, team_id: team, sort: count + 1 }, pin: pin || undefined }, "Player added");
+    const r = await s.run({ action: "savePlayer", player: { name, handicap, team_id: team, sort: count + 1 } }, "Player added");
     if (r.ok) {
       setName("");
       setHandicap("");
-      setPin("");
       onSaved();
     }
   }
@@ -478,7 +515,6 @@ function NewPlayer({ teams, count, onSaved }: { teams: Team[]; count: number; on
             ))}
           </select>
         )}
-        <input value={pin} onChange={(e) => setPin(e.target.value)} placeholder="PIN (4–8 digits)" inputMode="numeric" style={{ flex: "1 1 140px" }} />
       </div>
       <div className="row">
         <button className="btn" disabled={s.busy}>
@@ -1552,20 +1588,10 @@ export function ContentEditor({ data, onSaved }: { data: AdminData; onSaved: () 
 
 // ============================================================ 6. invite + publish
 
-export function InviteEditor({ data, onSaved }: { data: AdminData; onSaved: () => void }) {
+export function InviteEditor() {
   const { href } = useT();
-  const [orgPin, setOrgPin] = useState("");
   const s = useSave();
   const link = typeof window !== "undefined" ? `${window.location.origin}${href("/")}` : href("/");
-
-  async function savePins() {
-    const r = await s.run({ action: "updateTournament", patch: {}, organiserPin: orgPin || undefined });
-    if (r.ok) {
-      setOrgPin("");
-      onSaved();
-    }
-  }
-
   return (
     <section className="panel stack">
       <h2>Share it</h2>
@@ -1586,21 +1612,72 @@ export function InviteEditor({ data, onSaved }: { data: AdminData; onSaved: () =
         </div>
       </div>
       <p className="small" style={{ margin: 0 }}>
-        Players get in with their own link, sent from Players and PINs. A PIN is the fallback if a link goes astray.
+        Players get in with their own link, sent from Players. It works once, on their phone.
       </p>
-      <div className="row">
-        <label className="field" style={{ flex: "1 1 200px" }}>
-          <span className="lbl">{data.organiserPinSet ? "Change organiser PIN" : "Organiser PIN"}</span>
-          <input value={orgPin} onChange={(e) => setOrgPin(e.target.value)} inputMode="numeric" placeholder="4–8 digits" />
-        </label>
-      </div>
-      <div className="row">
-        <button className="btn secondary" disabled={s.busy || !orgPin} onClick={savePins}>
-          Save organiser PIN
-        </button>
-        <Msg msg={s.msg} />
-      </div>
+      <Msg msg={s.msg} />
     </section>
+  );
+}
+
+/** Co-organisers: added by email. They sign in and say it's them; then they can run everything you can. */
+export function OrganisersEditor({ data, onSaved }: { data: AdminData; onSaved: () => void }) {
+  const [email, setEmail] = useState("");
+  const [list, setList] = useState(data.organisers ?? []);
+  const s = useSave();
+  const live = list.filter((o) => !o.pending);
+  async function add(e: React.FormEvent) {
+    e.preventDefault();
+    const r = await s.run({ action: "addOrganiser", email }, "Sent");
+    if (r.ok) {
+      setList((r.j.organisers as typeof list) ?? list);
+      setEmail("");
+      onSaved();
+    }
+  }
+  async function remove(o: (typeof list)[number]) {
+    if (!confirm(o.pending ? `Cancel the invitation to ${o.email}?` : `Remove ${o.email} as an organiser?`)) return;
+    const r = await s.run({ action: "removeOrganiser", email: o.email });
+    if (r.ok) {
+      setList((r.j.organisers as typeof list) ?? list);
+      onSaved();
+    }
+  }
+  return (
+    <div className="stack">
+      <section className="panel stack">
+        <h2>Who runs it</h2>
+        {list.length === 0 && <p style={{ margin: 0 }}>Nobody with an email yet. Add yours so you can run it from any phone.</p>}
+        <ul className="org-people">
+          {list.map((o) => (
+            <li key={o.email}>
+              <span>
+                <strong>{o.email}</strong>
+                <span className="small muted">{o.you ? "You" : o.pending ? "Asked, not signed in yet" : "Organiser"}</span>
+              </span>
+              {!o.you && (o.pending || live.length > 1) && (
+                <button className="chip" onClick={() => remove(o)}>
+                  {o.pending ? "Cancel" : "Remove"}
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      </section>
+      <form className="panel stack" onSubmit={add}>
+        <h2>Add an organiser</h2>
+        <p style={{ margin: 0 }}>Someone to help run it: we email them a link. Once they sign in and say it&apos;s them, they can do everything you can.</p>
+        <div className="field">
+          <label htmlFor="org-email">Their email</label>
+          <input id="org-email" type="email" inputMode="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+        </div>
+        <div className="row">
+          <button className="btn" disabled={s.busy || !email.trim()}>
+            Add organiser
+          </button>
+          <Msg msg={s.msg} />
+        </div>
+      </form>
+    </div>
   );
 }
 
@@ -1623,7 +1700,7 @@ export function ResetTestData({ onSaved }: { onSaved: () => void }) {
       <h2>Reset test data</h2>
       <p className="small" style={{ margin: 0 }}>
         Clears all scores, sign-offs, posts, photos and videos, comments, votes, AI previews, bulletins and reports, and highlights films. Every round goes back to
-        upcoming. <strong>Kept:</strong> players, PINs and profiles, each round&apos;s set-up (dates, handicaps, matches, scorecard), course guides and photos, and
+        upcoming. <strong>Kept:</strong> players, their links and profiles, each round&apos;s set-up (dates, handicaps, matches, scorecard), course guides and photos, and
         the email list. Emails already sent can&apos;t be unsent. This can&apos;t be undone.
       </p>
       <div className="row">

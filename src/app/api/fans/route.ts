@@ -3,6 +3,7 @@ import { adminClient } from "@/lib/admin";
 import { bad, context, json, siteOrigin, DEMO_READONLY } from "@/lib/server-data";
 import { EMAIL_RE, fanLinkEmail, mailConfigured, sendOne } from "@/lib/email";
 import { isCrew, setSession } from "@/lib/auth";
+import { signIn } from "@/lib/accounts";
 import { clientIp, tooFast } from "@/lib/social";
 
 const TOKEN = /^[\w-]{20,64}$/;
@@ -23,11 +24,13 @@ export async function POST(req: Request) {
   if (b.action === "verify") {
     const token = String(b.token ?? "");
     if (!TOKEN.test(token)) return bad("That link isn't complete. Open it from the email again.");
-    const { data: fan } = await db.from("fans").select("id,name,blocked,token_expires").eq("tournament_id", t.id).eq("token", token).maybeSingle();
+    const { data: fan } = await db.from("fans").select("id,name,email,blocked,token_expires").eq("tournament_id", t.id).eq("token", token).maybeSingle();
     if (!fan || !fan.token_expires || new Date(fan.token_expires).getTime() < Date.now())
       return bad("That link has expired. Ask for a new one from the feed.", 410);
     if (fan.blocked) return bad("This email can't join the conversation.", 403);
-    await db.from("fans").update({ verified_at: new Date().toISOString() }).eq("id", fan.id);
+    await db.from("fans").update({ verified_at: new Date().toISOString(), token: null }).eq("id", fan.id);
+    // The email is confirmed, so they're signed in with it: this tournament shows under Following in My golf
+    await signIn(fan.email).catch(() => null);
     // Already signed in as a player or organiser on this phone? Keep that (it can do more)
     if (!isCrew(session)) await setSession(t.id, { role: "fan", name: fan.name, fanId: fan.id });
     return json({ ok: true, name: fan.name, crew: isCrew(session) });
@@ -45,7 +48,7 @@ export async function POST(req: Request) {
 
   const token = randomBytes(24).toString("base64url");
   const expires = new Date(Date.now() + LINK_HOURS * 3600e3).toISOString();
-  const { data: existing } = await db.from("fans").select("id,blocked").eq("tournament_id", t.id).ilike("email", email).maybeSingle();
+  const { data: existing } = await db.from("fans").select("id,blocked").eq("tournament_id", t.id).eq("email", String(email).toLowerCase()).maybeSingle();
   let fanId: string;
   if (existing) {
     if (existing.blocked) return bad("This email can't join the conversation.", 403);

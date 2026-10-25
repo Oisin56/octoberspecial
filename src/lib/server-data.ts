@@ -2,7 +2,8 @@ import { isDemo } from "./site";
 import "server-only";
 import { adminClient } from "./admin";
 import { normalizeRound, type TournamentRow, type TournamentState, type RoundRow } from "./types";
-import { getSession, isOwner, type Session } from "./auth";
+import { getAccount, getSession, isOwner, type Session } from "./auth";
+import { isAccountOrganiser } from "./accounts";
 
 export interface TournamentPrivate extends TournamentRow {
   organiser_pin_hash: string | null;
@@ -25,10 +26,43 @@ export async function context(req: Request, body?: Record<string, unknown>) {
   const url = new URL(req.url);
   const slug = String(body?.t ?? url.searchParams.get("t") ?? "");
   const t = await tournamentBySlug(slug);
-  const session: Session | null = t ? await getSession(t.id) : null;
+  const session: Session | null = t ? await stillGood(t, await getSession(t.id)) : null;
   // The example tournament on the front page can be looked at, never changed (except by the site owner)
   const demo = !!t && req.method !== "GET" && (await isDemo(t.slug)) && !(await isOwner());
   return { t, session: demo ? null : session, demo };
+}
+
+/**
+ * A phone's role is checked against the tournament on every request: a player signed out by Send again (or
+ * removed), a co-organiser removed, or an old organiser sign-in after the tournament moved to email sign-in, is
+ * just a follower now.
+ */
+async function stillGood(t: TournamentPrivate, s: Session | null): Promise<Session | null> {
+  if (!s) return null;
+  const db = adminClient();
+  if (s.role === "player") {
+    if (!s.playerId) return null;
+    const { data: p, error } = await db.from("players").select("id,link_gen").eq("id", s.playerId).eq("tournament_id", t.id).maybeSingle();
+    if (error) return s; // before the database update
+    if (!p) return null;
+    return (s.gen ?? 0) === (p.link_gen ?? 0) ? s : null;
+  }
+  if (s.role === "organiser") {
+    switch (s.via) {
+      case "account": {
+        const a = await getAccount();
+        return a && (await isAccountOrganiser(a.id, t.id)) ? s : null;
+      }
+      case "owner":
+        return (await isOwner()) ? s : null;
+      case "create":
+        return s;
+      default:
+        // Signed in before emails, with the tournament's organiser PIN: good until it moves to email sign-in
+        return t.organiser_pin_hash ? s : null;
+    }
+  }
+  return s;
 }
 
 export const DEMO_READONLY = "This is an example tournament, so nothing can be changed here. Start your own to try it for real.";

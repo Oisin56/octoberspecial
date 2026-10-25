@@ -15,7 +15,7 @@ export function BrandShell({ children }: { children: React.ReactNode }) {
             </span>
           </Link>
           <Link href="/account" className="mgs-head-link quiet">
-            My tournaments
+            My golf
           </Link>
         </div>
       </header>

@@ -154,19 +154,41 @@ export function fanLinkEmail(t: TournamentRow, name: string, link: string) {
   return { subject: `Join the conversation: ${t.name}`, html, text };
 }
 
-/** An organiser signing in to see their tournaments. */
-export function accountLinkEmail(link: string) {
+/**
+ * Signing in: one big button and a 6-digit code (for when the email opens on another device). Both work once, for
+ * 30 minutes. `intro` says why it came, when someone else asked for it (adding you as an organiser, say).
+ */
+export function signInEmail(link: string, code: string, intro?: string) {
+  const lead = intro ?? "Tap the button to sign in.";
   const html = `<!doctype html><html><body style="margin:0;background:#e4e9e5;font-family:Georgia,serif;color:#18231d">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:20px 12px">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;background:#fff;border-radius:8px;overflow:hidden">
 <tr><td style="background:#1f3d2b;color:#f7f7f2;padding:18px 24px;font-family:Arial Narrow,Arial,sans-serif;font-size:24px;font-weight:bold">${BRAND.name}</td></tr>
 <tr><td style="padding:22px 24px;font-size:17px;line-height:1.55">
-<p>Tap the button to sign in and see your tournaments.</p>
+<p>${esc(lead)}</p>
 <p style="margin:26px 0"><a href="${esc(link)}" style="display:inline-block;background:#1f3d2b;color:#f7f7f2;text-decoration:none;font-family:Arial,sans-serif;font-weight:bold;font-size:19px;padding:16px 28px;border-radius:10px">Sign in</a></p>
-<p style="font-size:13px;color:#666;font-family:Arial,sans-serif">The button works once, for 30 minutes. Didn't ask for this? Ignore this email and nothing happens.</p>
+<p>Or type this code where you asked to sign in:</p>
+<p style="font-family:Arial,sans-serif;font-size:34px;font-weight:bold;letter-spacing:6px;margin:8px 0 22px">${esc(code)}</p>
+<p style="font-size:13px;color:#666;font-family:Arial,sans-serif">The button and the code work once, for 30 minutes. Didn't ask for this? Ignore this email and nothing happens.</p>
 </td></tr></table></td></tr></table></body></html>`;
-  const text = `Open this link to sign in to ${BRAND.name} and see your tournaments:\n\n${link}\n\nIt works once, for 30 minutes. Didn't ask for this? Ignore this email and nothing happens.\n`;
-  return { subject: `Sign in to ${BRAND.name}`, html, text };
+  const text = `${lead}\n\nSign in: ${link}\n\nOr type this code where you asked to sign in: ${code}\n\nThe link and the code work once, for 30 minutes. Didn't ask for this? Ignore this email and nothing happens.\n`;
+  return { subject: `${code} is your ${BRAND.name} code`, html, text };
+}
+
+/** A player's personal link, sent by email by the organiser. Tapping it also confirms the email is theirs. */
+export function playerLinkEmail(t: TournamentRow, name: string, link: string) {
+  const p = paletteFor(t.theme, t.custom_colors);
+  const html = `<!doctype html><html><body style="margin:0;background:${p.mist};font-family:Georgia,serif;color:${p.ink}">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:20px 12px">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;background:#fff;border-radius:8px;overflow:hidden">
+<tr><td style="background:${p.board};color:${p.tile};padding:18px 24px;font-family:Arial Narrow,Arial,sans-serif;font-size:24px;font-weight:bold">${esc(t.name)}</td></tr>
+<tr><td style="padding:22px 24px;font-size:17px;line-height:1.55">
+<p>Hi ${esc(name)},</p><p>Here's your link for ${esc(t.name)}. Tap it on your phone to keep score, post photos and follow the leaderboard.</p>
+<p style="margin:26px 0"><a href="${esc(link)}" style="display:inline-block;background:${p.board};color:${p.tile};text-decoration:none;font-family:Arial,sans-serif;font-weight:bold;font-size:19px;padding:16px 28px;border-radius:10px">Open my link</a></p>
+<p style="font-size:13px;color:#666;font-family:Arial,sans-serif">This link is yours alone: it signs you in as ${esc(name)}. Please don't forward it.</p>
+</td></tr></table></td></tr></table></body></html>`;
+  const text = `Hi ${name},\n\nHere's your link for ${t.name}. Tap it on your phone to keep score, post photos and follow the leaderboard:\n\n${link}\n\nThis link is yours alone: it signs you in as ${name}. Please don't forward it.\n`;
+  return { subject: `Your link for ${t.name}`, html, text };
 }
 
 /** A plain brand email: a heading, a few paragraphs and one big button. */

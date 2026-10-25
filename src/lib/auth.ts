@@ -2,34 +2,56 @@ import "server-only";
 import { cookies } from "next/headers";
 import { createHmac, createHash, timingSafeEqual } from "node:crypto";
 
-/** Three roles: the organiser, the players, and fans (everyone else: caddies, friends, people at home) */
+/** Three roles in each tournament: the organiser (co-organisers too), the players, and followers ("fan"). */
 export type Role = "organiser" | "player" | "fan";
+
+/**
+ * How this phone came to have its role in a tournament, so it can be checked on every request:
+ *   account  signed in with an email that's an organiser (or player) of it
+ *   link     a player's personal link (good until the organiser taps Send again)
+ *   create   this phone made the tournament
+ *   owner    the site owner opened it from their page
+ *   pin      an old player PIN
+ *   (none)   an old organiser sign-in from before emails (good until the tournament moves to email sign-in)
+ */
+export type Via = "account" | "link" | "create" | "owner" | "pin";
 
 export interface Session {
   role: Role;
   name: string;
   playerId?: string;
-  /** Fans: followers signed up by email (photos, comments and likes) */
+  /** Followers signed up by email (photos, comments and likes) */
   fanId?: string;
+  via?: Via;
+  /** Players: the player's link generation when this phone signed in (Send again raises it) */
+  gen?: number;
 }
 
-/** An organiser's account (signed in by email): the tournaments it runs */
+/** A person signed in with their email */
 export interface Account {
   id: string;
   email: string;
 }
 
-/** One cookie holds a session per tournament (keyed by tournament id),
- *  plus an optional site-owner flag (can create tournaments). */
+/** One cookie holds a session per tournament (keyed by tournament id), the signed-in account, and the owner's
+ *  second check (when it was passed). */
 interface Jar {
   t: Record<string, Session>;
+  /** The old owner PIN (only until the owner signs in with their email) */
   owner?: boolean;
+  /** When the site owner last passed the second check on this device */
+  ownerOk?: number;
+  /** A passkey challenge waiting to be answered */
+  chal?: string;
   account?: Account;
   iat: number;
 }
 
 const COOKIE = "os_session";
-const MAX_AGE = 60 * 60 * 24 * 180; // 180 days
+/** Signed in for a year from the last visit */
+const MAX_AGE = 60 * 60 * 24 * 365;
+/** The owner's second check lasts this long on a device */
+export const OWNER_CHECK_HOURS = 12;
 
 function secret() {
   const s = process.env.SESSION_SECRET;
@@ -43,6 +65,11 @@ function sign(payload: string) {
 
 export function hashPin(pin: string): string {
   return createHash("sha256").update(`${secret()}:${pin.trim()}`).digest("hex");
+}
+
+/** The 6-digit code in a sign-in email: only its hash is kept. */
+export function hashCode(email: string, code: string): string {
+  return createHmac("sha256", secret()).update(`code:${email.trim().toLowerCase()}:${code.trim()}`).digest("hex");
 }
 
 export function safeEqual(a: string, b: string) {
@@ -60,7 +87,14 @@ async function readJar(): Promise<Jar> {
   if (!payload || !sig || !safeEqual(sig, sign(payload))) return empty;
   try {
     const j = JSON.parse(Buffer.from(payload, "base64url").toString());
-    return { t: j.t ?? {}, owner: !!j.owner, account: j.account?.id ? j.account : undefined, iat: j.iat ?? Date.now() };
+    return {
+      t: j.t ?? {},
+      owner: !!j.owner,
+      ownerOk: typeof j.ownerOk === "number" ? j.ownerOk : undefined,
+      chal: typeof j.chal === "string" ? j.chal : undefined,
+      account: j.account?.id ? j.account : undefined,
+      iat: j.iat ?? Date.now(),
+    };
   } catch {
     return empty;
   }
@@ -78,6 +112,15 @@ async function writeJar(j: Jar) {
   });
 }
 
+/** Keeps this phone signed in for another year (at most once a day, on any visit). Returns the account, if any. */
+export async function touch(): Promise<Account | null> {
+  const j = await readJar();
+  const signedIn = j.account || Object.keys(j.t).length;
+  if (signedIn && Date.now() - j.iat > 24 * 3600e3) await writeJar(j).catch(() => {});
+  return j.account ?? null;
+}
+
+/** This phone's session for a tournament, as stored. Use context() in server-data, which also checks it's still good. */
 export async function getSession(tournamentId: string): Promise<Session | null> {
   const j = await readJar();
   const s = j.t[tournamentId] ?? null;
@@ -86,21 +129,47 @@ export async function getSession(tournamentId: string): Promise<Session | null> 
   return s;
 }
 
+/** This phone signed in with the old owner PIN (its old organiser sign-ins may be other people's tournaments). */
+export async function ownerPinPhone(): Promise<boolean> {
+  return (await readJar()).owner === true;
+}
+
+/** Every tournament role this phone holds, as stored. */
+export async function allSessions(): Promise<Record<string, Session>> {
+  return (await readJar()).t;
+}
+
 export async function getAccount(): Promise<Account | null> {
   return (await readJar()).account ?? null;
 }
 
-/** Sign an organiser's account in on this device, with an organiser session for each of its tournaments. */
+/** Sign a person in on this device, with their role in each of their tournaments (kept where this phone already
+ *  has an organiser session, which can do more). */
 export async function setAccount(a: Account, sessions: Record<string, Session>) {
   const j = await readJar();
+  if (j.account && j.account.id !== a.id) {
+    // Someone else on this phone: their account sessions go
+    for (const [tid, s] of Object.entries(j.t)) if (s.via === "account") delete j.t[tid];
+    delete j.ownerOk;
+  }
   j.account = a;
-  for (const [tid, s] of Object.entries(sessions)) j.t[tid] = s;
+  const rank = { organiser: 3, player: 2, fan: 1 } as const;
+  for (const [tid, s] of Object.entries(sessions)) {
+    const now = j.t[tid];
+    // Never a step down on this phone (an organiser stays organiser; a player doesn't become a follower)
+    if (now && rank[now.role] > rank[s.role]) continue;
+    j.t[tid] = s;
+  }
   await writeJar(j);
 }
 
+/** Sign out: the account, and every role it gave this phone. */
 export async function clearAccount() {
   const j = await readJar();
   delete j.account;
+  delete j.ownerOk;
+  delete j.owner;
+  for (const [tid, s] of Object.entries(j.t)) if (s.via === "account" || s.via === "owner") delete j.t[tid];
   await writeJar(j);
 }
 
@@ -116,20 +185,80 @@ export async function clearSession(tournamentId: string) {
   await writeJar(j);
 }
 
-export async function isOwner(): Promise<boolean> {
-  return (await readJar()).owner === true;
+// ------------------------------------------------------------ the site owner
+
+/** The site owner's email (OWNER_EMAIL in Vercel). */
+export function ownerEmail(): string {
+  return (process.env.OWNER_EMAIL ?? "").trim().toLowerCase();
 }
 
+export function isOwnerEmail(email: string | null | undefined) {
+  const o = ownerEmail();
+  return !!o && !!email && email.trim().toLowerCase() === o;
+}
+
+/** The site owner: signed in with the owner's email and passed the second check on this device in the last 12
+ *  hours. Until the owner has signed in that way once, the old owner PIN still works. */
+export async function isOwner(): Promise<boolean> {
+  const j = await readJar();
+  if (j.account && isOwnerEmail(j.account.email) && j.ownerOk && Date.now() - j.ownerOk < OWNER_CHECK_HOURS * 3600e3) return true;
+  return j.owner === true && !(await ownerClaimed());
+}
+
+/** Signed in with the owner's email, but the second check is still to do on this device. */
+export async function ownerNeedsCheck(): Promise<boolean> {
+  const j = await readJar();
+  return !!j.account && isOwnerEmail(j.account.email) && !(j.ownerOk && Date.now() - j.ownerOk < OWNER_CHECK_HOURS * 3600e3);
+}
+
+export async function setOwnerChecked() {
+  const j = await readJar();
+  j.ownerOk = Date.now();
+  delete j.owner;
+  delete j.chal;
+  await writeJar(j);
+}
+
+/** The old way in: the owner PIN, until the owner has signed in with their email. */
 export async function setOwner() {
   const j = await readJar();
   j.owner = true;
   await writeJar(j);
 }
 
-/** The site owner's PIN (env) lets you create tournaments and run any of them. */
-export function checkOwnerPin(pin: string) {
+export async function setChallenge(c: string | null) {
+  const j = await readJar();
+  if (c) j.chal = c;
+  else delete j.chal;
+  await writeJar(j);
+}
+
+export async function getChallenge(): Promise<string | null> {
+  return (await readJar()).chal ?? null;
+}
+
+let claimed: { at: number; v: boolean } | null = null;
+/** The owner has signed in with their email and passed the second check at least once: the PIN is retired. */
+export async function ownerClaimed(): Promise<boolean> {
+  if (claimed && (claimed.v || Date.now() - claimed.at < 30e3)) return claimed.v;
+  const { adminClient } = await import("./admin");
+  const { data } = await adminClient().from("site_settings").select("value").eq("key", "owner").maybeSingle();
+  const v = !!(data?.value as { claimedAt?: string } | null)?.claimedAt;
+  claimed = { at: Date.now(), v };
+  return v;
+}
+
+export async function markOwnerClaimed() {
+  const { adminClient } = await import("./admin");
+  await adminClient().from("site_settings").upsert({ key: "owner", value: { claimedAt: new Date().toISOString() }, updated_at: new Date().toISOString() });
+  claimed = { at: Date.now(), v: true };
+}
+
+/** The site owner's PIN (env), only until the owner has signed in with their email. */
+export async function checkOwnerPin(pin: string) {
   const expected = process.env.ORGANISER_PIN ?? "";
-  return !!expected && safeEqual(pin.trim(), expected);
+  if (!expected || !safeEqual(pin.trim(), expected)) return false;
+  return !(await ownerClaimed());
 }
 
 /** Players and organisers: everyone who can score, film and log what happened (not fans). */

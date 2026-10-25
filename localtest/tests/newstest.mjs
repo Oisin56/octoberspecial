@@ -26,7 +26,13 @@ for (let h = 1; h <= 18; h++) {
   await post("/api/score", { roundId: r1.id, hole: h, scores: { oisin: { gross: h === 3 ? 2 : h % 4 === 0 ? p + 1 : p, gir: h % 2 === 1 }, neil: { gross: p + (h % 3 === 0 ? 0 : 1), gir: h === 4 } }, ctpWinner: p === 3 ? (h === 11 ? "neil" : "oisin") : null, ldWinner: p === 5 ? (h === 4 ? "neil" : "oisin") : null });
 }
 // A highlight clip on R1
-await post("/api/login", { mode: "player", playerId: "neil", pin: "2468" });
+{
+  // Neil signs in with his link on this phone (the organiser signs out first)
+  const u = (await post("/api/admin", { action: "playerLink", playerId: "neil", reset: true })).j.url;
+  const out = await fetch(`${BASE}/api/login?t=${T}`, { method: "DELETE", headers: { cookie } });
+  cookie = (out.headers.get("set-cookie") ?? cookie).split(";")[0];
+  await post("/api/login", { mode: "link", code: u.split("/in/")[1], step: "confirm" });
+}
 const up = await post("/api/upload-url", { filename: "c.mp4", contentType: "video/mp4" });
 await post("/api/posts", { roundId: r1.id, hole: 14, body: "Quarry hole, stiffed to three feet", playerIds: ["oisin"], kind: "video", mediaPath: up.j.path });
 await post("/api/login", { mode: "organiser", pin: "1234" });

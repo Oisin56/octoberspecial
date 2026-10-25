@@ -33,7 +33,11 @@ const tid = sql(`select id from tournaments where slug='${T}'`);
 const r5 = sql(`select id from rounds where tournament_id='${tid}' and number=5`);
 const org = agent(), neil = agent();
 await org("/api/login", { mode: "organiser", pin: "1234" });
-await neil("/api/login", { mode: "player", playerId: "neil", pin: "2468" });
+{
+  // Neil signs in with his own link ("I'm Neil")
+  const u = (await org("/api/admin", { action: "playerLink", playerId: "neil", reset: true })).j.url;
+  await neil("/api/login", { mode: "link", code: u.split("/in/")[1], step: "confirm" });
+}
 const pars = JSON.parse(sql(`select holes::text from rounds where id='${r5}'`)).map((h) => h.par);
 
 // --- concession in the engine and API
@@ -92,15 +96,11 @@ await np.goto(`${BASE}/t/${T}/`, { waitUntil: "networkidle" });
 await np.locator(".sign-prompt").waitFor({ timeout: 8000 });
 ok(true, "Neil sees 'Your card is ready for you to sign' on his own phone");
 
-// Pass the phone: Neil signs with his PIN
+// Pass the phone: Neil signs on the scorer's phone with a tap (no PIN)
 await p.locator(".cp-signer", { hasText: "Neil" }).getByRole("button", { name: "Sign" }).tap();
-await p.getByLabel("Neil's PIN").fill("1111");
-await p.getByRole("button", { name: "Sign for Neil" }).tap();
-await p.locator(".sf-sheet .error").waitFor();
-ok(/PIN isn't right/.test(await p.locator(".sf-sheet .error").innerText()), "wrong PIN refused");
+ok((await p.locator(".cp-pin").count()) === 0, "no PIN to type on the scorer's phone");
 await p.waitForTimeout(300);
-await p.screenshot({ path: "/var/tmp/ospg/shots/card-6-pin.png" });
-await p.getByLabel("Neil's PIN").fill("2468");
+await p.screenshot({ path: "/var/tmp/ospg/shots/card-6-sign.png" });
 await p.getByRole("button", { name: "Sign for Neil" }).tap();
 await p.locator(".cp-stage.final").waitFor({ timeout: 8000 });
 ok(/Final, signed by Oisin and Neil/.test(await p.locator(".cp-stage").innerText()), "everyone signed: final");

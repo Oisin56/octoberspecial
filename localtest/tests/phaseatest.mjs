@@ -32,7 +32,11 @@ function agent() {
 }
 const org = agent(), neil = agent();
 await org("/api/login", { mode: "organiser", pin: "1234" });
-await neil("/api/login", { mode: "player", playerId: "neil", pin: "2468" });
+{
+  // Neil signs in with his own link
+  const u = (await org("/api/admin", { action: "playerLink", playerId: "neil", reset: true })).j.url;
+  await neil("/api/login", { mode: "link", code: u.split("/in/")[1], step: "confirm" });
+}
 const tid = sql(`select id from tournaments where slug='${T}'`);
 
 // ---- A6: a round on the back nine

@@ -16,6 +16,11 @@ function agent(T) {
   call.cookie = () => cookie;
   return call;
 }
+// A player signs in with a fresh personal link (Send again, then "I'm Aoife")
+const linkIn = async (orgCall, plCall, playerId) => {
+  const u = (await orgCall("/api/admin", { action: "playerLink", playerId, reset: true })).j.url;
+  return plCall("/api/login", { mode: "link", code: u.split("/in/")[1], step: "confirm" });
+};
 const b = await chromium.launch();
 async function phone(cookie) {
   const ctx = await b.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, hasTouch: true, isMobile: true });
@@ -60,7 +65,7 @@ ok((await op.locator(".live-strip").count()) === 0, "no strip on the scoring scr
 // ---- B: Test Cup, a team session of two singles matches
 const C = "test-cup";
 const boss = agent(C);
-await boss("/api/login", { mode: "organiser", pin: "4321" });
+await boss("/api/login", { mode: "organiser", pin: "1234" });
 const ctid = sql(`select id from tournaments where slug='${C}'`);
 const cr1 = sql(`select id from rounds where tournament_id='${ctid}' and number=1`);
 ok((await boss("/api/cards", { action: "submit", roundId: cr1, game: "m1" })).j.stage === "final", "test cup R1 card submitted");
@@ -105,7 +110,7 @@ const rows = await p.locator(".tb-table tbody tr").allInnerTexts();
 ok(rows.length === 4 && /^1\s+Aoife\s+14 pts\s+7$/.test(rows[0].replace(/\s+/g, " ").trim()) === false ? true : true, `field rows: ${rows.map((r) => r.replace(/\s+/g, " ").trim()).join(" | ")}`);
 await p.screenshot({ path: "/var/tmp/ospg/shots/live-6-field.png" });
 const aoife = agent(C);
-await aoife("/api/login", { mode: "player", playerId: ids.Aoife, pin: "1111" });
+await linkIn(boss, aoife, ids.Aoife);
 const ap = await phone(aoife.cookie());
 await ap.goto(`${BASE}/t/${C}/score?round=3`, { waitUntil: "networkidle" });
 await ap.locator(".score-top .status").waitFor();

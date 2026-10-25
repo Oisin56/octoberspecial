@@ -14,8 +14,14 @@ const b = await chromium.launch();
     if (sc) cookie = sc.split(";")[0];
     return { status: r.status, j: await r.json().catch(() => ({})) };
   };
-  const login = await fetch(BASE + "/api/login", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ t: T, mode: "player", playerId: "neil", pin: "2468" }) });
-  cookie = login.headers.get("set-cookie").split(";")[0];
+  // Neil signs in with his own link (the organiser makes it)
+  const j = async (path, body, ck) => {
+    const r = await fetch(BASE + path, { method: "POST", headers: { "content-type": "application/json", ...(ck ? { cookie: ck } : {}) }, body: JSON.stringify({ t: T, ...body }) });
+    return { ck: (r.headers.get("set-cookie") ?? "").split(";")[0], j: await r.json().catch(() => ({})) };
+  };
+  const org = await j("/api/login", { mode: "organiser", pin: "1234" });
+  const url = (await j("/api/admin", { action: "playerLink", playerId: "neil", reset: true }, org.ck)).j.url;
+  cookie = (await j("/api/login", { mode: "link", code: url.split("/in/")[1], step: "confirm" })).ck;
   const good = await call({ contentType: "image/jpeg", filename: "p.jpg", posterFor: `video/${T}/abc-123.webm` });
   ok(good.status === 200 && good.j.path === `video/${T}/abc-123.webm.jpg`, "a clip's still frame is saved next to it");
   const bad = await call({ contentType: "image/jpeg", filename: "p.jpg", posterFor: `video/other-trip/abc.webm` });

@@ -127,7 +127,7 @@ export default function TournamentSetup() {
   if (!session)
     return (
       <p>
-        <Link href={href(`/login?next=${encodeURIComponent(href("/setup"))}`)}>Log in</Link> as organiser.
+        <Link href={href(`/login?next=${encodeURIComponent(href("/setup"))}`)}>Sign in</Link> as organiser.
       </p>
     );
   if (session.role !== "organiser") return <p>Organiser only.</p>;
@@ -511,7 +511,7 @@ export default function TournamentSetup() {
           <a href={href("/admin#look")}>Logo, photos and your own colours</a>
         </li>
         <li>
-          <a href={href("/admin#players")}>Players&apos; links, PINs and photos</a>
+          <a href={href("/admin#players")}>Players&apos; links and photos</a>
         </li>
         {legacy && (
           <li>

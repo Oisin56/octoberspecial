@@ -61,7 +61,7 @@ export function CardsAdmin({ data, onSaved }: { data: AdminData; onSaved: () => 
           </span>
           <span>
             <strong>Every player signs the card before it&apos;s final</strong>
-            <small>{need ? "The scorer submits the card, then each player in the match signs it (on the scorer's phone with their PIN, or on their own)." : "Off: a card is final as soon as the scorer submits it."}</small>
+            <small>{need ? "The scorer submits the card, then each player in the match signs it (with a tap on the scorer's phone, or on their own)." : "Off: a card is final as soon as the scorer submits it."}</small>
           </span>
         </button>
         <p className="small muted" style={{ margin: 0 }}>

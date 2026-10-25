@@ -1,48 +1,88 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { BRAND } from "@/lib/brand";
+import { EmailSignIn } from "@/components/EmailSignIn";
 
-interface T {
+interface Tile {
   id: string;
   slug: string;
   name: string;
   subtitle: string | null;
   start_date: string | null;
+  end_date: string | null;
+  as?: string | null;
 }
 
-/** Organisers: sign in with your email, and every tournament you run is here, on any device. */
+interface Offer {
+  id: string;
+  role: "organiser" | "player";
+  tournament: string;
+  slug: string;
+  player: string | null;
+  added_by: string | null;
+}
+
+interface Golf {
+  account: { email: string } | null;
+  owner?: boolean;
+  running?: Tile[];
+  playing?: Tile[];
+  following?: Tile[];
+  offers?: Offer[];
+}
+
+const day = (d: string, year = true) => new Date(`${d}T12:00:00`).toLocaleDateString("en-IE", { day: "numeric", month: "short", ...(year ? { year: "numeric" } : {}) });
+
+/** "12 to 14 Oct 2026", or the subtitle when there are no dates yet */
+function when(t: Tile) {
+  if (t.start_date && t.end_date && t.end_date !== t.start_date) return `${day(t.start_date, t.start_date.slice(0, 4) !== t.end_date.slice(0, 4))} to ${day(t.end_date)}`;
+  if (t.start_date) return day(t.start_date);
+  return t.subtitle ?? "";
+}
+
+/** My golf: sign in with your email, and every tournament you run, play in or follow is here, on any device. */
 function AccountInner() {
   const sp = useSearchParams();
-  const [state, setState] = useState<{ account: { email: string } | null; tournaments: T[] } | null>(null);
-  const [email, setEmail] = useState("");
-  const [sent, setSent] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const router = useRouter();
+  const [g, setG] = useState<Golf | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [adding, setAdding] = useState(!!sp.get("add"));
-  const [link, setLink] = useState(sp.get("add") ?? "");
-  const [pin, setPin] = useState("");
 
-  const load = () =>
-    fetch("/api/account", { cache: "no-store" })
-      .then((r) => r.json())
-      .then(setState)
-      .catch(() => setState({ account: null, tournaments: [] }));
+  const load = useCallback(
+    () =>
+      fetch("/api/account", { cache: "no-store" })
+        .then((r) => r.json())
+        .then(setG)
+        .catch(() => setG({ account: null })),
+    [],
+  );
   useEffect(() => {
-    load();
-  }, []);
+    const t = setTimeout(load, 0);
+    return () => clearTimeout(t);
+  }, [load]);
 
-  async function call(body: Record<string, unknown>) {
-    setBusy(true);
+  async function call(body: Record<string, unknown>, key: string) {
+    setBusy(key);
     setErr(null);
-    const r = await fetch("/api/account", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-    const j = await r.json().catch(() => ({}));
-    setBusy(false);
-    if (!r.ok) setErr(j.error ?? "That didn't work. Try again.");
-    return r.ok ? j : null;
+    const r = await fetch("/api/account", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).catch(() => null);
+    const j = r ? await r.json().catch(() => ({})) : {};
+    setBusy(null);
+    if (!r?.ok) setErr(j.error ?? "That didn't work. Try again.");
+    return r?.ok ? j : null;
   }
+
+  const next = sp.get("next");
+  const lists: [string, Tile[], (t: Tile) => string][] = g?.account
+    ? [
+        ["Running", g.running ?? [], (t) => `/t/${t.slug}/admin`],
+        ["Playing in", g.playing ?? [], (t) => `/t/${t.slug}`],
+        ["Following", g.following ?? [], (t) => `/t/${t.slug}`],
+      ]
+    : [];
+  const empty = lists.every(([, xs]) => !xs.length) && !g?.offers?.length;
 
   return (
     <div className="theme-root mgs" data-theme="clubhouse">
@@ -56,105 +96,106 @@ function AccountInner() {
         </div>
       </header>
       <main className="acct">
-        {!state ? (
+        {!g ? (
           <p>Loading…</p>
-        ) : !state.account ? (
-          sent ? (
-            <section className="panel stack">
-              <h1>Check your email</h1>
-              <p className="lead">We&apos;ve sent a sign-in link to {email}. Tap it on this phone or computer to see your tournaments.</p>
-              <button className="btn secondary big" onClick={() => setSent(false)}>
-                Use a different email
-              </button>
-            </section>
-          ) : (
-            <form
-              className="panel stack"
-              onSubmit={async (e) => {
-                e.preventDefault();
-                if (await call({ action: "send", email, next: sp.get("add") ? `/account?add=${sp.get("add")}` : undefined })) setSent(true);
-              }}
-            >
-              <h1>My tournaments</h1>
-              <p className="lead">Organisers: sign in with your email to see every tournament you run, on any device. No password: we email you a link.</p>
-              <div className="field">
-                <label htmlFor="em">Your email</label>
-                <input id="em" type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" required />
-              </div>
-              {err && <p className="error">{err}</p>}
-              <button className="btn block big" disabled={busy}>
-                {busy ? "Sending…" : "Email me a sign-in link"}
-              </button>
-              <p className="small muted" style={{ margin: 0 }}>
-                Players and followers don&apos;t need this: use the link the organiser sent you. <Link href="/join">Lost it?</Link>
-              </p>
-            </form>
-          )
+        ) : !g.account ? (
+          <EmailSignIn
+            title="Sign in"
+            lead="Sign in with your email to see every tournament you run, play in or follow, on any phone or computer. No password: we email you a link and a code."
+            next={next ?? undefined}
+            onSignedIn={(n) => (n && n !== "/account" ? router.push(n) : load())}
+          >
+            <p className="small muted" style={{ margin: 0 }}>
+              Playing in a tournament? Just tap the link your organiser sent you.
+            </p>
+          </EmailSignIn>
         ) : (
-          <section className="stack">
-            <h1>My tournaments</h1>
-            <p className="lead">Signed in as {state.account.email}</p>
-            {state.tournaments.length === 0 && <p>None yet. Add one you run below, or start a new one.</p>}
-            <div className="acct-list">
-              {state.tournaments.map((t) => (
-                <Link key={t.id} className="acct-t" href={`/t/${t.slug}/admin`}>
-                  <strong>{t.name}</strong>
-                  {t.subtitle && <span>{t.subtitle}</span>}
-                </Link>
-              ))}
-            </div>
-            {adding ? (
-              <form
-                className="panel stack"
-                onSubmit={async (e) => {
-                  e.preventDefault();
-                  const j = await call({ action: "link", t: link, pin });
-                  if (j) {
-                    setState((s) => (s ? { ...s, tournaments: j.tournaments } : s));
-                    setAdding(false);
-                    setLink("");
-                    setPin("");
-                  }
+          <section className="stack golf">
+            <h1>My golf</h1>
+            <p className="lead">Signed in as {g.account.email}</p>
+            {err && <p className="error">{err}</p>}
+
+            {(g.offers ?? []).map((o) => (
+              <div key={o.id} className="panel stack golf-offer" role="group" aria-label="Is this you?">
+                <p>
+                  {o.role === "organiser" ? (
+                    <>
+                      {o.added_by && o.added_by !== "Organiser" ? `${o.added_by} has added you` : "You've been added"} as an organiser of <strong>{o.tournament}</strong>.
+                    </>
+                  ) : (
+                    <>
+                      You&apos;ve been added to <strong>{o.tournament}</strong> as <strong>{o.player}</strong>.
+                    </>
+                  )}{" "}
+                  Is this you?
+                </p>
+                <div className="row">
+                  <button
+                    className="btn big"
+                    style={{ flex: 1 }}
+                    disabled={!!busy}
+                    onClick={async () => {
+                      const j = await call({ action: "answer", offer: o.id, yes: true }, o.id);
+                      if (j) setG((x) => (x ? { ...x, ...j } : x));
+                    }}
+                  >
+                    Yes, that&apos;s me
+                  </button>
+                  <button
+                    className="btn secondary big"
+                    style={{ flex: 1 }}
+                    disabled={!!busy}
+                    onClick={async () => {
+                      const j = await call({ action: "answer", offer: o.id, yes: false }, o.id);
+                      if (j) setG((x) => (x ? { ...x, ...j } : x));
+                    }}
+                  >
+                    No
+                  </button>
+                </div>
+              </div>
+            ))}
+
+            {g.owner && (
+              <Link className="acct-t golf-site" href="/owner">
+                <strong>The site</strong>
+                <span>Every tournament, invites, films and the course library</span>
+              </Link>
+            )}
+
+            {lists.map(([title, xs, to]) =>
+              xs.length ? (
+                <section key={title} className="golf-list" aria-label={title}>
+                  <h2>{title}</h2>
+                  <div className="acct-list">
+                    {xs.map((t) => (
+                      <Link key={t.id} className="acct-t" href={to(t)}>
+                        <strong>{t.name}</strong>
+                        <span>{[t.as ? `As ${t.as}` : null, when(t)].filter(Boolean).join(", ")}</span>
+                      </Link>
+                    ))}
+                  </div>
+                </section>
+              ) : null,
+            )}
+
+            {empty && <p>Nothing here yet. Tap the link you were sent for a tournament, or start your own.</p>}
+
+            <div className="stack golf-acts">
+              <Link className="btn secondary block big" href="/new">
+                Start a new tournament
+              </Link>
+              <button
+                className="btn secondary block"
+                disabled={!!busy}
+                onClick={async () => {
+                  await call({ action: "signout" }, "out");
+                  load();
                 }}
               >
-                <h2 style={{ margin: 0 }}>Add a tournament you run</h2>
-                <div className="field">
-                  <label htmlFor="tl">Its link or name in the link</label>
-                  <input id="tl" value={link} onChange={(e) => setLink(e.target.value)} placeholder="e.g. the link to your tournament" required />
-                </div>
-                <div className="field">
-                  <label htmlFor="op">Its organiser PIN</label>
-                  <input id="op" value={pin} onChange={(e) => setPin(e.target.value)} inputMode="numeric" />
-                </div>
-                {err && <p className="error">{err}</p>}
-                <div className="row">
-                  <button className="btn big" style={{ flex: 1 }} disabled={busy}>
-                    Add it
-                  </button>
-                  <button type="button" className="btn secondary big" style={{ flex: 1 }} onClick={() => setAdding(false)}>
-                    Cancel
-                  </button>
-                </div>
-              </form>
-            ) : (
-              <div className="stack">
-                <button className="btn secondary block big" onClick={() => setAdding(true)}>
-                  Add a tournament you run
-                </button>
-                <Link className="btn block big" href="/new">
-                  Start a new tournament
-                </Link>
-                <button
-                  className="btn secondary block"
-                  onClick={async () => {
-                    await call({ action: "signout" });
-                    load();
-                  }}
-                >
-                  Sign out
-                </button>
-              </div>
-            )}
+                Sign out
+              </button>
+            </div>
           </section>
         )}
       </main>

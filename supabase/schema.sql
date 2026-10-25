@@ -571,3 +571,66 @@ alter table course_library add constraint course_library_status_check check (sta
 alter table course_library add column if not exists work jsonb;          -- the research so far (pages read, why any were left out)
 alter table course_library add column if not exists step_at timestamptz; -- when the last step started (a stalled one is picked up again)
 alter table course_library add column if not exists started_at timestamptz;
+
+-- ------------------------------------------------------------ sign-in, stage 1: one sign-in per person
+-- A person signs in with their email (a link and a 6-digit code, no password). What they can do depends on their
+-- role in each tournament: organiser, player or follower.
+alter table accounts add column if not exists name text;
+alter table accounts add column if not exists last_seen_at timestamptz;
+alter table account_tokens add column if not exists code_hash text;            -- the 6-digit code in the same email
+alter table account_tokens add column if not exists tries int not null default 0;
+alter table account_tokens add column if not exists purpose text not null default 'signin';  -- 'signin' | 'owner'
+alter table account_tokens add column if not exists next text;                 -- where the link takes you after
+create index if not exists account_tokens_email_idx on account_tokens (lower(email), expires_at);
+-- One row per person per tournament: organiser (co-organisers too) or player, and which player spot is theirs
+alter table account_tournaments add column if not exists role text not null default 'organiser';
+alter table account_tournaments drop constraint if exists account_tournaments_role_check;
+alter table account_tournaments add constraint account_tournaments_role_check check (role in ('organiser', 'player'));
+alter table account_tournaments add column if not exists player_id text;
+-- Organisers who signed in by email before this: the first one on each tournament is the organiser who made it, so
+-- they keep playing as their own player (co-organisers added later are not named after them)
+update account_tournaments a set player_id = t.organiser_player_id
+from tournaments t
+where a.tournament_id = t.id and a.role = 'organiser' and a.player_id is null and t.organiser_player_id is not null
+  and not exists (select 1 from account_tournaments b where b.tournament_id = a.tournament_id and b.player_id = t.organiser_player_id)
+  and a.created_at = (select min(b.created_at) from account_tournaments b where b.tournament_id = a.tournament_id and b.role = 'organiser');
+-- "Is this you?": an organiser added this email to a tournament (as a co-organiser, or on a player). It joins only
+-- when the person says yes, so a typo never puts the wrong person in.
+create table if not exists account_offers (
+  id uuid primary key default gen_random_uuid(),
+  tournament_id uuid not null references tournaments(id) on delete cascade,
+  email text not null,
+  role text not null check (role in ('organiser', 'player')),
+  player_id text,
+  added_by text,
+  created_at timestamptz not null default now(),
+  answered_at timestamptz,
+  accepted boolean
+);
+create index if not exists account_offers_email_idx on account_offers (lower(email)) where answered_at is null;
+alter table account_offers enable row level security;   -- server only
+revoke all on account_offers from anon, authenticated;
+grant all on account_offers to service_role;
+-- Players: an email the organiser can add (to send their link by email), and the one-use link. Send again raises
+-- link_gen, which signs out every phone signed in as that player.
+alter table players add column if not exists email text;
+alter table players add column if not exists link_used_at timestamptz;
+alter table players add column if not exists link_gen int not null default 0;
+-- The site owner's Face ID / Touch ID (passkeys), for the second check
+create table if not exists owner_passkeys (
+  id text primary key,                 -- the credential id
+  account_id uuid not null references accounts(id) on delete cascade,
+  public_key text not null,
+  counter bigint not null default 0,
+  transports text[],
+  created_at timestamptz not null default now(),
+  used_at timestamptz
+);
+alter table owner_passkeys enable row level security;   -- server only
+revoke all on owner_passkeys from anon, authenticated;
+grant all on owner_passkeys to service_role;
+notify pgrst, 'reload schema';
+-- Emails are matched exactly (lower case) from now on
+update accounts set email = lower(email) where email <> lower(email);
+update fans set email = lower(email) where email <> lower(email);
+update subscribers set email = lower(email) where email <> lower(email);

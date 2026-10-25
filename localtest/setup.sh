@@ -80,6 +80,7 @@ fs.writeFileSync(`${repo}/.env.local`, [
   "ELEVENLABS_API_KEY=local-stub", `ELEVENLABS_BASE_URL=${STUB}`,
   "GEMINI_API_KEY=local-stub", `GEMINI_BASE_URL=${STUB}/v1beta`,
   "SMTP_HOST=127.0.0.1", "SMTP_PORT=2525", "SMTP_USER=me@test.ie", "SMTP_PASS=app-pass", // the test mailbox's login
+  "OWNER_EMAIL=owner@test.ie", // the site owner signs in with this email (the PIN works until they have)
   "GOLFAPI_KEY=local-stub", `GOLFAPI_BASE_URL=${STUB}/golfapi`, "",
 ].join("\n"));
 console.log("new local keys written");

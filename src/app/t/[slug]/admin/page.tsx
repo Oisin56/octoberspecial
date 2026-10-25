@@ -8,6 +8,7 @@ import {
   BasicsEditor,
   ContentEditor,
   InviteEditor,
+  OrganisersEditor,
   PlayersEditor,
   ResetTestData,
   RoundsEditor,
@@ -27,7 +28,8 @@ import { BroadcastSettings } from "@/components/BroadcastSettings";
 const SECTIONS = {
   rounds: "Rounds and courses",
   cards: "Scorecards",
-  players: "Players and PINs",
+  players: "Players",
+  organisers: "Organisers",
   write: "Write and publish",
   email: "Email list",
   film: "Highlights film",
@@ -70,10 +72,15 @@ export default function Admin() {
   if (!session)
     return (
       <p>
-        <Link href={href(`/login?next=${encodeURIComponent(href("/admin"))}`)}>Log in</Link> as organiser.
+        <Link href={href(`/login?next=${encodeURIComponent(href("/admin"))}`)}>Sign in</Link> as organiser.
       </p>
     );
-  if (session.role !== "organiser") return <p>Organiser only.</p>;
+  if (session.role !== "organiser")
+    return (
+      <p>
+        This is for the tournament&apos;s organisers. <Link href={href(`/login?as=organiser&next=${encodeURIComponent(href("/admin"))}`)}>Sign in as organiser</Link>.
+      </p>
+    );
   if (err) return <p className="error">{err}</p>;
   if (!data) return <Loading />;
 
@@ -105,7 +112,8 @@ export default function Admin() {
           <ContentEditor data={data} onSaved={reload} />
         </>
       )}
-      {s === "share" && <InviteEditor data={data} onSaved={reload} />}
+      {s === "share" && <InviteEditor />}
+      {s === "organisers" && <OrganisersEditor data={data} onSaved={reload} />}
       {s === "settings" && (
         <>
           <ResetTestData onSaved={reload} />
@@ -129,8 +137,8 @@ function OrganiserHome({ data }: { data: AdminData }) {
   const pieces = st.pieces.filter((p) => !(p.status === "hidden" && p.body === "(writing…)"));
   const drafts = pieces.filter((p) => p.status === "draft");
   const published = pieces.filter((p) => p.status === "published");
-  // Players who can't get in yet: no personal link made and no PIN (the organiser is already in)
-  const noWay = st.players.filter((p) => p.id !== t.organiser_player_id && !data.linkSet?.[p.id] && !data.pinSet[p.id]);
+  // Players who can't get in yet: no personal link sent (or an old PIN) and not signed in (the organiser is already in)
+  const noWay = st.players.filter((p) => p.id !== t.organiser_player_id && !data.linkSet?.[p.id] && !data.pinSet[p.id] && !data.linkUsed?.[p.id]);
   const complete = rounds.filter((r) => r.status === "complete");
   const cardStates = rounds
     .filter((r) => r.status !== "upcoming")
@@ -140,6 +148,8 @@ function OrganiserHome({ data }: { data: AdminData }) {
 
   // What needs doing, most urgent first. Only the top two are shown.
   const todo: { text: string; action: string; to: string; external?: boolean }[] = [];
+  // Signed in here without an email (the old organiser PIN, or this phone made it): first, keep it safe
+  if (data.needEmail) todo.push({ text: "Add your email to keep this tournament safe. You'll sign in with it from now on, on any phone.", action: "Add my email", to: `/account?next=${encodeURIComponent(`/t/${t.slug}/admin`)}`, external: true });
   // Made with the set-up wizard: changes to rounds and groups are made in Tournament setup
   const fresh = !!t.win;
   if (rounds.length === 0) todo.push({ text: "Add the courses you're playing.", action: "Add a round", to: fresh ? href("/setup") : "#rounds", external: fresh });
@@ -196,6 +206,10 @@ function OrganiserHome({ data }: { data: AdminData }) {
     ["sides", sides ? `${sides} running` : "Closest the pin and more"],
     ["look", `${theme}, ${tone.toLowerCase()} tone`],
     ["share", "The link for followers"],
+    ["organisers", (() => {
+      const n = (data.organisers ?? []).filter((o) => !o.pending).length;
+      return n > 1 ? `${n} organisers` : "Add someone to help run it";
+    })()],
   ];
   // Rounds, formats, groups and prizes live in Tournament setup for tournaments made with the wizard
   const tiles = fresh ? allTiles.filter(([id]) => id !== "rounds" && id !== "sides") : allTiles;
@@ -259,8 +273,6 @@ function OrganiserHome({ data }: { data: AdminData }) {
           </a>
         ))}
       </nav>
-
-      <AccountLink slug={t.slug} />
 
       <p className="org-foot">
         <a href="#settings">Settings and test data</a>
@@ -328,48 +340,6 @@ function SetupResume({ jobs: initial }: { jobs: SetupJob[] }) {
     <p className="notice">
       {left ? `Still reading up on the courses: ${done} of ${jobs.length} done. ` : "All set: the course guides are in. "}
       <Link href={href("/ready")}>{left ? "Watch it" : "See what was found"}</Link>
-    </p>
-  );
-}
-
-/** My tournaments: this tournament in the organiser's email account (one tap once signed in) */
-function AccountLink({ slug }: { slug: string }) {
-  const [acct, setAcct] = useState<{ account: { email: string } | null; tournaments: { slug: string }[] } | null>(null);
-  const [busy, setBusy] = useState(false);
-  useEffect(() => {
-    fetch("/api/account", { cache: "no-store" })
-      .then((r) => r.json())
-      .then(setAcct)
-      .catch(() => {});
-  }, []);
-  if (!acct) return null;
-  if (!acct.account)
-    return (
-      <p className="org-acct">
-        <Link href={`/account?add=${encodeURIComponent(slug)}`}>Sign in with your email</Link> to keep all your tournaments in one place, on any device.
-      </p>
-    );
-  if (acct.tournaments.some((x) => x.slug === slug))
-    return (
-      <p className="org-acct">
-        In <Link href="/account">My tournaments</Link> ({acct.account.email}).
-      </p>
-    );
-  return (
-    <p className="org-acct">
-      <button
-        className="btn secondary"
-        disabled={busy}
-        onClick={async () => {
-          setBusy(true);
-          const r = await fetch("/api/account", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "link", t: slug }) });
-          const j = await r.json().catch(() => ({}));
-          setBusy(false);
-          if (r.ok) setAcct((a) => (a ? { ...a, tournaments: j.tournaments } : a));
-        }}
-      >
-        Add to My tournaments
-      </button>
     </p>
   );
 }

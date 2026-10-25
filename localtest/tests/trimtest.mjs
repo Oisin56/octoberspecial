@@ -50,16 +50,14 @@ const apiPost = async (path, body, cookie) => {
   return { r, j: await r.json().catch(() => ({})) };
 };
 {
+  // Neil signs in with his own link ("I'm Neil")
   const login = await apiPost("/api/login", { mode: "organiser", pin: "1234" });
   const c = login.r.headers.get("set-cookie").split(";")[0];
-  await apiPost("/api/admin", { action: "savePlayer", player: { id: "neil" }, pin: "2468" }, c);
+  const url = (await apiPost("/api/admin", { action: "playerLink", playerId: "neil", reset: true }, c)).j.url;
+  await page.goto(url.replace(/^https?:\/\/[^/]+/, BASE));
+  await page.getByRole("button", { name: "I'm Neil" }).click();
+  await page.getByText("Welcome, Neil").waitFor();
 }
-await page.goto(`${BASE}/t/${T}/login`);
-await page.getByRole("button", { name: /I'm playing/ }).click();
-await page.locator(".name-tile", { hasText: "Neil" }).click();
-await page.getByLabel("Your PIN").fill("2468");
-await page.getByRole("button", { name: "Log in", exact: true }).click();
-await page.waitForTimeout(1200);
 
 // ================= Part 1: cutting real phone formats
 console.log("--- cutting real phone formats");

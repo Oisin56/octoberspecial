@@ -28,7 +28,14 @@ const call = async (path, body) => {
   if (sc) cookie = sc.split(";")[0];
   return { status: r.status, j: await r.json().catch(() => ({})) };
 };
-await call("/api/login", { mode: "player", playerId: "neil", pin: "2468" });
+{
+  // Signed in as Neil with his own link (the organiser makes it)
+  await call("/api/login", { mode: "organiser", pin: "1234" });
+  const u = (await call("/api/admin", { action: "playerLink", playerId: "neil", reset: true })).j.url;
+  const out = await fetch(`${BASE}/api/login?t=${T}`, { method: "DELETE", headers: { cookie } });
+  cookie = (out.headers.get("set-cookie") ?? cookie).split(";")[0];
+  await call("/api/login", { mode: "link", code: u.split("/in/")[1], step: "confirm" });
+}
 const rid = (n) => q(`select r.id from rounds r join tournaments t on t.id=r.tournament_id where t.slug='${T}' and r.number=${n}`);
 const upload = async (file, type) => {
   const up = await call("/api/upload-url", { filename: file.split("/").pop(), contentType: type });
@@ -133,6 +140,7 @@ const own = await browser.newContext({ viewport: { width: 1200, height: 900 } })
 const o = await own.newPage();
 o.on("pageerror", (e) => console.log("pageerror:", e.message));
 await o.goto(`${BASE}/owner`, { waitUntil: "networkidle" });
+await o.getByRole("button", { name: "Use the site owner PIN" }).click();
 await o.fill("#opin", OWNER);
 await o.getByRole("button", { name: "Sign in" }).click();
 await o.locator(".owner-films").waitFor({ timeout: 15000 });

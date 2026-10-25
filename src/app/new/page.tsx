@@ -23,8 +23,6 @@ import {
   Screen,
   TeamsScreen,
   TeeScreen,
-  Tile,
-  Tiles,
   WhenScreen,
   WhoScreen,
   WinMoreScreen,
@@ -40,7 +38,7 @@ import {
 const KEY = "mgb-wizard-v2";
 const INVITE_KEY = "mgb-invite";
 
-type Me = { owner: boolean; email: string | null; invite: string | null };
+type Me = { owner: boolean; email: string | null; invite: string | null; ownerPin: boolean };
 
 export default function NewTournament() {
   const router = useRouter();
@@ -83,7 +81,7 @@ export default function NewTournament() {
         try {
           localStorage.removeItem(INVITE_KEY);
         } catch {}
-      setMe({ owner: !!o.owner, email: a.account?.email ?? null, invite: okInvite ? invite : null });
+      setMe({ owner: !!o.owner, email: a.account?.email ?? null, invite: okInvite ? invite : null, ownerPin: !!o.pin });
     });
     return () => clearTimeout(t);
   }, []);
@@ -181,9 +179,15 @@ export default function NewTournament() {
             <Link className="btn glow block wz-next" href="/invite">
               Request an invite
             </Link>
-            <button type="button" className="linklike wz-owner-skip" onClick={() => setPastGate(true)}>
-              I have the site owner&apos;s PIN
-            </button>
+            {me.ownerPin ? (
+              <button type="button" className="linklike wz-owner-skip" onClick={() => setPastGate(true)}>
+                I have the site owner&apos;s PIN
+              </button>
+            ) : (
+              <Link className="linklike wz-owner-skip" href="/owner?next=/new">
+                Site owner? Sign in
+              </Link>
+            )}
           </Screen>
         </div>
       </Shell>
@@ -266,7 +270,7 @@ function SafeStep({ d, setD, me, onDone, onFix }: { d: Draft; setD: (x: Draft) =
   const [err, setErr] = useState<string | null>(null);
   const signedIn = me?.email;
   const needOwner = me && !me.owner && !me.invite;
-  const okKeep = signedIn || (d.keep === "email" && /\S+@\S+\.\S+/.test(d.email)) || (d.keep === "pin" && /^\d{4,8}$/.test(d.pin));
+  const okKeep = signedIn || /\S+@\S+\.\S+/.test(d.email);
 
   async function create() {
     setBusy(true);
@@ -274,7 +278,7 @@ function SafeStep({ d, setD, me, onDone, onFix }: { d: Draft; setD: (x: Draft) =
     const r = await fetch("/api/tournaments", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ wizard: toWizard(d), email: !signedIn && d.keep === "email" ? d.email : "", pin: d.keep === "pin" ? d.pin : "", ownerPin, invite: me?.invite ?? undefined }),
+      body: JSON.stringify({ wizard: toWizard(d), email: signedIn ? "" : d.email, ownerPin: ownerPin || undefined, invite: me?.invite ?? undefined }),
     }).catch(() => null);
     const j = r ? await r.json().catch(() => ({})) : {};
     setBusy(false);
@@ -284,7 +288,7 @@ function SafeStep({ d, setD, me, onDone, onFix }: { d: Draft; setD: (x: Draft) =
 
   return (
     <Screen q="Last thing: keeping it safe" hint="So only you can run it, and you can get back in on any phone.">
-      {needOwner && (
+      {needOwner && me?.ownerPin && (
         <div className="field">
           <label htmlFor="wz-owner">Site owner PIN</label>
           <input id="wz-owner" className="wz-input" inputMode="numeric" value={ownerPin} onChange={(e) => setOwnerPin(e.target.value)} placeholder="Needed while new tournaments are invite-only" />
@@ -292,27 +296,16 @@ function SafeStep({ d, setD, me, onDone, onFix }: { d: Draft; setD: (x: Draft) =
       )}
       {signedIn ? (
         <p className="notice">
-          Signed in as <strong>{me?.email}</strong>. It&apos;ll be in My tournaments.
+          Signed in as <strong>{me?.email}</strong>. It&apos;ll be in My golf.
         </p>
       ) : (
-        <>
-          <Tiles>
-            <Tile on={d.keep === "email"} title="Use my email" note="Recommended. It goes in My tournaments; we email you a link to sign in. No password" onClick={() => setD({ ...d, keep: "email" })} />
-            <Tile on={d.keep === "pin"} title="Use a PIN" note="4 to 8 numbers you'll type to run it" onClick={() => setD({ ...d, keep: "pin" })} />
-          </Tiles>
-          {d.keep === "email" && (
-            <div className="field">
-              <label htmlFor="wz-email">Your email</label>
-              <input id="wz-email" className="wz-input" type="email" inputMode="email" autoComplete="email" value={d.email} onChange={(e) => setD({ ...d, email: e.target.value })} />
-            </div>
-          )}
-          {d.keep === "pin" && (
-            <div className="field">
-              <label htmlFor="wz-pin">Organiser PIN</label>
-              <input id="wz-pin" className="wz-input" inputMode="numeric" autoComplete="off" value={d.pin} onChange={(e) => setD({ ...d, pin: e.target.value.replace(/\D/g, "").slice(0, 8) })} placeholder="4 to 8 numbers" />
-            </div>
-          )}
-        </>
+        <div className="field">
+          <label htmlFor="wz-email">Your email</label>
+          <input id="wz-email" className="wz-input" type="email" inputMode="email" autoComplete="email" value={d.email} onChange={(e) => setD({ ...d, email: e.target.value })} />
+          <p className="small muted" style={{ margin: "6px 0 0" }}>
+            You&apos;ll sign in with this to run it, on any phone. We&apos;ll email you a link and a code to confirm it. No password.
+          </p>
+        </div>
       )}
       <Summary d={d} onFix={onFix} />
       <Problems d={d} />

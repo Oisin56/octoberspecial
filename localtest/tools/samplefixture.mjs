@@ -13,7 +13,7 @@ const wizard = {
   players: [{ name: "You", index: 14 }, { name: "Declan", index: 12.4 }, { name: "Marcus", index: 8.1 }],
   organiserPlays: true, draw: "myself", extras: { feed: true, ai: true, video: true }, theme: "clubhouse", units: "yards", share: "portrait",
 };
-const made = await fetch(`${BASE}/api/tournaments`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ wizard, pin: "1357", ownerPin: OWNER }) }).then((r) => r.json());
+const made = await fetch(`${BASE}/api/tournaments`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ wizard, email: "sample@example.com", ownerPin: OWNER }) }).then((r) => r.json());
 if (!made.slug) throw new Error(JSON.stringify(made));
 const slug = made.slug;
 const tid = sql(`select id from tournaments where slug='${slug}'`);
@@ -23,7 +23,7 @@ const tournament = (await rest(`public_tournaments?slug=eq.${slug}&select=*`))[0
 const players = await rest(`public_players?tournament_id=eq.${tid}&select=*&order=sort`);
 const rounds = await rest(`rounds?tournament_id=eq.${tid}&select=*&order=number`);
 // the greens, as the GPS tab loads them
-const login = await fetch(`${BASE}/api/login`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ t: slug, mode: "organiser", pin: "1357" }) });
+const login = await fetch(`${BASE}/api/login`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ t: slug, mode: "organiser", pin: OWNER }) });
 const cookie = login.headers.get("set-cookie").split(";")[0];
 const geo = (await (await fetch(`${BASE}/api/gps?t=${slug}&round=${rounds[0].id}`, { headers: { cookie } })).json()).geo;
 const out = { tournament, players, rounds, geo };

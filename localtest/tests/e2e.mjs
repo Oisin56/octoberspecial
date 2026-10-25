@@ -22,6 +22,11 @@ function agent() {
     return { status: r.status, j };
   };
 }
+// A player signs in with their personal link: the organiser makes it, the player says "I'm Neil"
+const linkIn = async (orgA, plA, t, playerId) => {
+  const url = (await orgA("/api/admin", { method: "POST", body: { t, action: "playerLink", playerId } })).j.url;
+  return plA("/api/login", { method: "POST", body: { t, mode: "link", code: url.split("/in/")[1], step: "confirm" } });
+};
 const pub = async (q) =>
   (await fetch(`http://127.0.0.1:54321/rest/v1/${q}`, { headers: { apikey: process.env.ANON, authorization: `Bearer ${process.env.ANON}` } })).json();
 
@@ -34,9 +39,9 @@ ok((await post(org, "/api/login", { mode: "organiser", pin: "9999" })).status ==
 ok((await post(org, "/api/login", { mode: "organiser", pin: "1234" })).status === 200, "organiser logs in (site owner PIN)");
 const me = await org(`/api/login?t=${T}`);
 ok(me.j.session?.role === "organiser" && me.j.session?.playerId === "oisin", "organiser session is Oisin");
-ok((await post(neil, "/api/login", { mode: "player", playerId: "neil", pin: "2468" })).status === 401, "Neil can't log in before PIN set");
-ok((await post(org, "/api/admin", { action: "savePlayer", player: { id: "neil", handicap: 12, nickname: "The Hammer", weakness: "lag putting" }, pin: "2468" })).status === 200, "organiser sets Neil's PIN + profile");
-ok((await post(neil, "/api/login", { mode: "player", playerId: "neil", pin: "2468" })).status === 200, "Neil logs in");
+ok((await post(neil, "/api/login", { mode: "player", playerId: "neil", pin: "2468" })).status === 401, "no player PINs");
+ok((await post(org, "/api/admin", { action: "savePlayer", player: { id: "neil", handicap: 12, nickname: "The Hammer", weakness: "lag putting" } })).status === 200, "organiser sets Neil's profile");
+ok((await linkIn(org, neil, T, "neil")).status === 200, "Neil signs in with his link");
 ok((await post(neil, "/api/admin", { action: "state" })).status === 403, "Neil can't use admin");
 ok((await post(caddie, "/api/login", { mode: "contributor", name: "Fionn", pin: "5555" })).status === 400, "no separate caddie login any more (caddies follow as fans)");
 
@@ -176,8 +181,8 @@ ok((await pub(`rounds?number=eq.1&select=status`))[0].status === "complete", "ro
 // ======================================================= PART 2: create a Ryder Cup-style event from scratch
 console.log("--- New team tournament");
 const boss = agent();
-ok((await boss("/api/tournaments", { method: "POST", body: { name: "Test Cup", organiserPin: "4321" } })).status === 401, "creating needs the owner PIN");
-const created = await boss("/api/tournaments", { method: "POST", body: { name: "Test Cup", organiserPin: "4321", ownerPin: "1234" } });
+ok((await boss("/api/tournaments", { method: "POST", body: { name: "Test Cup" } })).status === 401, "creating needs the site owner");
+const created = await boss("/api/tournaments", { method: "POST", body: { name: "Test Cup", ownerPin: "1234" } });
 ok(created.status === 200 && created.j.slug === "test-cup", "tournament created");
 const C = created.j.slug;
 const cpost = (a, path, body) => a(path, { method: "POST", body: { t: C, ...body } });
@@ -188,7 +193,7 @@ ok((await cpost(org, "/api/admin", { action: "state" })).status === 403, "Octobe
 ok((await cpost(boss, "/api/admin", { action: "updateTournament", patch: { teams: [{ name: "Europe", color: "#1d4f91" }, { name: "Rest", color: "#c8102e" }], theme: "teamcup", tone: "tabloid", side_games_by: "team", side_games: [{ kind: "ctp", points: 1, enabled: true }, { kind: "birdies", points: 0, enabled: true }] } })).status === 200, "teams, theme, tone, side games");
 const ids = {};
 for (const [name, hcp, team] of [["Aoife", 4, "europe"], ["Brian", 18, "europe"], ["Ciara", 10, "rest"], ["Dara", 24, "rest"]]) {
-  const r = await cpost(boss, "/api/admin", { action: "savePlayer", player: { name, handicap: hcp, team_id: team }, pin: "1111" });
+  const r = await cpost(boss, "/api/admin", { action: "savePlayer", player: { name, handicap: hcp, team_id: team } });
   ids[name] = r.j.id;
 }
 ok(Object.values(ids).every(Boolean), "4 players added");
@@ -202,7 +207,7 @@ ok((await cpost(boss, "/api/admin", { action: "saveRound", round: { id: add.j.id
 ok((await cpost(boss, "/api/admin", { action: "saveRound", round: { id: add.j.id, games: [{ id: "x", sides: [{ playerIds: [A] }] }] } })).status === 400, "match with one side rejected");
 
 const aoife = agent();
-ok((await cpost(aoife, "/api/login", { mode: "player", playerId: A, pin: "1111" })).status === 200, "Aoife logs in");
+ok((await linkIn(boss, aoife, C, A)).status === 200, "Aoife signs in with her link");
 const mac = [4, 5, 4, 3, 4, 4, 3, 5, 4, 4, 4, 4, 5, 3, 5, 4, 3, 4];
 for (let h = 1; h <= 18; h++) {
   const p = mac[h - 1];
@@ -211,7 +216,7 @@ for (let h = 1; h <= 18; h++) {
 }
 ok(true, "Aoife scored 18 holes of the fourball");
 const dara = agent();
-await cpost(dara, "/api/login", { mode: "player", playerId: D, pin: "1111" });
+await linkIn(boss, dara, C, D);
 ok((await cpost(dara, "/api/score", { roundId: add.j.id, game: "m1", hole: 1, scores: {} })).status === 403, "non-scorer player can't score");
 const tEntries = await pub(`hole_entries?round_id=eq.${add.j.id}&game=eq.m1`);
 ok(tEntries.length === 18, "18 entries stored under match m1");

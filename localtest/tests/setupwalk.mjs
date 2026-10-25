@@ -75,8 +75,7 @@ async function wizard(name, first, a = {}) {
     else await next();
     await p.waitForTimeout(150);
   }
-  await p.getByText("Use a PIN").click();
-  await p.fill("#wz-pin", "4321");
+  await p.fill("#wz-email", "walk@example.com");
   await p.fill("#wz-owner", "1234");
   await p.getByRole("button", { name: "Create my tournament" }).click();
   await p.waitForURL(/ready/, { timeout: 30000 }).catch(() => {});
@@ -96,7 +95,7 @@ async function phone(slug, organiser) {
       localStorage.setItem("mgb-a2hs", "1");
     } catch {}
   });
-  if (organiser) await p.request.post(`${B}/api/login`, { data: { t: slug, mode: "organiser", pin: "4321" } });
+  if (organiser) await p.request.post(`${B}/api/login`, { data: { t: slug, mode: "organiser", pin: "1234" } });
   return { p, close: () => ctx.close() };
 }
 
@@ -109,7 +108,7 @@ async function score(slug, n, upto = 18) {
     if (c) cookie = c.split(";")[0];
     return r.status;
   };
-  await call("/api/login", { mode: "organiser", pin: "4321" });
+  await call("/api/login", { mode: "organiser", pin: "1234" });
   const row = JSON.parse(q(`select row_to_json(r) from rounds r join tournaments t on t.id=r.tournament_id where t.slug='${slug}' and r.number=${n}`));
   let seed = 11;
   const rnd = () => (seed = (seed * 9301 + 49297) % 233280) / 233280;
