@@ -16,6 +16,7 @@ function agent() {
     return { status: r.status, j: await r.json().catch(() => ({})) };
   };
   call.cookie = () => cookie;
+  call.setCookie = (c) => (cookie = c);
   return call;
 }
 async function upload(a, file, type, extra = {}) {
@@ -30,9 +31,13 @@ async function upload(a, file, type, extra = {}) {
 const tid = sql(`select id from tournaments where slug='${T}'`);
 const r1 = sql(`select id from rounds where tournament_id='${tid}' and number=1`);
 const neil = agent(), caddie = agent(), org = agent();
-await neil("/api/login", { mode: "player", playerId: "neil", pin: "2468" });
-await caddie("/api/login", { mode: "player", playerId: "neil", pin: "2468" });
 await org("/api/login", { mode: "organiser", pin: "1234" });
+{
+  // Neil signs in with his own link; the caddie posts from a phone signed in as Neil too
+  const u1 = (await org("/api/admin", { action: "playerLink", playerId: "neil", reset: true })).j.url;
+  await caddie("/api/login", { mode: "link", code: u1.split("/in/")[1], step: "confirm" });
+  neil.setCookie(caddie.cookie());
+}
 
 // Seed: a portrait clip, a photo, a trimmed landscape clip, a film-only clip, a note
 const v2 = await upload(neil, "/var/tmp/ospg/social/clip2.webm", "video/webm");
