@@ -51,7 +51,7 @@ const round = st.rounds[0];
 // ================================================================ the database, read from a browser that isn't let in
 ok((await rest(`open_tournaments?slug=eq.${T}`)).j?.length === 0, "the browser's view of tournaments doesn't show it");
 ok((await rest(`open_tournaments?slug=eq.october-special-2026`)).j?.length === 1, "but shows Friends and family ones");
-ok((await rest(`public_tournaments?select=slug`)).status >= 400, "the server's own view can't be read from a browser");
+ok((await rest(`public_tournaments?slug=eq.${T}`)).j?.length === 0 && (await rest(`public_players?tournament_id=eq.${tid}`)).j?.length === 0, "nor do the server's own views, read from a browser (the site before this update reads those)");
 ok((await rest(`open_players?tournament_id=eq.${tid}`)).j?.length === 0, "no players");
 ok((await rest(`rounds?tournament_id=eq.${tid}`)).j?.length === 0, "no rounds");
 const os = sql(`select id from tournaments where slug='october-special-2026'`);

@@ -363,7 +363,9 @@ create view public_tournaments with (security_invoker = false) as
          side_games, side_games_by, teams, auto_bulletins, video_enabled, organiser_player_id, published, created_at, reel_music_path,
          require_attestation, broadcast_on, broadcast_cap_cents, standings, feed_on, ai_on, setup_jobs, units, share_shape, win, prizes,
          privacy, players_need_email
-  from tournaments;
+  from tournaments
+  -- a browser never sees a private tournament here (the site's server sees them all)
+  where privacy is distinct from 'private' or current_user not in ('anon', 'authenticated');
 grant select on public_tournaments to anon, authenticated;
 
 drop policy if exists read_all on players;
@@ -373,7 +375,9 @@ create view public_players with (security_invoker = false) as
   select id, tournament_id, name, nickname, handicap, home_club, bio, best_club,
          worst_club, weakness, quote, photo_path, sort, team_id,
          (pin_hash is not null) as has_pin
-  from players;
+  from players
+  where current_user not in ('anon', 'authenticated')
+     or not exists (select 1 from tournaments t where t.id = players.tournament_id and t.privacy = 'private');
 grant select on public_players to anon, authenticated;
 
 -- ------------------------------------------------------------ realtime
@@ -487,7 +491,9 @@ alter table gps_readings enable row level security;
 drop view if exists public_gps cascade;
 create view public_gps with (security_invoker = false) as
   select id, tournament_id, round_id, hole, player_id, client_id, accuracy, to_front, to_middle, to_back, from_tee, source, seq, ignored, author_name, taken_at
-  from gps_readings;
+  from gps_readings
+  where current_user not in ('anon', 'authenticated')
+     or not exists (select 1 from tournaments t where t.id = gps_readings.tournament_id and t.privacy = 'private');
 
 -- Phase E: the end-of-tournament film, made on the server step by step (the phone can be put away)
 alter table reels add column if not exists stage text;               -- plan | voices | render | rendering | done
@@ -673,8 +679,8 @@ create policy read_published on ai_pieces for select using (status = 'published'
 drop policy if exists read_all on votes;
 create policy read_all on votes for select using (not private_tournament(tournament_id));
 
--- The browser's views: the same columns as the server's, without private tournaments. The server's own views
--- (public_*) are no longer readable from the browser.
+-- The browser's views: the same columns as the server's, without private tournaments. (The server's own views,
+-- public_*, also leave private tournaments out for a browser: the site before this update still reads them.)
 drop view if exists open_tournaments;
 create view open_tournaments with (security_invoker = false) as
   select * from public_tournaments where not private_tournament(id);
@@ -685,7 +691,6 @@ drop view if exists open_gps;
 create view open_gps with (security_invoker = false) as
   select * from public_gps where not private_tournament(tournament_id);
 grant select on open_tournaments, open_players, open_gps to anon, authenticated;
-revoke select on public_tournaments, public_players, public_gps from anon, authenticated;
 grant select on public_tournaments, public_players, public_gps to service_role;
 
 -- Followers: a name and how they know the group is enough (an email is optional, and confirmed before it counts).
