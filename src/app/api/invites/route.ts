@@ -32,6 +32,9 @@ export async function POST(req: Request) {
     if (error || !row) return bad(/invite_requests/.test(error?.message ?? "") ? "Requests aren't open just yet. Try again soon." : "Couldn't send that just now. Try again.", 500);
     await raise({ kind: "invite", subject: row.id, person: email, title: `Invite request: ${name}`, detail: { about } });
     const to = await consoleAddress();
+    // A flood of requests: they all go in Needs you, but the console's inbox hears about the first ten an hour
+    const { count: lastHour } = await db.from("invite_requests").select("id", { count: "exact", head: true }).gte("created_at", new Date(Date.now() - 3600e3).toISOString());
+    if ((lastHour ?? 0) > 10) return json({ ok: true });
     if (!to || !mailConfigured()) console.error("[invites] no console email to notify (set OWNER_EMAIL and the SMTP settings)");
     else
       await sendOne({ name: BRAND.name }, to, inviteRequestEmail({ name, email, about }, `${siteOrigin(req)}/console/needs`)).catch((e) =>

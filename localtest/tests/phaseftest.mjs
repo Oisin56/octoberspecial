@@ -103,7 +103,7 @@ ok(true, "request sent: thanks, with when to expect the email");
 ok(sql(`select name || '|' || email || '|' || status from invite_requests`) === "Siobhan Test|siobhan@example.com|new", "the request is kept");
 await sleep(800);
 const toOwner = mails().slice(before).find((m) => /Invite request: Siobhan/.test(m.subject));
-ok(!!toOwner && /Kerry/.test(toOwner.text) && /\/owner/.test(toOwner.text), "the site owner gets an email about it");
+ok(!!toOwner && /Kerry/.test(toOwner.text) && /\/console\/needs/.test(toOwner.text), "the console's address gets an email about it, linking to Needs you");
 // Asking twice doesn't make two
 await call(p, "/api/invites", { action: "request", name: "Siobhan Test", email: "siobhan@example.com" });
 ok(sql(`select count(*) from invite_requests`) === "1", "asking again while waiting doesn't add another");
@@ -120,7 +120,7 @@ ok(true, "the console's Needs you shows the request waiting");
 await o.screenshot({ path: "/var/tmp/ospg/shots/phasef-owner-invites.png" });
 const m0 = mails().length;
 await o.locator(".con-need", { hasText: "Invite request: Siobhan Test" }).getByRole("button", { name: "Approve" }).click();
-await o.getByText("Done.").waitFor({ timeout: 8000 });
+await o.getByText("Done.", { exact: true }).waitFor({ timeout: 8000 });
 const inviteMail = mails().slice(m0).find((m) => (m.to ?? []).includes("siobhan@example.com"));
 const link = inviteMail?.text.match(/https?:\/\/\S+\/new\?invite=[\w-]+/)?.[0];
 ok(!!link && /You're invited/.test(inviteMail.subject), `she gets an email with a link to set up (${inviteMail?.subject})`);

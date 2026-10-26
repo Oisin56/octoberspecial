@@ -1,9 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { BRAND } from "@/lib/brand";
-import { useRouter } from "next/navigation";
 import { BRAND_SLOTS, MAX_TRACKS, dollars, type BrandSlot, type Shape } from "@/lib/film";
 import { mediaSeconds, uploadBlob } from "@/lib/upload";
 import { EmailSignIn } from "@/components/EmailSignIn";
@@ -17,18 +15,6 @@ export interface Films {
   spend: { cents: number; films: number };
 }
 
-interface Row {
-  id: string;
-  slug: string;
-  name: string;
-  start_date: string | null;
-  end_date: string | null;
-  published: boolean;
-  created_at: string;
-  players: number;
-  rounds: number;
-  posts: number;
-}
 
 export interface Mail {
   host: string;

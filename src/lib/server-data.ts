@@ -32,6 +32,8 @@ export async function context(req: Request, body?: Record<string, unknown>, opts
   const slug = String(body?.t ?? url.searchParams.get("t") ?? "");
   let t = await tournamentBySlug(slug);
   let session: Session | null = t ? await stillGood(t, await getSession(t.id)) : null;
+  // Support staff looking in to help: they can see everything, and only hide posts or stop a follower posting
+  if (session?.via === "staff" && req.method !== "GET" && !staffMay(url.pathname, body)) session = null;
   if (t && t.privacy === "private" && !opts.open && !(await canSee(t, session))) {
     t = null;
     session = null;
@@ -41,6 +43,14 @@ export async function context(req: Request, body?: Record<string, unknown>, opts
   // The example tournament on the front page can be looked at, never changed (except by the site owner)
   const demo = !!t && req.method !== "GET" && (await isDemo(t.slug)) && !(await isOwner());
   return { t, session: demo ? null : session, demo };
+}
+
+const STAFF_MAY: Record<string, string[]> = {
+  "/api/admin": ["state", "scoreChanges", "subscribers", "hide", "blockFan"],
+  "/api/fans": ["list"],
+};
+function staffMay(path: string, body?: Record<string, unknown>) {
+  return (STAFF_MAY[path] ?? []).includes(String(body?.action ?? ""));
 }
 
 /** This phone's role in a tournament, checked (for pages and files outside the API). */

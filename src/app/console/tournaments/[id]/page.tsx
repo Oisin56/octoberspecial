@@ -4,7 +4,7 @@ import { use, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useConsole } from "@/components/console/Shell";
-import { Loading, Problem, Status, Table, act, day, dollars, n, personKey, useFilters, useView, when, type Col } from "@/components/console/kit";
+import { Loading, Problem, Status, Table, act, day, dollars, n, PersonLink, useFilters, useView, when, type Col } from "@/components/console/kit";
 import { ACTION_WORDS } from "@/lib/activity-words";
 
 interface Person {
@@ -77,7 +77,7 @@ export default function TournamentPage({ params }: { params: Promise<{ id: strin
   const peopleCols: Col<Person>[] = [
     { key: "name", label: "Name", render: (p) => p.name ?? <span className="con-quiet">No name</span> },
     { key: "kind", label: "Role", render: (p) => p.kind },
-    { key: "email", label: "Email", render: (p) => (p.email ? <Link href={`/console/people/${personKey(p.email)}`}>{p.email}</Link> : <span className="con-quiet">None given</span>) },
+    { key: "email", label: "Email", render: (p) => (p.email ? <PersonLink email={p.email} /> : <span className="con-quiet">None given</span>) },
     { key: "how", label: "How they know the group", render: (p) => p.how ?? "" },
     { key: "joined", label: "Joined", render: (p) => day(p.joined) },
     { key: "seen", label: "Last there", render: (p) => when(p.lastSeen) },
@@ -136,7 +136,7 @@ export default function TournamentPage({ params }: { params: Promise<{ id: strin
             </div>
             <div>
               <dt>Organiser</dt>
-              <dd>{s?.organiser ? <Link href={`/console/people/${personKey(s.organiser)}`}>{s.organiser}</Link> : "None with an email"}</dd>
+              <dd>{s?.organiser ? <PersonLink email={s.organiser} /> : "None with an email"}</dd>
             </div>
             <div>
               <dt>Rounds</dt>

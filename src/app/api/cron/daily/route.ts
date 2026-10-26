@@ -11,7 +11,7 @@ export const maxDuration = 60;
  * Each morning (Vercel runs it at 6 and 7 UTC, sending the CRON_SECRET setting, so one run lands on 7am Irish time
  * whatever the season):
  *  - the console's daily work: tournament figures, the day's snapshot, the Needs you sweep, and the 7am email
- *  - any photo or clip that reached the open store after its tournament went private moves to the locked one
+ *  - any photo or clip that reached the wrong store as its tournament changed who can watch is moved
  *  - organisers of private tournaments hear about anyone who has been waiting more than 12 hours to follow. Each
  *    request is mentioned once, so running it again sends nothing new.
  */
@@ -23,10 +23,13 @@ export async function GET(req: Request) {
   }
   if (req.headers.get("authorization") !== `Bearer ${secret}`) return json({ error: "Not allowed" }, 401);
   const db = adminClient();
-  let moved = 0;
-  const { data: priv } = await db.from("tournaments").select("slug").eq("privacy", "private");
-  for (const t of priv ?? []) moved += await moveFiles(t.slug, true).catch((e) => (console.error("[cron] files", t.slug, e), 0));
+  // The console's work first (the 7am email can't wait behind anything)
   const console_ = await consoleDaily();
+  // Files: tournaments that changed who can watch in the last two days (an upload link given out just before can
+  // still land in the old store)
+  let moved = 0;
+  const { data: changed } = await db.from("tournaments").select("slug,privacy").gte("privacy_changed_at", new Date(Date.now() - 2 * 864e5).toISOString()).limit(500);
+  for (const t of changed ?? []) moved += await moveFiles(t.slug, t.privacy === "private").catch((e) => (console.error("[cron] files", t.slug, e), 0));
   if (!mailConfigured()) return json({ ok: true, sent: 0, moved, console: console_ });
   const before = new Date(Date.now() - 12 * 3600e3).toISOString();
   const { data: waiting } = await db.from("fans").select("id,name,tournament_id,email,verified_at").eq("status", "asking").is("reminded_at", null).lt("created_at", before);

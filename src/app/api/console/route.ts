@@ -26,13 +26,15 @@ const ok = (data: unknown) => Response.json(data, { headers: NO_STORE });
 function denied(e: unknown) {
   if (e instanceof ConsoleDenied || e instanceof SignInError) return bad(e.message, e.status);
   console.error("[console]", e);
-  return bad("That didn't work just now. Try again.", 500);
+  return Response.json({ error: "That didn't work just now. Try again." }, { status: 500 });
 }
 
 const num = (v: string | null) => (v && /^\d+$/.test(v) ? Number(v) : 0);
 
 /** The console's pages: what each one shows. */
 export async function GET(req: Request) {
+  // Only the console's own pages ask (a link on another site can't add this, so can't look at a person in your name)
+  if (req.headers.get("x-console") !== "1") return bad("Open this from the console", 400);
   const u = new URL(req.url);
   const view = u.searchParams.get("view") ?? "overview";
   const p = (k: string) => u.searchParams.get(k) ?? undefined;
@@ -49,23 +51,33 @@ export async function GET(req: Request) {
     }
     const user = await requireConsole();
     switch (view) {
-      case "overview":
-        return ok(await overview());
-      case "needs":
-        return ok(await needsList({ page: num(p("page") ?? null), kind: p("kind"), snoozed: p("snoozed") === "1", mine: p("mine") === "1" ? user.email : undefined }));
-      case "tournaments":
-        return ok(await tournamentList({ q: p("q"), status: p("status"), privacy: p("privacy"), month: p("month"), sort: p("sort"), dir: p("dir"), page: num(p("page") ?? null) }));
+      case "overview": {
+        const o = await overview();
+        // Support never see money
+        return ok(user.role === "owner" ? o : { ...o, figures: o.figures.filter((f) => !f.money) });
+      }
+      case "needs": {
+        const l = await needsList({ page: num(p("page") ?? null), kind: p("kind"), snoozed: p("snoozed") === "1", mine: p("mine") === "1" ? user.email : undefined });
+        return ok(user.role === "owner" ? l : { ...l, items: l.items.map((i) => (i.kind === "spend" ? { ...i, detail: null } : i)) });
+      }
+      case "tournaments": {
+        const owner = user.role === "owner";
+        const l = await tournamentList({ q: p("q"), status: p("status"), privacy: p("privacy"), month: p("month"), sort: owner || p("sort") !== "cost_cents" ? p("sort") : undefined, dir: p("dir"), page: num(p("page") ?? null) });
+        return ok(owner ? l : { ...l, rows: (l.rows as Record<string, unknown>[]).map(({ cost_cents: _c, ...r }) => (void _c, r)) });
+      }
       case "tournament": {
         const d = await tournamentDetail(String(p("id") ?? ""));
         if (!d) return bad("Tournament not found", 404);
-        // Support don't see what tournaments cost
-        return ok(user.role === "owner" ? d : { ...d, money: null });
+        // Support don't see what tournaments cost, or their limits
+        if (user.role === "owner") return ok(d);
+        const { ai_cap_cents: _a, broadcast_cap_cents: _b, ...tournament } = d.tournament;
+        const stats = d.stats ? (({ cost_cents: _c, ...rest }) => rest)(d.stats as Record<string, unknown>) : null;
+        return ok({ ...d, tournament, stats, money: null });
       }
       case "people":
         return ok(await peopleList({ q: p("q"), role: p("role"), marketing: p("marketing"), active: p("active"), month: p("month"), sort: p("sort"), dir: p("dir"), page: num(p("page") ?? null) }));
       case "person": {
-        const email = String(p("email") ?? "");
-        const d = await personDetail(email);
+        const d = await personDetail(String(p("id") ?? ""));
         if (!d) return bad("Nobody with that email", 404);
         await logActivity(user, "person.view", { person: d.email });
         return ok(d);
@@ -75,8 +87,10 @@ export async function GET(req: Request) {
         return ok(await money());
       case "health":
         return ok(await health());
-      case "activity":
-        return ok(await activityList({ q: p("q"), who: p("who"), action: p("action"), from: p("from"), to: p("to"), page: num(p("page") ?? null) }));
+      case "activity": {
+        const l = await activityList({ q: p("q"), who: p("who"), action: p("action"), from: p("from"), to: p("to"), page: num(p("page") ?? null) });
+        return ok(user.role === "owner" ? l : { ...l, rows: l.rows.map((r) => ({ ...r, detail: null })) });
+      }
       case "search":
         return ok(await search(String(p("q") ?? "")));
       case "settings": {
@@ -124,6 +138,23 @@ async function needs(user: ConsoleUser, b: Record<string, unknown>, req: Request
     await logActivity(user, action, { ...on, detail: { item: item.title, resolution } });
     return json({ ok: true });
   };
+  // Each button belongs to its kind of item
+  const KIND: Record<string, string[]> = {
+    "needs.hide": ["report"],
+    "needs.keep": ["report"],
+    "needs.mute": ["report"],
+    "needs.retry": ["film"],
+    "needs.tell": ["film"],
+    "needs.approve": ["invite"],
+    "needs.decline": ["invite"],
+    "needs.remind": ["follow_wait"],
+    "needs.block": ["email_failing"],
+    "needs.research": ["research"],
+    "needs.sendcopy": ["data_request"],
+    "needs.requestdone": ["data_request"],
+  };
+  const want = KIND[String(b.action)];
+  if (want && !want.includes(item.kind)) return bad("That button isn't for this item");
   const ownerOnly = async () => {
     if (user.role !== "owner") throw new ConsoleDenied("Only the owner can do that", 403);
   };
@@ -287,10 +318,18 @@ async function tournament(user: ConsoleUser, b: Record<string, unknown>, req: Re
       await logActivity(user, "tournament.link", { ...on, detail: { to: emails } });
       return json({ ok: true, sent: emails.length });
     }
-    case "tournament.pause":
+    case "tournament.pause": {
+      if (t.console_paused) return json({ ok: true });
+      // What the organiser had on, kept to put back
+      const was = { ai_on: t.ai_on, auto_bulletins: t.auto_bulletins, video_enabled: t.video_enabled, broadcast_on: t.broadcast_on };
+      await db.from("tournaments").update({ ai_on: false, auto_bulletins: false, video_enabled: false, broadcast_on: false, console_paused: was }).eq("id", t.id);
+      await logActivity(user, b.action, on);
+      return json({ ok: true });
+    }
     case "tournament.resume": {
-      const on_ = b.action === "tournament.resume";
-      await db.from("tournaments").update({ ai_on: on_, auto_bulletins: on_, video_enabled: on_, broadcast_on: on_ }).eq("id", t.id);
+      const was = t.console_paused as Record<string, boolean> | null;
+      if (!was) return json({ ok: true });
+      await db.from("tournaments").update({ ai_on: !!was.ai_on, auto_bulletins: !!was.auto_bulletins, video_enabled: !!was.video_enabled, broadcast_on: !!was.broadcast_on, console_paused: null }).eq("id", t.id);
       await logActivity(user, b.action, on);
       return json({ ok: true });
     }
@@ -314,6 +353,8 @@ async function person(user: ConsoleUser, b: Record<string, unknown>) {
   const email = String(b.email ?? "").trim().toLowerCase();
   const { data: p } = await db.from("people").select("*").eq("email", email).maybeSingle();
   if (!p) return bad("Nobody with that email", 404);
+  // Where their page is (its address carries an id, not the email)
+  if (b.action === "person.find") return json({ id: p.id });
   const owner = async () => {
     if (user.role !== "owner") throw new ConsoleDenied("Only the owner can do that", 403);
   };
@@ -326,6 +367,8 @@ async function person(user: ConsoleUser, b: Record<string, unknown>) {
       return json({ ok: true });
     }
     case "person.signout": {
+      // The owner's and staff's own accounts: only the owner signs those out
+      if (user.role !== "owner" && (await consoleEmail(email))) return bad("Only the owner can sign out a console account", 403);
       const { data: acct } = await db.from("accounts").select("id").eq("email", email).maybeSingle();
       if (!acct) return bad("They've never signed in with their email, so there's nothing to sign out");
       await db.from("accounts").update({ signout_at: new Date().toISOString() }).eq("id", acct.id);
@@ -352,12 +395,13 @@ async function person(user: ConsoleUser, b: Record<string, unknown>) {
       if (to === email) return json({ ok: true, email });
       const [{ data: taken }, { data: takenP }] = await Promise.all([db.from("accounts").select("id").eq("email", to).maybeSingle(), db.from("people").select("email").eq("email", to).maybeSingle()]);
       if (taken || takenP) return bad("That email belongs to someone else already");
-      // Everywhere the address is kept
+      // Everywhere the address is kept: their record first (so it moves, consent and all), then the rest
+      const { error: moved } = await db.from("people").update({ email: to }).eq("email", email);
+      if (moved) return bad("Couldn't change it just now. Try again.", 500);
       await db.from("accounts").update({ email: to }).eq("email", email);
       await db.from("players").update({ email: to }).eq("email", email);
       await db.from("fans").update({ email: to }).eq("email", email);
       await db.from("subscribers").update({ email: to }).eq("email", email);
-      await db.from("people").update({ email: to }).eq("email", email);
       await db.from("email_failures").delete().eq("email", email);
       await settle("email_failing", email, user.email, "The address was corrected");
       await logActivity(user, "person.email", { person: to, detail: { was: email } });

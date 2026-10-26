@@ -473,7 +473,7 @@ export async function POST(req: Request) {
       try {
         return json(await draftGuide(round));
       } catch (e) {
-        return bad(e instanceof Error ? e.message : "Couldn't draft the guide", 500);
+        return bad(e instanceof Error ? e.message : "Couldn't draft the guide", e instanceof SpendStopped ? 409 : 500);
       }
     }
 

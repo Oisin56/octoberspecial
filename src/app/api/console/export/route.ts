@@ -66,7 +66,7 @@ const SPECS: Record<string, Spec> = {
     },
   },
   tournaments: {
-    owner: false,
+    owner: true,
     table: "console_tournaments",
     order: "created_at",
     columns: [
@@ -178,6 +178,7 @@ async function csv(what: string, spec: Spec, p: URLSearchParams, limit: number) 
 }
 
 export async function GET(req: Request) {
+  if (req.headers.get("x-console") !== "1") return bad("Export from the console", 400);
   const u = new URL(req.url);
   const what = u.searchParams.get("what") ?? "";
   const spec = SPECS[what];
@@ -198,7 +199,8 @@ export async function GET(req: Request) {
     const params = new URLSearchParams(u.searchParams);
     after(async () => {
       try {
-        const { body, n } = await csv(what, spec, params, 1_000_000);
+        // Up to 100,000 rows (narrow the filters for the rest)
+        const { body, n } = await csv(what, spec, params, 100_000);
         // Kept two days (the daily job clears older ones); the link works for one
         const path = `exports/${stamp}/${crypto.randomUUID()}-${file}`;
         await db.storage.from(PRIVATE_BUCKET).upload(path, body, { contentType: "text/csv; charset=utf-8", upsert: false });
@@ -206,7 +208,7 @@ export async function GET(req: Request) {
         const link = data?.signedUrl?.startsWith("http") ? data.signedUrl : `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1${data?.signedUrl ?? ""}`;
         await sendOne({ name: `${BRAND.name} console` }, user.email, {
           subject: `Your export is ready: ${file}`,
-          html: brandEmail([`Your export of ${n.toLocaleString("en-IE")} rows is ready. The link works for 24 hours.`], { label: "Download it", href: link }),
+          html: brandEmail([`Your export of ${n.toLocaleString("en-IE")} rows is ready. The link works for 24 hours.`, ...((count ?? 0) > n ? [`It's the newest ${n.toLocaleString("en-IE")} of ${(count ?? 0).toLocaleString("en-IE")}. Narrow the filters for the rest.`] : [])], { label: "Download it", href: link }),
           text: `Your export of ${n} rows is ready. The link works for 24 hours:\n\n${link}\n`,
           kind: "console",
         });

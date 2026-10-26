@@ -233,7 +233,7 @@ export function isOwnerEmail(email: string | null | undefined) {
  *  hours. Until the owner has signed in that way once, the old owner PIN still works. */
 export async function isOwner(): Promise<boolean> {
   const j = await readJar();
-  if (j.account && isOwnerEmail(j.account.email) && j.ownerOk && Date.now() - j.ownerOk < OWNER_CHECK_HOURS * 3600e3) return true;
+  if (j.account && isOwnerEmail(j.account.email) && j.ownerOk && Date.now() - j.ownerOk < OWNER_CHECK_HOURS * 3600e3) return (await signedOutSince(j.account.id)) <= (j.account.at ?? 0);
   return j.owner === true && !(await ownerClaimed());
 }
 
@@ -246,7 +246,8 @@ export async function ownerNeedsCheck(): Promise<boolean> {
 /** This device passed the console's second check (Face ID or an emailed code) in the last 12 hours. */
 export async function consoleCheckFresh(): Promise<boolean> {
   const j = await readJar();
-  return !!j.account && !!j.ownerOk && Date.now() - j.ownerOk < OWNER_CHECK_HOURS * 3600e3;
+  if (!j.account || !j.ownerOk || Date.now() - j.ownerOk >= OWNER_CHECK_HOURS * 3600e3) return false;
+  return (await signedOutSince(j.account.id)) <= (j.account.at ?? 0);
 }
 
 export async function setOwnerChecked() {

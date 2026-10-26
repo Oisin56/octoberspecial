@@ -21,15 +21,14 @@ async function count(q: PromiseLike<{ count: number | null }>): Promise<number> 
   return r.count ?? 0;
 }
 
-/** Each tournament's stored figures: refreshed in the background when the newest is more than an hour old. */
+let lastFreshen = 0;
+/** Each tournament's stored figures: new tournaments' straight away, everything once an hour, in the background. */
 export async function freshenStats() {
-  const db = adminClient();
-  const { data } = await db.from("tournament_stats").select("updated_at").order("updated_at", { ascending: true }).limit(1).maybeSingle();
-  const { count: missing } = await db.from("console_tournaments").select("id", { count: "exact", head: true }).is("stats_at", null);
-  const stale = !data || Date.now() - Date.parse(data.updated_at) > 3600e3 || (missing ?? 0) > 0;
-  if (!stale) return;
+  // Remembered here for a minute; the database decides (one refresh an hour across every server)
+  if (Date.now() - lastFreshen < 60e3) return;
+  lastFreshen = Date.now();
   const run = async () => {
-    await db.rpc("refresh_tournament_stats", { only_id: null });
+    await adminClient().rpc("refresh_stats_due");
   };
   try {
     after(run);
@@ -276,7 +275,7 @@ export async function tournamentDetail(id: string) {
   ];
   const { data: caps } = await db.from("site_settings").select("value").eq("key", "films").maybeSingle();
   return {
-    tournament: { id: t.id, slug: t.slug, name: t.name, privacy: t.privacy, created_at: t.created_at, ai_on: t.ai_on, video_enabled: t.video_enabled, broadcast_on: t.broadcast_on, broadcast_cap_cents: t.broadcast_cap_cents, ai_cap_cents: t.ai_cap_cents, paused: t.ai_on === false && t.video_enabled === false },
+    tournament: { id: t.id, slug: t.slug, name: t.name, privacy: t.privacy, created_at: t.created_at, ai_on: t.ai_on, video_enabled: t.video_enabled, broadcast_on: t.broadcast_on, broadcast_cap_cents: t.broadcast_cap_cents, ai_cap_cents: t.ai_cap_cents, paused: !!t.console_paused },
     stats: stats.data,
     rounds: rounds.data ?? [],
     people,
@@ -309,11 +308,12 @@ export async function peopleList(o: { q?: string; role?: string; marketing?: str
   return { rows: data ?? [], total: total ?? 0, page: o.page ?? 0, size: PAGE };
 }
 
-export async function personDetail(email: string) {
+export async function personDetail(id: string) {
   const db = adminClient();
-  const e = email.trim().toLowerCase();
-  const { data: p } = await db.from("people").select("*").eq("email", e).maybeSingle();
+  if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
+  const { data: p } = await db.from("people").select("*").eq("id", id).maybeSingle();
   if (!p) return null;
+  const e = String(p.email);
   const { data: acct } = await db.from("accounts").select("id,email,name,created_at,last_seen_at").eq("email", e).maybeSingle();
   const [joins, players, fans, subs, block, fails, activity, requests] = await Promise.all([
     acct ? db.from("account_tournaments").select("tournament_id,role,created_at").eq("account_id", acct.id) : Promise.resolve({ data: [] }),
@@ -342,6 +342,7 @@ export async function personDetail(email: string) {
   const names = [...new Set([p.name, acct?.name, ...((players.data ?? []) as { name: string }[]).map((x) => x.name), ...((fans.data ?? []) as { name: string }[]).map((f) => f.name)].filter(Boolean))];
   const mTournament = p.marketing_tournament ? (await db.from("tournaments").select("name").eq("id", p.marketing_tournament).maybeSingle()).data?.name ?? "A deleted tournament" : null;
   return {
+    id: p.id,
     email: p.email,
     names,
     firstAt: p.first_at,
@@ -481,7 +482,7 @@ export async function search(term: string) {
   if (t.length < 2) return { tournaments: [], people: [] };
   const [ts, ps] = await Promise.all([
     db.from("console_tournaments").select("id,slug,name,status,organiser").or(`name.ilike.%${t}%,slug.ilike.%${t}%,organiser.ilike.%${t}%`).order("created_at", { ascending: false }).limit(6),
-    db.from("people").select("email,name,roles").or(`email.ilike.%${t}%,name.ilike.%${t}%`).order("last_at", { ascending: false, nullsFirst: false }).limit(6),
+    db.from("people").select("id,email,name,roles").or(`email.ilike.%${t}%,name.ilike.%${t}%`).order("last_at", { ascending: false, nullsFirst: false }).limit(6),
   ]);
   return { tournaments: ts.data ?? [], people: ps.data ?? [] };
 }

@@ -1,4 +1,4 @@
-import { claude } from "./usage";
+import { canSpend, claude } from "./usage";
 import "server-only";
 import { createHmac } from "node:crypto";
 import Anthropic from "@anthropic-ai/sdk";
@@ -187,6 +187,11 @@ export async function runResearchStep(ref: string): Promise<boolean> {
   if (row.step_at && Date.now() - Date.parse(row.step_at) < STALE_MS) return false;
   await db.from("course_library").update({ step_at: new Date().toISOString() }).eq("ref", ref);
   let work = row.work;
+  // The month's writing budget is used up: the research waits (picked up again later)
+  if (!(await canSpend("writing", null)).ok) {
+    await db.from("course_library").update({ step_at: null }).eq("ref", ref);
+    return false;
+  }
   try {
     work = await step({ ...work, steps: work.steps + 1 });
   } catch (e) {

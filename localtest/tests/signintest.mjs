@@ -68,11 +68,11 @@ let o = (await owner("/api/owner")).j;
 ok(o.owner === false && o.ownerAccount === true && o.email === "owner@test.ie", "signed in with the owner's email: the second check still to do");
 ok((await owner("/api/owner", { action: "sendCode" })).status === 200, "the owner asks for a code");
 m = await lastMailTo("owner@test.ie");
-ok(/\/owner\?check=/.test(linkOf(m)), "the check email's button goes to the owner page");
+ok(/\/console\?check=/.test(linkOf(m)), "the check email's button goes to the console");
 ok((await owner("/api/owner", { action: "code", code: "000000" === codeOf(m) ? "111111" : "000000" })).status === 401, "a wrong owner code is refused");
 ok((await owner("/api/owner", { action: "code", code: codeOf(m) })).status === 200, "the owner's code passes the check");
 o = (await owner("/api/owner")).j;
-ok(o.owner === true && Array.isArray(o.tournaments), "the owner page opens");
+ok(o.owner === true && !!o.films, "the owner's settings open");
 ok((await owner("/api/account")).j.owner === true, "My golf shows The site to the owner");
 ok((await agent()("/api/owner", { action: "signin", pin: OWNER_PIN })).status === 401, "the old owner PIN stops working once the owner has signed in with their email");
 // Someone else signed in can't get through the check

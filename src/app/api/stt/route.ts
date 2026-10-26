@@ -1,4 +1,4 @@
-import { PRICES, claude, paidFetch } from "@/lib/usage";
+import { PRICES, canSpend, claude, paidFetch } from "@/lib/usage";
 import { isCrew } from "@/lib/auth";
 import { adminClient } from "@/lib/admin";
 import { bad, context, json, DEMO_READONLY } from "@/lib/server-data";
@@ -22,6 +22,7 @@ export async function POST(req: Request) {
   const audio = form.get("file");
   if (!(audio instanceof Blob) || audio.size < 1000) return bad("Nothing was recorded. Hold the button while you speak.");
   if (audio.size > 8 * 1024 * 1024) return bad("That's too long. Keep voice notes under a minute.");
+  if (!(await canSpend("voices")).ok) return bad("Voice notes are paused for now. Type it instead.", 409);
 
   // Words to listen for: this tournament's people and places, then golf
   const db = adminClient();
@@ -36,7 +37,7 @@ export async function POST(req: Request) {
   if (!raw.ok) return bad(raw.error, 502);
   const text = raw.text.trim();
   if (!text) return json({ text: "", raw: "" });
-  const tidy = await tidyUp(text, names).catch(() => text);
+  const tidy = (await canSpend("writing")).ok ? await tidyUp(text, names).catch(() => text) : text;
   return json({ text: tidy, raw: text });
 }
 
@@ -50,7 +51,7 @@ async function transcribe(audio: Blob, keyterms: string[]): Promise<{ ok: true; 
     f.append("tag_audio_events", "false");
     if (mode === "repeat") keyterms.forEach((k) => f.append("keyterms", k));
     if (mode === "json") f.append("keyterms", JSON.stringify(keyterms));
-    return paidFetch("voices", "spoken note", `${base}/v1/speech-to-text`, { method: "POST", headers: { "xi-api-key": process.env.ELEVENLABS_API_KEY! }, body: f }, { cents: PRICES.listenPerMinute / 4 });
+    return paidFetch("voices", "spoken note", `${base}/v1/speech-to-text`, { method: "POST", headers: { "xi-api-key": process.env.ELEVENLABS_API_KEY! }, body: f }, { cents: (audio.size / 4000 / 60) * PRICES.listenPerMinute, units: { bytes: audio.size } });
   };
   // The word list is sent as repeated fields; if the service wants it another way, try that, then without it
   let last = "";

@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { useConsole } from "@/components/console/Shell";
-import { ExportButton, Loading, PageHead, Pager, Problem, SearchBox, Select, Table, day, months, n, personKey, useFilters, useView, when, type Col } from "@/components/console/kit";
+import { ExportButton, Loading, PageHead, Pager, Problem, SearchBox, Select, Table, day, months, n, useFilters, useView, when, type Col } from "@/components/console/kit";
 
 interface Row {
+  id: string;
   email: string;
   name: string | null;
   roles: string[];
@@ -30,7 +31,7 @@ export default function PeoplePage() {
       label: "Name",
       sort: true,
       render: (r) => (
-        <Link href={`/console/people/${personKey(r.email)}`} className="con-strong">
+        <Link href={`/console/people/${r.id}`} className="con-strong">
           {r.name ?? <span className="con-quiet">No name</span>}
         </Link>
       ),

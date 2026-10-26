@@ -1133,6 +1133,101 @@ revoke execute on function usage_breakdown(timestamptz, uuid), usage_months(time
 grant execute on function usage_breakdown(timestamptz, uuid), usage_months(timestamptz), usage_top(timestamptz, int), usage_tournaments(timestamptz),
   usage_sum_tournaments(timestamptz) to service_role;
 
+-- Needs you, swept each morning in a few statements (whatever the number of tournaments): in with what's waited too
+-- long, out with what's sorted elsewhere. Returns how many came in.
+create or replace function console_sweep() returns int language plpgsql as $$
+declare n int := 0; k int;
+begin
+  -- Films stuck: a step running for over half an hour
+  insert into queue (kind, subject, tournament_id, title, detail)
+  select 'film', r.id::text, r.tournament_id, 'A film is stuck', jsonb_build_object('stage', coalesce(r.stage, r.status))
+  from reels r where r.status in ('planning', 'rendering') and r.updated_at < now() - interval '30 minutes'
+  on conflict (kind, subject) where resolved_at is null do nothing;
+  get diagnostics k = row_count; n := n + k;
+
+  -- Reports nobody has dealt with in a day (the post or comment still there, not hidden by the organiser)
+  insert into queue (kind, subject, tournament_id, title, detail)
+  select distinct on (x.id) 'report', x.id::text, x.tid, x.title, jsonb_build_object('table', x.tbl)
+  from (
+    select p.id, p.tournament_id tid, 'A reported post, waiting over a day' title, 'posts' tbl
+    from reports r join posts p on p.id = r.post_id
+    where r.created_at < now() - interval '1 day' and not (p.hidden and not coalesce(p.hidden_by_reports, false))
+    union all
+    select c.id, c.tournament_id, 'A reported comment, waiting over a day', 'comments'
+    from reports r join comments c on c.id = r.comment_id
+    where r.created_at < now() - interval '1 day' and not (c.hidden and not coalesce(c.hidden_by_reports, false))
+  ) x
+  where not exists (select 1 from queue q where q.kind = 'report' and q.subject = x.id::text and q.resolved_at is not null and q.resolved_at > now() - interval '1 day')
+  on conflict (kind, subject) where resolved_at is null do nothing;
+  get diagnostics k = row_count; n := n + k;
+
+  -- Follow requests still waiting three days after the organiser's reminder
+  insert into queue (kind, subject, tournament_id, title, detail)
+  select 'follow_wait', 'follow:' || f.tournament_id, f.tournament_id, count(*) || ' waiting to follow ' || t.name, jsonb_build_object('n', count(*))
+  from fans f join tournaments t on t.id = f.tournament_id
+  where f.status = 'asking' and f.reminded_at < now() - interval '3 days'
+  group by f.tournament_id, t.name
+  on conflict (kind, subject) where resolved_at is null do nothing;
+  get diagnostics k = row_count; n := n + k;
+
+  -- Out: sorted elsewhere
+  update queue q set resolved_at = now(), resolved_by = 'system', resolution = 'The film is sorted'
+  where q.resolved_at is null and q.kind = 'film'
+    and not exists (select 1 from reels r where r.id::text = q.subject and r.status in ('failed', 'planning', 'rendering'));
+  update queue q set resolved_at = now(), resolved_by = 'system', resolution = 'It was answered'
+  where q.resolved_at is null and q.kind = 'invite'
+    and not exists (select 1 from invite_requests i where i.id::text = q.subject and i.status = 'new');
+  update queue q set resolved_at = now(), resolved_by = 'system', resolution = 'Nobody''s waiting now'
+  where q.resolved_at is null and q.kind = 'follow_wait'
+    and not exists (select 1 from fans f where 'follow:' || f.tournament_id = q.subject and f.status = 'asking');
+  update queue q set resolved_at = now(), resolved_by = 'system', resolution = 'Research found the course'
+  where q.resolved_at is null and q.kind = 'research'
+    and exists (select 1 from course_library c where c.ref = q.subject and c.status = 'done');
+  update queue q set resolved_at = now(), resolved_by = 'system', resolution = 'No failures for a fortnight'
+  where q.resolved_at is null and q.kind = 'email_failing'
+    and not exists (select 1 from email_failures e where e.email = q.subject and e.at > now() - interval '14 days');
+  update queue q set resolved_at = now(), resolved_by = 'system', resolution = 'Done'
+  where q.resolved_at is null and q.kind = 'data_request'
+    and not exists (select 1 from data_requests d where d.id::text = q.subject and d.done_at is null);
+  update queue q set resolved_at = now(), resolved_by = 'system', resolution = 'It was deleted, or dealt with'
+  where q.resolved_at is null and q.kind = 'report'
+    and not exists (select 1 from posts p where p.id::text = q.subject and not (p.hidden and not coalesce(p.hidden_by_reports, false)))
+    and not exists (select 1 from comments c where c.id::text = q.subject and not (c.hidden and not coalesce(c.hidden_by_reports, false)));
+  update queue q set resolved_at = now(), resolved_by = 'system', resolution = 'A new month'
+  where q.resolved_at is null and q.kind = 'spend' and q.subject not like '%:' || to_char(now(), 'YYYY-MM');
+  return n;
+end $$;
+revoke execute on function console_sweep() from public, anon, authenticated;
+grant execute on function console_sweep() to service_role;
+
+-- Each tournament's figures when they're due: any tournament without them straight away, everything once an hour
+-- (one at a time across the servers)
+create or replace function refresh_stats_due() returns boolean language plpgsql as $$
+declare tid uuid;
+begin
+  if not pg_try_advisory_xact_lock(4242) then return false; end if;
+  for tid in select t.id from tournaments t where not exists (select 1 from tournament_stats s where s.tournament_id = t.id) limit 200 loop
+    perform refresh_tournament_stats(tid);
+  end loop;
+  if exists (select 1 from site_settings where key = 'stats' and updated_at > now() - interval '1 hour') then return false; end if;
+  insert into site_settings (key, value, updated_at) values ('stats', '{}'::jsonb, now())
+  on conflict (key) do update set updated_at = now();
+  perform refresh_tournament_stats(null);
+  return true;
+end $$;
+revoke execute on function refresh_stats_due() from public, anon, authenticated;
+grant execute on function refresh_stats_due() to service_role;
+
+-- When a tournament last changed who can watch (its files are re-checked for two days after)
+alter table tournaments add column if not exists privacy_changed_at timestamptz;
+
+-- Support paused a tournament's AI writing and films: what the switches were, to put back
+alter table tournaments add column if not exists console_paused jsonb;
+
+-- People get an id of their own, so their pages' addresses don't carry their email
+alter table people add column if not exists id uuid not null default gen_random_uuid();
+create unique index if not exists people_id_idx on people (id);
+
 -- One row a day: what the front page's growth chart is drawn from
 create table if not exists daily_stats (
   day date primary key,

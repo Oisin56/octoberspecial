@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useConsole } from "@/components/console/Shell";
-import { Loading, PageHead, Pager, Problem, Select, act, age, personKey, useFilters, useView, day } from "@/components/console/kit";
+import { Loading, PageHead, Pager, Problem, Select, act, age, PersonLink, useFilters, useView, day } from "@/components/console/kit";
 import type { NeedRow } from "@/lib/console-data";
 
 type Btn = { action: string; label: string; owner?: boolean; primary?: boolean; resolution?: string };
@@ -119,7 +119,7 @@ export default function NeedsPage() {
                 <p className="con-need-on">
                   {i.tournament && (i.tournament.slug ? <Link href={`/console/tournaments/${i.tournament.id}`}>{i.tournament.name}</Link> : i.tournament.name)}
                   {i.tournament && i.person && ", "}
-                  {i.person && <Link href={`/console/people/${personKey(i.person)}`}>{i.person}</Link>}
+                  {i.person && <PersonLink email={i.person} />}
                   {typeof i.detail?.error === "string" && <span className="con-need-detail">What went wrong: {i.detail.error}</span>}
                   {typeof i.detail?.about === "string" && <span className="con-need-detail">About it: {i.detail.about}</span>}
                   {i.assignedTo && <span className="con-need-detail">Handed to {i.assignedTo === user.email ? "you" : i.assignedTo}</span>}
@@ -132,7 +132,7 @@ export default function NeedsPage() {
                 )}
                 {i.kind === "email_failing" && i.person && user.role === "owner" && (
                   <p className="con-need-on">
-                    <Link href={`/console/people/${personKey(i.person)}`}>Correct the address</Link>
+                    <PersonLink email={i.person}>Correct the address</PersonLink>
                   </p>
                 )}
                 <div className="con-need-acts">

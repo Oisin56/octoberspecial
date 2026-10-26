@@ -1,6 +1,6 @@
 import "server-only";
 import { adminClient } from "./admin";
-import { raise, settle } from "./queue";
+import { raise } from "./queue";
 import { monthStartIso, SERVICES } from "./usage";
 import { brandEmail, sendOne } from "./email";
 import { BRAND } from "./brand";
@@ -47,41 +47,10 @@ export async function sweep(): Promise<number> {
     if (await raise(...a)) raised++;
   };
 
-  // Films stuck: a step running for more than half an hour
-  const { data: stuck } = await db
-    .from("reels")
-    .select("id,tournament_id,status,stage,stage_at,updated_at")
-    .in("status", ["planning", "rendering"])
-    .lt("updated_at", iso(now - 30 * 60e3))
-    .limit(200);
-  for (const r of stuck ?? []) await up({ kind: "film", subject: r.id, tournamentId: r.tournament_id, title: "A film is stuck", detail: { stage: r.stage ?? r.status } });
-
-  // Reports the organiser hasn't dealt with in a day
-  const { data: reports } = await db.from("reports").select("tournament_id,post_id,comment_id,created_at").lt("created_at", iso(now - DAY)).order("created_at").limit(500);
-  const items = new Map<string, { tid: string; table: "posts" | "comments" }>();
-  for (const r of reports ?? []) {
-    const id = r.post_id ?? r.comment_id;
-    if (id) items.set(id, { tid: r.tournament_id, table: r.post_id ? "posts" : "comments" });
-  }
-  for (const [id, it] of items) {
-    const { data: row } = await db.from(it.table).select("hidden,hidden_by_reports").eq("id", id).maybeSingle();
-    if (!row) {
-      await settle("report", id, "system", "It was deleted");
-      continue;
-    }
-    // Hidden by the organiser (not just by the reports): dealt with
-    if (row.hidden && !row.hidden_by_reports) continue;
-    await up({ kind: "report", subject: id, tournamentId: it.tid, title: `A reported ${it.table === "posts" ? "post" : "comment"}, waiting over a day`, detail: { table: it.table } });
-  }
-
-  // Follow requests still waiting three days after the organiser's reminder
-  const { data: waiting } = await db.from("fans").select("tournament_id").eq("status", "asking").lt("reminded_at", iso(now - 3 * DAY)).limit(2000);
-  const byT = new Map<string, number>();
-  for (const f of waiting ?? []) byT.set(f.tournament_id, (byT.get(f.tournament_id) ?? 0) + 1);
-  for (const [tid, n] of byT) {
-    const { data: t } = await db.from("tournaments").select("name").eq("id", tid).maybeSingle();
-    await up({ kind: "follow_wait", subject: `follow:${tid}`, tournamentId: tid, title: `${n} waiting to follow ${t?.name ?? "a tournament"}`, detail: { n } });
-  }
+  // Films stuck, reports waiting a day, follow requests waiting: in the database, in a few statements
+  const { data: inCount, error } = await db.rpc("console_sweep");
+  if (error) throw new Error(error.message);
+  raised += Number(inCount ?? 0);
 
   // A tournament at 80% of its own limits this month (films, clips, writing)
   const month = monthStartIso().slice(0, 7);
@@ -115,38 +84,11 @@ export async function sweep(): Promise<number> {
     }
   }
 
-  // Out: open items that have sorted themselves
-  const { data: open } = await db.from("queue").select("id,kind,subject").is("resolved_at", null).limit(2000);
-  for (const q of open ?? []) {
-    if (q.kind === "film") {
-      const { data: r } = await db.from("reels").select("status,updated_at").eq("id", q.subject).maybeSingle();
-      if (!r || r.status === "done" || r.status === "draft") await settle("film", q.subject, "system", r ? "The film is sorted" : "The film was deleted");
-    } else if (q.kind === "invite") {
-      const { data: r } = await db.from("invite_requests").select("status").eq("id", q.subject).maybeSingle();
-      if (!r || r.status !== "new") await settle("invite", q.subject, "system", r ? `It was ${r.status}` : "It was deleted");
-    } else if (q.kind === "follow_wait") {
-      const tid = q.subject.replace(/^follow:/, "");
-      const { count } = await db.from("fans").select("id", { count: "exact", head: true }).eq("tournament_id", tid).eq("status", "asking");
-      if (!count) await settle("follow_wait", q.subject, "system", "Nobody's waiting now");
-    } else if (q.kind === "research") {
-      const { data: r } = await db.from("course_library").select("status").eq("ref", q.subject).maybeSingle();
-      if (r?.status === "done") await settle("research", q.subject, "system", "Research found the course");
-    } else if (q.kind === "email_failing") {
-      const { count } = await db.from("email_failures").select("id", { count: "exact", head: true }).eq("email", q.subject).gte("at", iso(now - 14 * DAY));
-      if (!count) await settle("email_failing", q.subject, "system", "No failures for a fortnight");
-    } else if (q.kind === "data_request") {
-      const { data: r } = await db.from("data_requests").select("done_at").eq("id", q.subject).maybeSingle();
-      if (!r || r.done_at) await settle("data_request", q.subject, "system", "Done");
-    } else if (q.kind === "spend" && !q.subject.includes(`:${month}`)) {
-      await settle("spend", q.subject, "system", "A new month");
-    }
-  }
   return raised;
 }
 
 // ------------------------------------------------------------ the morning email
 
-const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
 
 /** At 7am Irish time, once a day, weekends too: what needs you, today's live tournaments, anything amber or red. */
 export async function morningEmail(force = false): Promise<boolean> {
@@ -155,28 +97,17 @@ export async function morningEmail(force = false): Promise<boolean> {
   if (!force && (dublinHour() !== 7 || cron.morning === today)) return false;
   const [o, h, n] = await Promise.all([overview(), health(), needsList({ limit: 5 })]);
   const site = (process.env.SITE_URL || "https://mygolfbroadcast.com").replace(/\/$/, "");
+  // Plain lines (the email's own layout escapes everything)
   const lines: string[] = [];
-  const text: string[] = [];
-  if (!n.total) {
-    lines.push("<strong>Nothing needs you today.</strong>");
-    text.push("Nothing needs you today.");
-  } else {
-    lines.push(`<strong>${n.total} ${n.total === 1 ? "thing needs" : "things need"} you.</strong> The oldest:`);
-    text.push(`${n.total} ${n.total === 1 ? "thing needs" : "things need"} you. The oldest:`);
-    for (const i of n.items) {
-      lines.push(`&nbsp;&nbsp;${esc(i.title)}${i.tournament ? `, ${esc(i.tournament.name)}` : ""}`);
-      text.push(`  ${i.title}${i.tournament ? `, ${i.tournament.name}` : ""}`);
-    }
+  if (!n.total) lines.push("Nothing needs you today.");
+  else {
+    lines.push(`${n.total} ${n.total === 1 ? "thing needs" : "things need"} you. The oldest:`);
+    for (const i of n.items) lines.push(`• ${i.title}${i.tournament ? `, ${i.tournament.name}` : ""}`);
   }
-  if (o.live.length) {
-    lines.push(`<strong>Live today:</strong> ${o.live.map((l) => `${esc(l.name)} (round ${l.round})`).join(", ")}.`);
-    text.push(`Live today: ${o.live.map((l) => `${l.name} (round ${l.round})`).join(", ")}.`);
-  }
+  if (o.live.length) lines.push(`Live today: ${o.live.slice(0, 10).map((l) => `${l.name} (round ${l.round})`).join(", ")}${o.live.length > 10 ? `, and ${o.live.length - 10} more` : ""}.`);
   const bad = h.lights.filter((l) => l.light === "red" || l.light === "amber");
-  if (bad.length) {
-    lines.push(`<strong>Health:</strong> ${bad.map((l) => `${esc(l.name)} ${l.light === "red" ? "is down" : "had failures"}`).join("; ")}.`);
-    text.push(`Health: ${bad.map((l) => `${l.name} ${l.light === "red" ? "is down" : "had failures"}`).join("; ")}.`);
-  }
+  if (bad.length) lines.push(`Health: ${bad.map((l) => `${l.name} ${l.light === "red" ? "is down" : "had failures"}`).join("; ")}.`);
+  const text = lines;
   const subject = n.total ? `${n.total} ${n.total === 1 ? "thing needs" : "things need"} you` : "Nothing needs you today";
   const sent = await consoleMail(`${BRAND.name}: ${subject}`, brandEmail(lines, { label: "Open the console", href: `${site}/console` }), `${text.join("\n")}\n\n${site}/console\n`);
   if (sent) await setSetting("cron", { ...(await getSetting<Record<string, unknown>>("cron", {})), morning: today });
@@ -212,9 +143,9 @@ export async function consoleDaily(): Promise<string[]> {
     }
   };
   await step("tournament figures", refreshStats);
-  await step("snapshot", snapshot);
   await step("Needs you", sweep);
   await step("morning email", async () => ((await morningEmail()) ? "sent" : "not due"));
+  await step("snapshot", snapshot);
   await step("old exports cleared", clearExports);
   await setSetting("cron", { ...(await getSetting<Record<string, unknown>>("cron", {})), at: new Date().toISOString(), did });
   return did;

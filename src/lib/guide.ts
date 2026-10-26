@@ -1,4 +1,4 @@
-import { claude } from "./usage";
+import { SpendStopped, canSpend, claude } from "./usage";
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import type { CourseGuide, HoleRowData, RoundRow } from "./types";
@@ -196,6 +196,8 @@ function finish(work: GuideWork): GuideWork {
 
 /** One step of the work. */
 export async function guideStep(r: RoundRow, work: GuideWork): Promise<GuideWork> {
+  const go = await canSpend("writing");
+  if (!go.ok) throw new SpendStopped(go.why);
   if (work.stage === "search") return search(r, work);
   if (work.stage === "read") return read(r, work);
   return work;

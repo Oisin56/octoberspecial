@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useConsole } from "@/components/console/Shell";
-import { ExportButton, Loading, PageHead, Pager, Problem, SearchBox, Select, Table, personKey, useFilters, useView, type Col } from "@/components/console/kit";
+import { ExportButton, Loading, PageHead, Pager, Problem, SearchBox, Select, Table, PersonLink, useFilters, useView, type Col } from "@/components/console/kit";
 import { ACTION_WORDS } from "@/lib/activity-words";
 
 interface Row {
@@ -26,7 +26,7 @@ export default function ActivityPage() {
     { key: "actor", label: "Who", render: (r) => (r.actor_role === "system" ? "The site" : `${r.actor} (${r.actor_role === "owner" ? "owner" : "support"})`) },
     { key: "action", label: "What", render: (r) => ACTION_WORDS[r.action] ?? r.action },
     { key: "t", label: "Tournament", render: (r) => (r.tournament_id && r.tournament_name ? <Link href={`/console/tournaments/${r.tournament_id}`}>{r.tournament_name}</Link> : (r.tournament_name ?? "")) },
-    { key: "p", label: "Person", render: (r) => (r.person ? <Link href={`/console/people/${personKey(r.person)}`}>{r.person}</Link> : "") },
+    { key: "p", label: "Person", render: (r) => (r.person ? <PersonLink email={r.person} /> : "") },
   ];
   return (
     <>

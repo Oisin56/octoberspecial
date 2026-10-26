@@ -27,9 +27,9 @@ export const PRICES = {
   writingOutPerM: 1000,
   /** Web search, per search */
   searchEach: 1,
-  /** ElevenLabs, per 1,000 characters spoken (or a minute of speech heard) */
+  /** ElevenLabs: per 1,000 characters spoken; per minute of speech heard (speech to text) */
   voicePer1k: 30,
-  listenPerMinute: 40,
+  listenPerMinute: 0.7,
   /** Shotstack, per minute of finished video */
   renderPerMinute: 20,
   /** GolfAPI: part of the subscription, nothing per call */

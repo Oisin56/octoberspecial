@@ -176,10 +176,11 @@ await fetch(`${BASE}/api/cron/daily`, CRON);
 ok(mails().length === b4, "once only");
 // A photo that reached the open store anyway (an upload link from before it went private) is moved by the daily job
 const stray = `photo/${T}/stray-${Date.now()}.jpg`;
+sql(`update tournaments set privacy_changed_at = now() - interval '1 hour' where slug='${T}'`);
 fs.mkdirSync(`${FILES}/photo/${T}`, { recursive: true });
 fs.copyFileSync("/var/tmp/ospg/hero.jpg", `${FILES}/${stray}`);
 await fetch(`${BASE}/api/cron/daily`, CRON);
-ok(!fs.existsSync(`${FILES}/${stray}`) && fs.existsSync(`${FILES}/__private__/${stray}`), "a stray photo in the open store is moved to the locked one each day");
+ok(!fs.existsSync(`${FILES}/${stray}`) && fs.existsSync(`${FILES}/__private__/${stray}`), "a stray photo in the open store (it went private in the last two days) is moved to the locked one");
 const health = await (await fetch(`${BASE}/api/health`)).text();
 ok(!health.includes(T) && !/hush/i.test(health), "the setup check doesn't list tournaments");
 

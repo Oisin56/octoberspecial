@@ -57,7 +57,7 @@ export default function TournamentsPage() {
   return (
     <>
       <PageHead title="Tournaments" lead={data ? `${n(data.total)} ${values.q || values.status || values.privacy || values.month ? "match" : "in all"}` : undefined}>
-        <ExportButton what="tournaments" params={values} />
+        {user.role === "owner" && <ExportButton what="tournaments" params={values} />}
       </PageHead>
       <div className="con-filters">
         <SearchBox label="Search by name, organiser email or address" value={values.q} onChange={(v) => set({ q: v })} />

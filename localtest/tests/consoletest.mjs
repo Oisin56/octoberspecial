@@ -15,8 +15,12 @@ const sql = (q) => execSync(`psql -h 127.0.0.1 -p 5433 -U postgres -qtAc "${q.re
 const SHOTS = "/var/tmp/ospg/shots";
 const T = "october-special-2026";
 const tid = sql(`select id from tournaments where slug='${T}'`);
-const view = (a, v, p = {}) => a(`/api/console?${new URLSearchParams({ view: v, ...p })}`);
-const raw = (a, path) => fetch(BASE + path, { headers: { cookie: a.cookie() } });
+// The console's own pages send x-console (a link from another site can't)
+const view = async (a, v, p = {}) => {
+  const r = await fetch(`${BASE}/api/console?${new URLSearchParams({ view: v, ...p })}`, { headers: { cookie: a.cookie(), "x-console": "1" } });
+  return { status: r.status, j: await r.json().catch(() => ({})) };
+};
+const raw = (a, path) => fetch(BASE + path, { headers: { cookie: a.cookie(), "x-console": "1" } });
 
 // ================================================================ the owner gets in
 const owner = agent();
@@ -33,6 +37,7 @@ await owner("/api/owner", { action: "code", code: codeOf(check) });
 r = await view(owner, "me");
 ok(r.j.user?.role === "owner", "through the check: the owner");
 ok(sql(`select count(*) from activity where action='console.signin'`) === "1", "the sign-in is in the activity record");
+ok((await fetch(`${BASE}/api/console?view=overview`, { headers: { cookie: owner.cookie() } })).status === 400, "a plain link (from another site, say) can't read the console");
 
 // ================================================================ the front page and the lists
 r = await view(owner, "overview");
@@ -55,7 +60,8 @@ await fan("/api/fans", { t: T, action: "profile", name: "Maeve Byrne", how: "Nei
 await fan("/api/account", { action: "code", email: "maeve@example.ie", code: codeOf(await lastMailTo("maeve@example.ie")) });
 r = await view(owner, "people", { q: "maeve" });
 ok(r.j.rows.length === 1 && r.j.rows[0].roles.includes("follower") && !!r.j.rows[0].marketing_at, "People: a follower who gave an email, with marketing ticked");
-r = await view(owner, "person", { email: "maeve@example.ie" });
+const maeveId = (await owner("/api/console", { action: "person.find", email: "maeve@example.ie" })).j.id;
+r = await view(owner, "person", { id: maeveId });
 ok(r.j.consent?.wording && r.j.consent.tournament && r.j.tournaments.some((t) => t.role === "Follower"), "her page: the exact words she saw, where, and her tournaments");
 ok(sql(`select count(*) from activity where action='person.view' and person='maeve@example.ie'`) === "1", "looking at her page is recorded");
 
@@ -110,6 +116,7 @@ const any = r.j.items[0];
 await owner("/api/console", { action: "needs.snooze", id: any.id });
 r = await view(owner, "needs");
 ok(!r.j.items.some((i) => i.id === any.id) && r.j.snoozed >= 1, "Snooze: out of the list until tomorrow");
+ok((await owner("/api/console", { action: any.kind === "film" ? "needs.approve" : "needs.retry", id: any.id })).status === 400, "a button for another kind of item is refused");
 
 // ================================================================ money: budgets stop spending
 r = await view(owner, "money");
@@ -128,6 +135,19 @@ r = await owner("/api/console", { action: "money.bill", month: "2026-09", servic
 ok(r.status === 200 && (await view(owner, "money")).j.bills["2026-09"].writing === 1250, "a supplier's real bill, typed in");
 void b4;
 
+// ================================================================ correcting an email moves everything, consent too
+r = await owner("/api/console", { action: "person.email", email: "maeve@example.ie", to: "maeve.byrne@example.ie" });
+ok(r.status === 200 && sql(`select count(*) from people where email='maeve@example.ie'`) === "0" && sql(`select marketing_wording is not null from people where email='maeve.byrne@example.ie'`) === "t", "her email corrected: one record, consent kept");
+ok(sql(`select count(*) from fans where email='maeve.byrne@example.ie'`) === "1", "and everywhere it was kept");
+await owner("/api/console", { action: "person.email", email: "maeve.byrne@example.ie", to: "maeve@example.ie" });
+
+// ================================================================ pausing puts things back as they were
+sql(`update tournaments set video_enabled = false, ai_on = true where id='${tid}'`);
+await owner("/api/console", { action: "tournament.pause", id: tid });
+ok(sql(`select ai_on::text || video_enabled::text from tournaments where id='${tid}'`) === "falsefalse", "paused: writing and films off");
+await owner("/api/console", { action: "tournament.resume", id: tid });
+ok(sql(`select ai_on::text || video_enabled::text from tournaments where id='${tid}'`) === "truefalse", "restarted: back as the organiser had them (films stay off)");
+
 // ================================================================ support staff
 r = await owner("/api/console", { action: "settings.staff-add", email: "help@test.ie" });
 ok(r.status === 200, "the owner adds help@test.ie as support");
@@ -140,13 +160,17 @@ r = await view(staff, "me");
 ok(r.j.user?.role === "support", "through the check: support");
 ok((await view(staff, "overview")).status === 200, "they see the front page");
 ok((await view(staff, "money")).status === 403, "but not Money");
-ok((await view(staff, "tournament", { id: tid })).j.money === null, "nor a tournament's costs");
+ok((await view(staff, "tournament", { id: tid })).j.money === null && !("cost_cents" in ((await view(staff, "tournament", { id: tid })).j.stats ?? {})), "nor a tournament's costs");
 ok((await raw(staff, "/api/console/export?what=people")).status === 403, "nor export people's details");
-ok((await raw(staff, "/api/console/export?what=tournaments")).status === 200, "they can export tournaments");
+ok((await raw(staff, "/api/console/export?what=tournaments")).status === 403, "nor export tournaments (they carry costs and emails)");
+ok(!("cost_cents" in ((await view(staff, "tournaments")).j.rows[0] ?? {})) && !(await view(staff, "overview")).j.figures.some((f) => f.money), "no costs anywhere they look");
 ok((await staff("/api/console", { action: "settings.staff-add", email: "x@test.ie" })).status === 403, "nor change settings");
 ok((await staff("/api/owner", { action: "delete", id: tid, name: "x" })).status === 401, "nor delete a tournament");
 r = await staff("/api/console", { action: "tournament.open", id: tid });
 ok(r.status === 200 && (await staff("/api/admin", { t: T, action: "state" })).status === 200, "they can open a tournament as its organiser, to help");
+ok((await staff("/api/admin", { t: T, action: "addOrganiser", email: "help@test.ie" })).status === 403, "but only look: they can't make themselves an organiser");
+ok((await staff("/api/admin", { t: T, action: "deleteRound", roundId: sql(`select id from rounds where tournament_id='${tid}' limit 1`) })).status === 403, "nor delete anything");
+ok((await staff("/api/console", { action: "person.signout", email: "owner@test.ie" })).status === 403, "nor sign the owner out");
 r = await owner("/api/admin", { t: T, action: "state" });
 ok(!!r.j.supportVisit, "and the organiser is told support looked in");
 await owner("/api/console", { action: "settings.staff-remove", email: "help@test.ie" });

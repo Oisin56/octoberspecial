@@ -2,9 +2,8 @@
 
 import { use, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useConsole } from "@/components/console/Shell";
-import { Loading, Problem, act, day, personFromKey, personKey, useView, when } from "@/components/console/kit";
+import { Loading, Problem, act, day, useView, when } from "@/components/console/kit";
 import { ACTION_WORDS } from "@/lib/activity-words";
 
 interface Person {
@@ -21,12 +20,10 @@ interface Person {
   requests: { kind: string; created_at: string; done_at: string | null }[];
 }
 
-export default function PersonPage({ params }: { params: Promise<{ key: string }> }) {
-  const { key } = use(params);
-  const email = personFromKey(key);
-  const router = useRouter();
+export default function PersonPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = use(params);
   const { user } = useConsole();
-  const { data, err, reload } = useView<Person>("person", { email });
+  const { data, err, reload } = useView<Person>("person", { id });
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ text: string; bad?: boolean } | null>(null);
   const [fix, setFix] = useState<string | null>(null);
@@ -43,7 +40,6 @@ export default function PersonPage({ params }: { params: Promise<{ key: string }
     setBusy(null);
     if (!r.ok) return setMsg({ text: String(r.j.error ?? "That didn't work."), bad: true });
     setMsg({ text: done });
-    if (r.j.email && r.j.email !== data!.email) return router.replace(`/console/people/${personKey(String(r.j.email))}`);
     reload();
   }
 

@@ -1,4 +1,4 @@
-import { PRICES, claude, paidFetch } from "./usage";
+import { PRICES, canSpend, claude, paidFetch } from "./usage";
 import "server-only";
 import { prizeLines, winBoard } from "./boards";
 import Anthropic from "@anthropic-ai/sdk";
@@ -329,6 +329,7 @@ async function clipTranscript(slug: string, c: PostRow): Promise<{ text: string;
   const keptUrl = await fileUrl(path);
   const kept = keptUrl ? await fetch(keptUrl).catch(() => null) : null;
   if (kept?.ok) return (await kept.json().catch(() => null)) as { text: string; words: { w: string; s: number; e: number }[] } | null;
+  if (!(await canSpend("voices")).ok) return null;
   try {
     const base = process.env.ELEVENLABS_BASE_URL || "https://api.elevenlabs.io";
     const f = new FormData();
@@ -336,7 +337,7 @@ async function clipTranscript(slug: string, c: PostRow): Promise<{ text: string;
     f.append("cloud_storage_url", mediaUrl(c.media_path)!);
     f.append("timestamps_granularity", "word");
     f.append("tag_audio_events", "false");
-    const r = await paidFetch("voices", "clip transcript", `${base}/v1/speech-to-text`, { method: "POST", headers: { "xi-api-key": process.env.ELEVENLABS_API_KEY }, body: f }, { cents: PRICES.listenPerMinute / 2 });
+    const r = await paidFetch("voices", "clip transcript", `${base}/v1/speech-to-text`, { method: "POST", headers: { "xi-api-key": process.env.ELEVENLABS_API_KEY }, body: f }, { cents: (Math.max(5, Number(c.details?.dur) || 20) / 60) * PRICES.listenPerMinute });
     if (!r.ok) return null;
     const j = (await r.json()) as { text?: string; words?: { text: string; start: number; end: number; type?: string }[] };
     const out = { text: (j.text ?? "").trim(), words: (j.words ?? []).filter((w) => w.type !== "spacing" && w.text?.trim()).map((w) => ({ w: w.text.trim(), s: w.start, e: w.end })) };

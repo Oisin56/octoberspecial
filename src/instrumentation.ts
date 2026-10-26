@@ -15,9 +15,18 @@ export async function register() {
     inside = true;
     try {
       const place = typeof args[0] === "string" ? args[0].slice(0, 80) : "server";
-      const err = args.find((a) => a instanceof Error) ?? args.slice(typeof args[0] === "string" ? 1 : 0).map(String).join(" ");
+      const str = (a: unknown) => {
+        try {
+          return String(a);
+        } catch {
+          return "[something that can't be shown]";
+        }
+      };
+      const err = args.find((a) => a instanceof Error) ?? args.slice(typeof args[0] === "string" ? 1 : 0).map(str).join(" ");
       // A spending limit reached isn't a fault
-      if (!(err instanceof Error && err.name === "SpendStopped")) void recordError(place, err || place);
+      if (!(err instanceof Error && err.name === "SpendStopped")) void recordError(place, err || place).catch(() => {});
+    } catch {
+      // the record of an error must never cause another
     } finally {
       inside = false;
     }

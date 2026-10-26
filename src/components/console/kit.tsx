@@ -11,7 +11,7 @@ export type Json = Record<string, unknown> & { error?: string };
 export async function api<T = Json>(view: string, params: Record<string, string | number | undefined> = {}): Promise<{ ok: boolean; status: number; j: T & { error?: string } }> {
   const qs = new URLSearchParams({ view });
   for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== "") qs.set(k, String(v));
-  const r = await fetch(`/api/console?${qs}`, { cache: "no-store" }).catch(() => null);
+  const r = await fetch(`/api/console?${qs}`, { cache: "no-store", headers: { "x-console": "1" } }).catch(() => null);
   const j = r ? await r.json().catch(() => ({})) : { error: "No signal. Try again." };
   return { ok: !!r?.ok, status: r?.status ?? 0, j };
 }
@@ -108,15 +108,25 @@ export const age = (d: string) => {
 };
 export const clock = (d: string | null | undefined) => (d ? new Date(d).toLocaleTimeString("en-IE", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Dublin" }) : "");
 
-/** An email in an address the console can use: kept out of plain sight in links. */
-export const personKey = (email: string) => btoa(unescape(encodeURIComponent(email))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-export const personFromKey = (key: string) => {
-  try {
-    return decodeURIComponent(escape(atob(key.replace(/-/g, "+").replace(/_/g, "/"))));
-  } catch {
-    return "";
-  }
-};
+/**
+ * A link to a person's page. Their page's address carries an id, never their email (addresses end up in browser
+ * history and logs), so the id is looked up when the link is used.
+ */
+export function PersonLink({ email, children }: { email: string; children?: React.ReactNode }) {
+  const router = useRouter();
+  return (
+    <Link
+      href="/console/people"
+      onClick={async (e) => {
+        e.preventDefault();
+        const r = await act({ action: "person.find", email });
+        if (r.ok && r.j.id) router.push(`/console/people/${r.j.id}`);
+      }}
+    >
+      {children ?? email}
+    </Link>
+  );
+}
 
 // ------------------------------------------------------------ pieces
 
@@ -306,7 +316,7 @@ export function ExportButton({ what, params, label = "Export" }: { what: string;
     setBusy(true);
     setMsg(null);
     const qs = new URLSearchParams({ what, ...Object.fromEntries(Object.entries(params).filter(([, v]) => v)) });
-    const r = await fetch(`/api/console/export?${qs}`).catch(() => null);
+    const r = await fetch(`/api/console/export?${qs}`, { headers: { "x-console": "1" } }).catch(() => null);
     setBusy(false);
     if (!r) return setMsg("No signal. Try again.");
     if (r.status === 202) return setMsg("That's a big one. It's being made, and a link will be emailed to you.");

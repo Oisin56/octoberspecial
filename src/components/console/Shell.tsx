@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { BRAND } from "@/lib/brand";
 import { OwnerGate, type Gate } from "./OwnerTools";
-import { act, api, personKey } from "./kit";
+import { act, api } from "./kit";
 
 export interface ConsoleUser {
   email: string;
@@ -183,12 +183,12 @@ function ConsoleSearch() {
       return () => clearTimeout(t);
     }
     const t = setTimeout(async () => {
-      const r = await api<{ tournaments: { id: string; name: string; status: string; organiser: string | null }[]; people: { email: string; name: string | null; roles: string[] }[] }>("search", { q });
+      const r = await api<{ tournaments: { id: string; name: string; status: string; organiser: string | null }[]; people: { id: string; email: string; name: string | null; roles: string[] }[] }>("search", { q });
       if (!r.ok) return;
       setAt(-1);
       setHits([
         ...r.j.tournaments.map((t) => ({ kind: "t" as const, key: t.id, title: t.name, sub: ["Tournament", t.organiser].filter(Boolean).join(", "), href: `/console/tournaments/${t.id}` })),
-        ...r.j.people.map((p) => ({ kind: "p" as const, key: p.email, title: p.name || p.email, sub: p.name ? p.email : "Person", href: `/console/people/${personKey(p.email)}` })),
+        ...r.j.people.map((p) => ({ kind: "p" as const, key: p.email, title: p.name || p.email, sub: p.name ? p.email : "Person", href: `/console/people/${p.id}` })),
       ]);
     }, 250);
     return () => clearTimeout(t);

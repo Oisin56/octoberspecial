@@ -666,6 +666,8 @@ export async function maybeBulletin(tid: string, roundId: string, gameId: string
  * hole notes) for the organiser to check and save. Nothing is saved here.
  */
 export async function draftGuide(r: RoundRow): Promise<{ guide: CourseGuide; sources: string[]; searched: boolean; warnings?: string }> {
+  const go = await canSpend("writing");
+  if (!go.ok) throw new SpendStopped(go.why);
   const card = r.holes.map((h) => `${h.number}: par ${h.par}${h.yards ? `, ${h.yards} yds` : ""}`).join("; ");
   const prompt = `Research this golf course and write a factual guide for a golf commentator.
 
