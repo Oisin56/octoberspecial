@@ -1,3 +1,4 @@
+import { paidFetch } from "./usage";
 import "server-only";
 import { COURSES, type CourseData } from "@/data/courses";
 import { GUIDES } from "@/data/course-guides";
@@ -140,7 +141,7 @@ export async function searchCourses(q: string): Promise<{ hits: CourseHit[]; rem
   const headers = gcaHeaders();
   if (!headers || needle.length < 3) return { hits, remote: false };
   try {
-    const r = await fetch(`${GCA}/search?search_query=${encodeURIComponent(q.trim())}`, { headers, cache: "no-store" });
+    const r = await paidFetch("courses", "course search", `${GCA}/search?search_query=${encodeURIComponent(q.trim())}`, { headers, cache: "no-store" });
     if (!r.ok) return { hits, remote: false, error: `Course search returned ${r.status}` };
     const j = await r.json();
     for (const c of (j.courses ?? []) as Record<string, unknown>[]) {
@@ -182,7 +183,7 @@ async function fetchCourse(ref: string): Promise<CourseOption | null> {
   if (kind !== "gca") return null;
   const headers = gcaHeaders();
   if (!headers) return null;
-  const r = await fetch(`${GCA}/courses/${encodeURIComponent(id)}`, { headers, cache: "no-store" });
+  const r = await paidFetch("courses", "course card", `${GCA}/courses/${encodeURIComponent(id)}`, { headers, cache: "no-store" });
   if (!r.ok) return null;
   const j = await r.json();
   const c = (j.course ?? j) as Record<string, unknown>;

@@ -1,6 +1,7 @@
 import { adminClient } from "@/lib/admin";
 import { bad, context, json, DEMO_READONLY } from "@/lib/server-data";
 import { REPORTS_TO_HIDE, clientIp, reporterKey, tooFast } from "@/lib/social";
+import { raise } from "@/lib/queue";
 
 const UUID = /^[0-9a-f-]{36}$/i;
 
@@ -24,6 +25,8 @@ export async function POST(req: Request) {
   if (error && !/duplicate|unique/i.test(error.message)) return bad("Couldn't send the report", 500);
 
   const { count } = await db.from("reports").select("id", { count: "exact", head: true }).eq(col, id);
+  // Reported twice: the console's Needs you hears too
+  if ((count ?? 0) >= 2) await raise({ kind: "report", subject: id, tournamentId: t.id, title: `A ${table === "posts" ? "post" : "comment"} reported ${count} times`, detail: { table } });
   let hidden = !!item.hidden;
   if (!hidden && (count ?? 0) >= REPORTS_TO_HIDE) {
     await db.from(table).update({ hidden: true, hidden_by_reports: true }).eq("id", id);

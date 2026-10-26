@@ -112,15 +112,15 @@ ok(badEmail.status === 400, "a bad email is refused");
 
 // ================================================================ The owner approves; the link opens the wizard
 const o = await phone();
-await o.goto(`${BASE}/owner`);
+await o.goto(`${BASE}/privacy`);
 await call(o, "/api/owner", { action: "signin", pin: OWNER });
-await o.goto(`${BASE}/owner`, { waitUntil: "networkidle" });
-await o.locator(".owner-invites .owner-t").first().waitFor();
-ok(/1 waiting/.test(await o.locator(".owner-invites h2").innerText()), "the owner page shows the request waiting");
+await o.goto(`${BASE}/console/needs`, { waitUntil: "networkidle" });
+await o.locator(".con-need", { hasText: "Invite request: Siobhan Test" }).waitFor();
+ok(true, "the console's Needs you shows the request waiting");
 await o.screenshot({ path: "/var/tmp/ospg/shots/phasef-owner-invites.png" });
 const m0 = mails().length;
-await o.getByRole("button", { name: "Approve and email the link" }).click();
-await o.getByText("Invite emailed to siobhan@example.com").waitFor({ timeout: 8000 });
+await o.locator(".con-need", { hasText: "Invite request: Siobhan Test" }).getByRole("button", { name: "Approve" }).click();
+await o.getByText("Done.").waitFor({ timeout: 8000 });
 const inviteMail = mails().slice(m0).find((m) => (m.to ?? []).includes("siobhan@example.com"));
 const link = inviteMail?.text.match(/https?:\/\/\S+\/new\?invite=[\w-]+/)?.[0];
 ok(!!link && /You're invited/.test(inviteMail.subject), `she gets an email with a link to set up (${inviteMail?.subject})`);
@@ -142,9 +142,10 @@ const noInvite = await call(stranger, "/api/tournaments", { wizard, email: "x@ex
 ok(noInvite.status === 401, "and nobody can make one without an invite or the owner PIN");
 
 // ================================================================ The example tournament
-await o.goto(`${BASE}/owner`, { waitUntil: "networkidle" });
-await o.locator(".owner-t", { hasText: "The October Special" }).getByRole("button", { name: "Use as the front page example" }).click();
-await o.getByText("Front page example").first().waitFor({ timeout: 8000 });
+await o.goto(`${BASE}/console/settings`, { waitUntil: "networkidle" });
+await o.fill("#demo-q", "October Special");
+await o.getByRole("button", { name: "Use this one" }).first().click();
+await o.getByText("Saved: it's the example now.").waitFor({ timeout: 8000 });
 ok(sql(`select value->>'slug' from site_settings where key='demo'`) === T, "the owner picks the example tournament");
 p = await phone();
 await p.goto(`${BASE}/`, { waitUntil: "networkidle" });

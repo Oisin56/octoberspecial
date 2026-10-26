@@ -12,6 +12,8 @@ const TONE_IDS: Tone[] = ["broadsheet", "tabloid", "commentator", "dry"];
 import { getCourse, validStrokeIndexes } from "@/lib/courses";
 import { saveToLibrary } from "@/lib/course-library";
 import { syncTripDates } from "@/lib/trip-dates";
+import { settle } from "@/lib/queue";
+import { SpendStopped } from "@/lib/usage";
 import { courseRefOf } from "@/lib/wizard";
 import type { Game, HandicapRule, PointsRule } from "@/lib/engine";
 
@@ -92,7 +94,9 @@ export async function POST(req: Request) {
         emails: Object.fromEntries(rows.map((p) => [p.id, p.email ?? null])),
         organisers: await organiserList(t.id),
         // Signed in here without an email yet (the old organiser PIN, or this phone made it): asked to add one
-        needEmail: session.via !== "account" && session.via !== "owner",
+        needEmail: session.via !== "account" && session.via !== "owner" && session.via !== "staff",
+        // Support looked in to help (in the last 30 days): the organiser is told
+        supportVisit: (await db.from("activity").select("at").eq("tournament_id", t.id).eq("action", "tournament.open").eq("actor_role", "support").gte("at", new Date(Date.now() - 30 * 864e5).toISOString()).order("at", { ascending: false }).limit(1).maybeSingle()).data?.at ?? null,
         accountEmail: (await getAccount())?.email ?? null,
         organiserPinSet: !!t.organiser_pin_hash,
         env: { ai: !!process.env.ANTHROPIC_API_KEY, courses: !!process.env.GOLFCOURSEAPI_KEY || !!process.env.GOLFAPI_KEY, mail: mailConfigured() },
@@ -494,6 +498,7 @@ export async function POST(req: Request) {
       // Looked at by the organiser: no longer waiting for review. Put back = the reports are cleared
       await db.from(table).update({ hidden_by_reports: false }).eq("id", b.id);
       if (!b.hidden) await db.from("reports").delete().eq(table === "posts" ? "post_id" : "comment_id", b.id);
+      await settle("report", String(b.id), session!.name, b.hidden ? "Hidden by the organiser" : "Kept by the organiser");
       return json({ ok: true });
     }
 
@@ -535,7 +540,7 @@ export async function POST(req: Request) {
         });
         return json({ piece });
       } catch (e) {
-        return bad(e instanceof Error ? e.message : "AI failed", 500);
+        return bad(e instanceof Error ? e.message : "AI failed", e instanceof SpendStopped ? 409 : 500);
       }
     }
 
@@ -582,7 +587,7 @@ export async function POST(req: Request) {
         });
         return json({ piece });
       } catch (e) {
-        return bad(e instanceof Error ? e.message : "AI failed", 500);
+        return bad(e instanceof Error ? e.message : "AI failed", e instanceof SpendStopped ? 409 : 500);
       }
     }
 

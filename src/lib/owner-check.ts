@@ -14,6 +14,7 @@ import { BRAND } from "./brand";
 import { getAccount, getChallenge, isOwnerEmail, markOwnerClaimed, setChallenge, setOwnerChecked, type Account } from "./auth";
 import { SignInError, redeemCode, redeemToken, sendSignIn } from "./accounts";
 import { siteOrigin } from "./server-data";
+import { consoleEmail } from "./console-auth";
 
 /**
  * The site owner's second check: Face ID or Touch ID on this device (a passkey), or a code sent to their email.
@@ -32,9 +33,10 @@ function where(req: Request) {
   return { origin, rpID: new URL(origin).hostname };
 }
 
+/** The owner, or a member of support staff: signed in with their email, the second check still to do. */
 async function ownerAccount(): Promise<Account> {
   const a = await getAccount();
-  if (!a || !isOwnerEmail(a.email)) throw new SignInError("Sign in with the site owner's email first", 401);
+  if (!a || !(await consoleEmail(a.email))) throw new SignInError("Sign in with the site owner's email, or a staff email, first", 401);
   return a;
 }
 
@@ -49,13 +51,14 @@ export async function passkeyCount(accountId: string) {
 
 async function passed() {
   await setOwnerChecked();
-  await markOwnerClaimed().catch(() => {});
+  const a = await getAccount();
+  if (isOwnerEmail(a?.email)) await markOwnerClaimed().catch(() => {});
 }
 
 /** The code by email (and the button in the same email). */
 export async function sendOwnerCode(req: Request) {
   const a = await ownerAccount();
-  await sendSignIn(siteOrigin(req), a.email, { purpose: "owner", next: "/owner", intro: `Someone (hopefully you) is opening the site owner's page on ${BRAND.name}. Tap the button, or type the code, to carry on.` });
+  await sendSignIn(siteOrigin(req), a.email, { purpose: "owner", next: "/console", intro: `Someone (hopefully you) is opening the console on ${BRAND.name}. Tap the button, or type the code, to carry on.` });
 }
 
 export async function checkOwnerCode(code: string) {
@@ -75,7 +78,7 @@ export async function checkOwnerLink(token: string) {
 export async function passkeyQuestion(req: Request) {
   const a = await ownerAccount();
   const keys = await passkeys(a.id);
-  if (!keys.length) throw new SignInError("Face ID isn't set up for the site owner yet. Use the emailed code.", 404);
+  if (!keys.length) throw new SignInError("Face ID isn't set up on this account yet. Use the emailed code.", 404);
   const options = await generateAuthenticationOptions({
     rpID: where(req).rpID,
     allowCredentials: keys.map((k) => ({ id: k.id, transports: (k.transports ?? undefined) as AuthenticatorTransportFuture[] | undefined })),
@@ -90,7 +93,7 @@ export async function passkeyAnswer(req: Request, response: AuthenticationRespon
   const expected = await getChallenge();
   if (!expected) throw new SignInError("That took too long. Try again.", 410);
   const key = (await passkeys(a.id)).find((k) => k.id === response?.id);
-  if (!key) throw new SignInError("That isn't a Face ID set up for the site owner", 401);
+  if (!key) throw new SignInError("That isn't a Face ID set up for this account", 401);
   const { origin, rpID } = where(req);
   const v = await verifyAuthenticationResponse({
     response,

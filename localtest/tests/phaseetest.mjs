@@ -139,10 +139,12 @@ ok((await p.locator(".reel-film-btn").count()) === 1, "Highlights has a Film but
 const own = await browser.newContext({ viewport: { width: 1200, height: 900 } });
 const o = await own.newPage();
 o.on("pageerror", (e) => console.log("pageerror:", e.message));
-await o.goto(`${BASE}/owner`, { waitUntil: "networkidle" });
+await o.goto(`${BASE}/console`, { waitUntil: "networkidle" });
 await o.getByRole("button", { name: "Use the site owner PIN" }).click();
 await o.fill("#opin", OWNER);
 await o.getByRole("button", { name: "Sign in", exact: true }).click();
+await o.getByRole("heading", { name: "Overview" }).waitFor();
+await o.goto(`${BASE}/console/settings`, { waitUntil: "networkidle" });
 await o.locator(".owner-films").waitFor({ timeout: 15000 });
 ok(true, "the owner page has a Films section");
 await o.getByLabel("Monthly limit, all tournaments ($)").fill("30");

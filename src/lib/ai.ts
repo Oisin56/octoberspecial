@@ -1,5 +1,5 @@
+import { SpendStopped, canSpend, claude } from "./usage";
 import "server-only";
-import Anthropic from "@anthropic-ai/sdk";
 import { adminClient } from "./admin";
 import { loadServerState } from "./server-data";
 import { courseBySlug } from "@/data/courses";
@@ -463,7 +463,9 @@ export async function generatePiece(
     user = `${parts.join("\n\n")}\n\nORIGINAL ARTICLE\nHeadline: ${rw.title}\n\n${rw.body}\n\nTASK\nRewrite the original article.\n${how || "Improve it."}\nKeep it accurate to the data above. Keep the same kind of piece. Change the headline only if it no longer fits.`;
   }
 
-  const client = new Anthropic({ baseURL: process.env.ANTHROPIC_BASE_URL || undefined });
+  const go = await canSpend("writing");
+  if (!go.ok) throw new SpendStopped(go.why);
+  const client = claude(kind);
   // Structured output: the article arrives as fields, never as JSON text to parse
   const msg = await client.messages.create({
     model: MODEL,
@@ -673,7 +675,7 @@ OUR SCORECARD (hole: par): ${card}
 Use the club's own hole-by-hole guide and reputable reviews. Accuracy matters more than colour: never invent a detail. Hole notes must match OUR hole numbers; if a source's numbering or pars differ from our card, don't use its hole notes and say so in "warnings". Omit any hole you can't find a reliable description for.
 
 Output ONLY a JSON object: {"overview": "3-5 sentences: designer and year, terrain and style, what defines it, typical conditions", "signature": "1-3 sentences on the best-known holes and why", "holes": {"1": "max 30 words: shape, hazards, elevation, green, strategy", ...}, "sources": ["url", ...], "warnings": "string"}. Plain British/Irish English, no marketing language.`;
-  const client = new Anthropic({ baseURL: process.env.ANTHROPIC_BASE_URL || undefined });
+  const client = claude("course guide");
   const ask = (search: boolean) =>
     client.messages.create({
       model: MODEL,

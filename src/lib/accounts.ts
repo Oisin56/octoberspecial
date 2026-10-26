@@ -55,7 +55,11 @@ export async function sendSignIn(origin: string, email: string, opts: { next?: s
     .select("token_hash", { count: "exact", head: true })
     .eq("email", email)
     .gt("expires_at", new Date(Date.now() - (60 - LINK_MINUTES) * 60e3).toISOString());
-  if ((count ?? 0) >= 6) throw new SignInError("Too many sign-in emails to that address. Try again in an hour.", 429);
+  if ((count ?? 0) >= 6) {
+    await count_("signin:too-many");
+    throw new SignInError("Too many sign-in emails to that address. Try again in an hour.", 429);
+  }
+  await count_("signin:code-sent");
   const token = newToken();
   const code = newCode();
   const purpose = opts.purpose ?? "signin";
@@ -63,7 +67,7 @@ export async function sendSignIn(origin: string, email: string, opts: { next?: s
     .from("account_tokens")
     .insert({ token_hash: tokenHash(token), code_hash: hashCode(email, code), email, purpose, next: safeNext(opts.next), expires_at: new Date(Date.now() + LINK_MINUTES * 60e3).toISOString() });
   if (error) throw new SignInError(/column|account_tokens/.test(error.message) ? "Sign-in needs the latest database update (schema.sql)" : "Couldn't send just now. Try again.", 500);
-  const link = purpose === "owner" ? `${origin}/owner?check=${token}` : `${origin}/account/in?token=${token}`;
+  const link = purpose === "owner" ? `${origin}/console?check=${token}` : `${origin}/account/in?token=${token}`;
   try {
     await sendOne({ name: BRAND.name }, email, signInEmail(link, code, opts.intro));
   } catch {
@@ -97,6 +101,11 @@ export async function redeemToken(token: string, purpose: "signin" | "owner" = "
  * live code before it's compared (so guesses sent all at once can't get past the limit), and only codes it managed
  * to use a try on are compared.
  */
+/** The console's Health page counts sign-ins by the day. */
+async function count_(name: string) {
+  await adminClient().rpc("bump", { nm: name }).then(() => null, () => null);
+}
+
 export async function redeemCode(email: string, code: string, purpose: "signin" | "owner" = "signin"): Promise<{ email: string; next: string | null }> {
   const c = code.replace(/\D/g, "");
   if (c.length !== 6) throw new SignInError("The code is the 6 numbers in the email");
@@ -122,6 +131,7 @@ export async function redeemCode(email: string, code: string, purpose: "signin" 
   const hit = charged.find((r) => safeEqual(r.code_hash, want));
   if (!hit) {
     const last = charged.length && charged.every((r) => r.tries + 1 >= CODE_TRIES);
+    await count_(last ? "signin:blocked" : "signin:wrong-code");
     throw new SignInError(last ? "That code isn't right, and that was the last try. Ask for a new email." : "That code isn't right. Check the email and try again.", 401);
   }
   const { data: used } = await db.from("account_tokens").update({ used_at: new Date().toISOString() }).eq("token_hash", hit.token_hash).is("used_at", null).select("email");
@@ -219,7 +229,7 @@ export async function sessionsFor(a: Account): Promise<Record<string, Session>> 
   const { data: fans, error } = await adminClient().from("fans").select("id,name,tournament_id,blocked,verified_at,status").eq("email", String(a.email).toLowerCase());
   for (const f of fans ?? []) {
     const st = error ? "approved" : (f.status ?? "approved");
-    if (!out[f.tournament_id] && f.verified_at && (st === "approved" || st === "asking")) out[f.tournament_id] = { role: "fan", name: f.name, fanId: f.id };
+    if (!out[f.tournament_id] && f.verified_at && (st === "approved" || st === "asking")) out[f.tournament_id] = { role: "fan", name: f.name, fanId: f.id, via: "account" };
   }
   return out;
 }

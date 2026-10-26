@@ -1,3 +1,4 @@
+import { claude } from "./usage";
 import "server-only";
 import { createHmac } from "node:crypto";
 import Anthropic from "@anthropic-ai/sdk";
@@ -215,6 +216,10 @@ async function finish(ref: string, work: ResearchWork) {
     .update({ status: guide ? "done" : "none", guide, work: { ...work, log }, sources: work.from, step_at: null, updated_at: new Date().toISOString() })
     .eq("ref", ref);
   if (guide) await db.from("rounds").update({ course_guide: guide }).in("course_slug", [...new Set([ref, ref.replace(/^local:/, "")])]).is("course_guide", null);
+  // Nothing found: the console's Needs you, to try again or fill it in by hand
+  const { raise, settle } = await import("./queue");
+  if (guide) await settle("research", ref, "system", "Research found the course");
+  else await raise({ kind: "research", subject: ref, title: `Couldn't research ${work.name ?? ref}`, detail: { log: log.slice(-6) } });
 }
 
 // ------------------------------------------------------------ the steps
@@ -227,7 +232,7 @@ async function step(w: ResearchWork): Promise<ResearchWork> {
   return w;
 }
 
-const client = () => new Anthropic({ baseURL: process.env.ANTHROPIC_BASE_URL || undefined });
+const client = () => claude("course research");
 
 const errText = (e: unknown) => String((e as Error)?.message ?? e).replace(/\s+/g, " ").slice(0, 160);
 

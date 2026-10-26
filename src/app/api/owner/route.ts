@@ -1,4 +1,7 @@
 import { adminClient } from "@/lib/admin";
+import { consoleUser } from "@/lib/console-auth";
+import { logActivity } from "@/lib/activity";
+import { settle } from "@/lib/queue";
 import { checkOwnerPin, getAccount, isOwner, isOwnerEmail, ownerClaimed, setOwner, setSession } from "@/lib/auth";
 import { SignInError, organiserSession } from "@/lib/accounts";
 import { FOLDERS, PRIVATE_BUCKET } from "@/lib/files";
@@ -36,7 +39,7 @@ const TABLES = [
 /** Kept by round rather than by tournament. */
 const ROUND_TABLES = ["hole_entries", "attestations", "cards", "card_signatures"] as const;
 
-/** Site owner: am I the owner, and (if so) every tournament on the site. */
+/** The console's Settings: the owner's site-wide tools (films, music, email, the course library, invites). */
 export async function GET() {
   if (!(await isOwner())) {
     // Not in yet: who's signed in, and what's needed (the owner's email, then the second check)
@@ -45,15 +48,6 @@ export async function GET() {
     return json({ owner: false, email: a?.email ?? null, ownerAccount: mine, passkeys: mine ? await passkeyCount(a!.id) : 0, pin: !(await ownerClaimed()) && !!process.env.ORGANISER_PIN });
   }
   const db = adminClient();
-  const { data: ts } = await db.from("tournaments").select("id,slug,name,start_date,end_date,published,created_at").order("created_at", { ascending: false });
-  const ids = (ts ?? []).map((t) => t.id);
-  const count = async (table: string) => {
-    const { data } = ids.length ? await db.from(table).select("tournament_id").in("tournament_id", ids) : { data: [] };
-    const out: Record<string, number> = {};
-    for (const r of (data ?? []) as { tournament_id: string }[]) out[r.tournament_id] = (out[r.tournament_id] ?? 0) + 1;
-    return out;
-  };
-  const [players, rounds, posts] = await Promise.all([count("players"), count("rounds"), count("posts")]);
   const [brand, music, limits, spend, invites, demo, sample] = await Promise.all([brandPack(), musicTracks(), filmLimits(), filmSpend(), listInvites(), demoSlug(), sampleFilm()]);
   // The course library: what research found for each course, and how it went (for checking it's working)
   const { data: lib } = await db.from("course_library").select("ref,name,status,written_by,guide,work,updated_at").order("updated_at", { ascending: false }).limit(60);
@@ -78,7 +72,8 @@ export async function GET() {
       limits,
       spend,
     },
-    tournaments: (ts ?? []).map((t) => ({ ...t, players: players[t.id] ?? 0, rounds: rounds[t.id] ?? 0, posts: posts[t.id] ?? 0 })),
+    // The example tournament on the front page, by name
+    demoName: demo ? ((await db.from("tournaments").select("name").eq("slug", demo).maybeSingle()).data?.name ?? demo) : null,
   });
 }
 
@@ -113,16 +108,19 @@ export async function POST(req: Request) {
     if (tooFast(`ownercheck:${clientIp(req)}`, 30, 3600e3)) return bad("Too many tries. Wait a while.", 429);
     try {
       const out = await check[b.action]();
+      if (b.action === "code" || b.action === "link" || b.action === "faceAnswer") {
+        const me = await consoleUser();
+        if (me) await logActivity(me, "console.signin", { detail: { by: b.action === "faceAnswer" ? "Face ID" : "emailed code" } });
+      }
       return json({ ok: true, options: out ?? null });
     } catch (e) {
       if (e instanceof SignInError) return bad(e.message, e.status);
       throw e;
     }
   }
-  if (!(await isOwner())) return bad("Site owner only", 401);
-
-  // Face ID for next time, on this device
+  // Face ID for next time, on this device (the owner, or support staff)
   if (b.action === "faceSetup" || b.action === "faceSave") {
+    if (!(await consoleUser())) return bad("Sign in to the console first", 401);
     try {
       if (b.action === "faceSetup") return json({ options: await passkeySetup(req) });
       await passkeySave(req, b.response);
@@ -132,6 +130,10 @@ export async function POST(req: Request) {
       throw e;
     }
   }
+
+  if (!(await isOwner())) return bad("Site owner only", 401);
+  const me = (await consoleUser()) ?? { email: "owner", role: "owner" as const };
+  const did = (action: string, on: Parameters<typeof logActivity>[2] = {}) => logActivity(me, action, on);
 
   // ---- films: the brand pack, the music, the spending limits
   const removeFile = async (path?: string) => {
@@ -153,6 +155,7 @@ export async function POST(req: Request) {
     } catch (e) {
       return bad(e instanceof Error ? e.message : "Didn't save", 500);
     }
+    await did("settings.brand");
     return json({ ok: true });
   }
   if (b.action === "addTrack") {
@@ -169,6 +172,7 @@ export async function POST(req: Request) {
     } catch (e) {
       return bad(e instanceof Error ? e.message : "Didn't save", 500);
     }
+    await did("settings.music");
     return json({ ok: true });
   }
   if (b.action === "removeTrack") {
@@ -176,6 +180,7 @@ export async function POST(req: Request) {
     const gone = music.find((m) => m.id === b.trackId);
     await removeFile(gone?.path);
     await setSetting("music", music.filter((m) => m.id !== b.trackId));
+    await did("settings.music");
     return json({ ok: true });
   }
   // ---- the front page's sample round: record its commentary in the film's two voices
@@ -227,6 +232,7 @@ export async function POST(req: Request) {
     } catch (e) {
       return bad(e instanceof Error ? e.message : "Didn't save", 500);
     }
+    await did("settings.films", { detail: { monthly, per } });
     return json({ ok: true });
   }
 
@@ -241,10 +247,14 @@ export async function POST(req: Request) {
     } catch {
       return bad("Approved, but the email didn't send. Try Approve again.", 502);
     }
+    await did("invite.approve", { person: done.invite.email });
+    await settle("invite", String(b.inviteId ?? ""), me.email, "Approved");
     return json({ ok: true });
   }
   if (b.action === "declineInvite") {
     await db.from("invite_requests").update({ status: "declined", token_hash: null }).eq("id", String(b.inviteId ?? "")).is("used_at", null);
+    await did("invite.decline");
+    await settle("invite", String(b.inviteId ?? ""), me.email, "Declined");
     return json({ ok: true });
   }
   // ---- the example tournament on the front page (null: none, the tile says "coming soon")
@@ -259,6 +269,7 @@ export async function POST(req: Request) {
     } catch (e) {
       return bad(e instanceof Error ? e.message : "Didn't save", 500);
     }
+    await did("settings.demo", { detail: { slug } });
     return json({ ok: true });
   }
 
@@ -267,6 +278,7 @@ export async function POST(req: Request) {
 
   if (b.action === "open") {
     await setSession(t.id, await organiserSession(t.id, "owner"));
+    await did("tournament.open", { tournamentId: t.id, tournamentName: t.name });
     return json({ slug: t.slug });
   }
 
@@ -281,6 +293,7 @@ export async function POST(req: Request) {
       const { data } = roundIds.length ? await db.from(table).select("*").in("round_id", roundIds) : { data: [] };
       out[table] = data ?? [];
     }
+    await did("tournament.export", { tournamentId: t.id, tournamentName: t.name });
     return json(out);
   }
 
@@ -302,6 +315,7 @@ export async function POST(req: Request) {
       }
     const { error } = await db.from("tournaments").delete().eq("id", t.id);
     if (error) return bad(error.message, 500);
+    await did("tournament.delete", { tournamentId: t.id, tournamentName: t.name, detail: { files } });
     return json({ ok: true, files });
   }
   return bad("Unknown action");

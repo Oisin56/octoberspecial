@@ -1,3 +1,4 @@
+import { claude } from "./usage";
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import type { CourseGuide, HoleRowData, RoundRow } from "./types";
@@ -36,7 +37,7 @@ export interface GuideWork {
 export const newGuideWork = (): GuideWork => ({ stage: "search", sources: [], holes: {}, from: [] });
 
 function client() {
-  return new Anthropic({ baseURL: process.env.ANTHROPIC_BASE_URL || undefined });
+  return claude("course guide");
 }
 
 const cardLine = (holes: HoleRowData[]) => holes.map((h) => `${h.number}: par ${h.par}${h.yards ? `, ${h.yards} yds` : ""}`).join("; ");

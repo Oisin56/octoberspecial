@@ -35,7 +35,7 @@ export function mailSetup() {
 /** A plain test message, so the site owner can see sending work (or the exact reason it doesn't). */
 export function testEmail(site: string) {
   const text = `This is a test from ${BRAND.name}. If you can read it, the site can send email.\n\n${site}\n`;
-  return { subject: `Test email from ${BRAND.name}`, html: brandEmail([`This is a test from ${BRAND.name}. If you can read it, the site can send email.`], { label: "Open the site", href: site }), text };
+  return { subject: `Test email from ${BRAND.name}`, html: brandEmail([`This is a test from ${BRAND.name}. If you can read it, the site can send email.`], { label: "Open the site", href: site }), text, kind: "test" };
 }
 
 export function mailConfigured() {
@@ -120,7 +120,7 @@ You're getting this because you signed up for updates from ${esc(t.name)} at <a 
 <a href="${esc(opts.unsubscribe)}" style="color:#666">Unsubscribe</a>.
 </td></tr></table></td></tr></table></body></html>`;
   const text = `${t.name}\n${opts.label}\n\n${title}\n\n${piece.body}\n\n${opts.linkLabel}: ${opts.link}\n\nUnsubscribe: ${opts.unsubscribe}\n`;
-  return { subject: `${title} | ${t.name}`, html, text };
+  return { subject: `${title} | ${t.name}`, html, text, kind: "report" };
 }
 
 export function welcomeEmail(t: TournamentRow, name: string | null, opts: { link: string; unsubscribe: string }) {
@@ -136,7 +136,7 @@ export function welcomeEmail(t: TournamentRow, name: string | null, opts: { link
 <p style="font-size:12px;color:#666;font-family:Arial,sans-serif">Didn't sign up, or changed your mind? <a href="${esc(opts.unsubscribe)}" style="color:#666">Unsubscribe</a>.</p>
 </td></tr></table></td></tr></table></body></html>`;
   const text = `${hi}\n\nYou're signed up for ${t.name}. The previews and match reports will arrive here as they're published.\n\nFollow it live: ${opts.link}\n\nUnsubscribe: ${opts.unsubscribe}\n`;
-  return { subject: `You're signed up: ${t.name}`, html, text };
+  return { subject: `You're signed up: ${t.name}`, html, text, kind: "report" };
 }
 
 /** A follower joining the conversation: one tap signs them in (no password). */
@@ -152,7 +152,7 @@ export function fanLinkEmail(t: TournamentRow, name: string, link: string) {
 <p style="font-size:13px;color:#666;font-family:Arial,sans-serif">The button works for 2 days. Didn't ask for this? Ignore this email and nothing happens.</p>
 </td></tr></table></td></tr></table></body></html>`;
   const text = `Hi ${name},\n\nOpen this link to join the conversation on ${t.name}. You can then share photos, comment and like.\n\n${link}\n\nThe link works for 2 days. Didn't ask for this? Ignore this email and nothing happens.\n`;
-  return { subject: `Join the conversation: ${t.name}`, html, text };
+  return { subject: `Join the conversation: ${t.name}`, html, text, kind: "follower" };
 }
 
 /**
@@ -173,7 +173,7 @@ export function signInEmail(link: string, code: string, intro?: string) {
 <p style="font-size:13px;color:#666;font-family:Arial,sans-serif">The button and the code work once, for 30 minutes. Didn't ask for this? Ignore this email and nothing happens.</p>
 </td></tr></table></td></tr></table></body></html>`;
   const text = `${lead}\n\nSign in: ${link}\n\nOr type this code where you asked to sign in: ${code}\n\nThe link and the code work once, for 30 minutes. Didn't ask for this? Ignore this email and nothing happens.\n`;
-  return { subject: `${code} is your ${BRAND.name} code`, html, text };
+  return { subject: `${code} is your ${BRAND.name} code`, html, text, kind: "sign-in" };
 }
 
 /** A player's personal link, sent by email by the organiser. Tapping it also confirms the email is theirs. */
@@ -189,14 +189,14 @@ export function playerLinkEmail(t: TournamentRow, name: string, link: string) {
 <p style="font-size:13px;color:#666;font-family:Arial,sans-serif">This link is yours alone: it signs you in as ${esc(name)}. Please don't forward it.</p>
 </td></tr></table></td></tr></table></body></html>`;
   const text = `Hi ${name},\n\nHere's your link for ${t.name}. Tap it on your phone to keep score, post photos and follow the leaderboard:\n\n${link}\n\nThis link is yours alone: it signs you in as ${name}. Please don't forward it.\n`;
-  return { subject: `Your link for ${t.name}`, html, text };
+  return { subject: `Your link for ${t.name}`, html, text, kind: "player link" };
 }
 
 /** A follower asked to follow a private tournament, and a player or organiser let them in. */
 export function followApprovedEmail(t: TournamentRow, name: string, link: string) {
   const html = brandEmail([`Hi ${name.split(" ")[0]},`, `You're in. You can follow ${t.name} now: the scores, the feed and the highlights.`], { label: `Follow ${t.name}`, href: link }, "On another phone or computer, sign in with this email to get in.");
   const text = `Hi ${name.split(" ")[0]},\n\nYou're in. You can follow ${t.name} now:\n\n${link}\n\nOn another phone or computer, sign in with this email to get in.\n`;
-  return { subject: `You're in: ${t.name}`, html, text };
+  return { subject: `You're in: ${t.name}`, html, text, kind: "follower" };
 }
 
 /** Organisers: people have been waiting more than 12 hours to follow a private tournament. */
@@ -204,11 +204,11 @@ export function followWaitingEmail(t: TournamentRow, names: string[], link: stri
   const who = names.length === 1 ? `${names[0]} is` : `${names.length} people are`;
   const html = brandEmail([`${who} waiting to follow ${t.name}.`, "Any player or organiser can let them in, or decline, from Who's following."], { label: "See who's asking", href: link });
   const text = `${who} waiting to follow ${t.name}. Any player or organiser can let them in, or decline, from Who's following:\n\n${link}\n`;
-  return { subject: `Waiting to follow ${t.name}`, html, text };
+  return { subject: `Waiting to follow ${t.name}`, html, text, kind: "reminder" };
 }
 
 /** A plain brand email: a heading, a few paragraphs and one big button. */
-function brandEmail(paras: string[], button: { label: string; href: string } | null, foot?: string) {
+export function brandEmail(paras: string[], button: { label: string; href: string } | null, foot?: string) {
   return `<!doctype html><html><body style="margin:0;background:#e4e9e5;font-family:Georgia,serif;color:#18231d">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:20px 12px">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;background:#fff;border-radius:8px;overflow:hidden">
@@ -227,6 +227,7 @@ export function inviteRequestEmail(r: { name: string; email: string; about: stri
     subject: `Invite request: ${r.name}`,
     html: brandEmail(lines, { label: "See requests", href: ownerLink }),
     text: `${lines.join("\n\n")}\n\nApprove or decline on the owner page: ${ownerLink}\n`,
+    kind: "invite",
   };
 }
 
@@ -239,6 +240,7 @@ export function inviteApprovedEmail(name: string, link: string) {
     subject: `You're invited to ${BRAND.name}`,
     html: brandEmail(lines, { label: "Set up my tournament", href: link }, foot),
     text: `${lines.join("\n\n")}\n\n${link}\n\n${foot}\n`,
+    kind: "invite",
   };
 }
 
@@ -253,20 +255,43 @@ export function filmReadyEmail(t: Pick<TournamentRow, "name">, link: string) {
 <p style="margin:26px 0"><a href="${esc(link)}" style="display:inline-block;background:#1f3d2b;color:#f7f7f2;text-decoration:none;font-family:Arial,sans-serif;font-weight:bold;font-size:19px;padding:16px 28px;border-radius:10px">Watch the film</a></p>
 </td></tr></table></td></tr></table></body></html>`;
   const text = `Your film of ${t.name} is ready. It's in Highlights for everyone, and you can share it from there:\n\n${link}\n`;
-  return { subject: `Your film is ready: ${t.name}`, html, text };
+  return { subject: `Your film is ready: ${t.name}`, html, text, kind: "film" };
 }
 
-export async function sendOne(t: Pick<TournamentRow, "name">, to: string, msg: { subject: string; html: string; text: string }, unsubscribe?: string) {
-  await transport().sendMail({
-    from: fromHeader(t),
-    to,
-    subject: msg.subject,
-    html: msg.html,
-    text: msg.text,
-    ...(unsubscribe
-      ? { list: { unsubscribe: { url: unsubscribe, comment: "Unsubscribe" } }, headers: { "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" } }
-      : {}),
-  });
+/** An email to send: its kind (sign-in, report, film…) is what the console counts it under. */
+export interface Mail {
+  subject: string;
+  html: string;
+  text: string;
+  kind?: string;
+  attachments?: { filename: string; content: string; contentType: string }[];
+}
+
+/**
+ * Send one email. Every send is counted by kind; a failure is written down (three failures to the same address put it
+ * in Needs you), and addresses the site has stopped emailing are skipped.
+ */
+export async function sendOne(t: Pick<TournamentRow, "name">, to: string, msg: Mail, unsubscribe?: string) {
+  const kind = msg.kind ?? "other";
+  const { emailBlocked, emailSent, emailFailed } = await import("./email-log");
+  if (await emailBlocked(to)) throw new Error("The site has stopped emailing this address");
+  try {
+    await transport().sendMail({
+      from: fromHeader(t),
+      to,
+      subject: msg.subject,
+      html: msg.html,
+      text: msg.text,
+      ...(msg.attachments ? { attachments: msg.attachments } : {}),
+      ...(unsubscribe
+        ? { list: { unsubscribe: { url: unsubscribe, comment: "Unsubscribe" } }, headers: { "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" } }
+        : {}),
+    });
+  } catch (e) {
+    await emailFailed(to, kind, e);
+    throw e;
+  }
+  await emailSent(kind);
 }
 
 const LABEL: Record<AiPieceRow["kind"], string> = { preview: "Preview", report: "Match report", tournament: "Tournament review", bulletin: "Live bulletin" };

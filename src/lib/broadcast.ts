@@ -6,6 +6,7 @@ import { buildTimeline, clipBugs, configured, shotstackRender, shotstackStatus }
 import { segmentSeconds, type CardSegment, type ClipSegment, type Plan } from "./director-types";
 import { plainUrl, storeFor } from "./files";
 import { gameHole, gameShots } from "./engine";
+import { canSpend, inTournament } from "./usage";
 import { toEntries, toRoundCfg, toTournamentCfg, type PostRow, type TournamentState } from "./types";
 
 /**
@@ -105,10 +106,11 @@ export function clipPlan(s: TournamentState, p: PostRow): Plan {
 /** Start the render for one clip (checks the switch and the monthly limit). */
 async function startRender(t: TournamentPrivate, s: TournamentState, p: PostRow, origin: string, spend: Spend) {
   const db = adminClient();
+  inTournament(t.id);
   const plan = clipPlan(s, p);
   const seconds = plan.segments.reduce((a, x) => a + segmentSeconds(x), 0);
   const cost = (seconds / 60) * CENTS_PER_MINUTE;
-  if (spend.cents + cost > spend.capCents) {
+  if (spend.cents + cost > spend.capCents || !(await canSpend("films")).ok) {
     await db.from("posts").update({ broadcast_status: "capped" }).eq("id", p.id);
     return spend;
   }

@@ -1,3 +1,4 @@
+import { paidFetch } from "./usage";
 import "server-only";
 import { adminClient } from "./admin";
 
@@ -61,7 +62,7 @@ async function call(endpoint: string, cacheKey: string): Promise<{ data: Record<
   if (hit) return { data: hit as Record<string, unknown>, fromStore: true };
   const key = process.env.GOLFAPI_KEY;
   if (!key) throw new GolfApiError("GOLFAPI_KEY isn't set in Vercel", 500);
-  const r = await fetch(`${BASE}${endpoint}`, { headers: { Authorization: `Bearer ${key}`, Accept: "application/json" }, cache: "no-store" });
+  const r = await paidFetch("courses", "course data", `${BASE}${endpoint}`, { headers: { Authorization: `Bearer ${key}`, Accept: "application/json" }, cache: "no-store" });
   const text = await r.text();
   let data: Record<string, unknown>;
   try {

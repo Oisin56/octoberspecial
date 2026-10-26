@@ -14,7 +14,7 @@ export type Role = "organiser" | "player" | "fan";
  *   pin      an old player PIN
  *   (none)   an old organiser sign-in from before emails (good until the tournament moves to email sign-in)
  */
-export type Via = "account" | "link" | "create" | "owner" | "pin";
+export type Via = "account" | "link" | "create" | "owner" | "pin" | "staff";
 
 export interface Session {
   role: Role;
@@ -33,6 +33,8 @@ export interface Session {
 export interface Account {
   id: string;
   email: string;
+  /** When they signed in on this phone (the console can sign someone out everywhere after that) */
+  at?: number;
 }
 
 /** One cookie holds a session per tournament (keyed by tournament id), the signed-in account, and the owner's
@@ -118,7 +120,14 @@ async function writeJar(j: Jar) {
 export async function touch(): Promise<Account | null> {
   const j = await readJar();
   const signedIn = j.account || Object.keys(j.t).length;
-  if (signedIn && Date.now() - j.iat > 24 * 3600e3) await writeJar(j).catch(() => {});
+  if (signedIn && Date.now() - j.iat > 24 * 3600e3) {
+    await writeJar(j).catch(() => {});
+    // Seen today (the console's "active people")
+    if (j.account) {
+      const { adminClient } = await import("./admin");
+      await adminClient().from("accounts").update({ last_seen_at: new Date().toISOString() }).eq("id", j.account.id).then(() => null, () => null);
+    }
+  }
   return j.account ?? null;
 }
 
@@ -126,6 +135,8 @@ export async function touch(): Promise<Account | null> {
 export async function getSession(tournamentId: string): Promise<Session | null> {
   const j = await readJar();
   const s = j.t[tournamentId] ?? null;
+  // Given by an email sign-in that's since been signed out everywhere
+  if (s?.via === "account" && j.account && !(await getAccount())) return null;
   // The old caddie-and-friends login is gone: those phones follow as fans now (join with an email to post)
   if (s && (s.role as string) === "contributor") return null;
   return s;
@@ -142,7 +153,26 @@ export async function allSessions(): Promise<Record<string, Session>> {
 }
 
 export async function getAccount(): Promise<Account | null> {
-  return (await readJar()).account ?? null;
+  const a = (await readJar()).account ?? null;
+  if (a && (await signedOutSince(a.id)) > (a.at ?? 0)) return null;
+  return a;
+}
+
+const signouts = new Map<string, { at: number; v: number }>();
+/** When the console signed this account out everywhere (0: never). Remembered for a minute. */
+async function signedOutSince(accountId: string): Promise<number> {
+  const c = signouts.get(accountId);
+  if (c && Date.now() - c.at < 60e3) return c.v;
+  const { adminClient } = await import("./admin");
+  const { data, error } = await adminClient().from("accounts").select("signout_at").eq("id", accountId).maybeSingle();
+  const v = !error && data?.signout_at ? Date.parse(data.signout_at) : 0;
+  signouts.set(accountId, { at: Date.now(), v });
+  if (signouts.size > 20000) signouts.clear();
+  return v;
+}
+
+export function forgetSignout(accountId: string) {
+  signouts.delete(accountId);
 }
 
 /** Sign a person in on this device, with their role in each of their tournaments (kept where this phone already
@@ -154,7 +184,7 @@ export async function setAccount(a: Account, sessions: Record<string, Session>) 
     for (const [tid, s] of Object.entries(j.t)) if (s.via === "account") delete j.t[tid];
     delete j.ownerOk;
   }
-  j.account = a;
+  j.account = { id: a.id, email: a.email, at: Date.now() };
   const rank = { organiser: 3, player: 2, fan: 1 } as const;
   for (const [tid, s] of Object.entries(sessions)) {
     const now = j.t[tid];
@@ -211,6 +241,12 @@ export async function isOwner(): Promise<boolean> {
 export async function ownerNeedsCheck(): Promise<boolean> {
   const j = await readJar();
   return !!j.account && isOwnerEmail(j.account.email) && !(j.ownerOk && Date.now() - j.ownerOk < OWNER_CHECK_HOURS * 3600e3);
+}
+
+/** This device passed the console's second check (Face ID or an emailed code) in the last 12 hours. */
+export async function consoleCheckFresh(): Promise<boolean> {
+  const j = await readJar();
+  return !!j.account && !!j.ownerOk && Date.now() - j.ownerOk < OWNER_CHECK_HOURS * 3600e3;
 }
 
 export async function setOwnerChecked() {

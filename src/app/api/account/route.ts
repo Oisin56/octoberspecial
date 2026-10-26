@@ -3,13 +3,16 @@ import { clearAccount, getAccount, getSession, isOwnerEmail, setSession, touch }
 import { SignInError, answerOffer, claim, onThisPhone, peekToken, cleanEmail, myGolf, organiserSession, playerSession, redeemCode, redeemToken, sendSignIn, signIn } from "@/lib/accounts";
 import { bad, json, siteOrigin, crossSite, CROSS_SITE } from "@/lib/server-data";
 import { clientIp, tooFast } from "@/lib/social";
+import { consoleEmail } from "@/lib/console-auth";
+import { raise } from "@/lib/queue";
 
 /** Who's signed in, and My golf: the tournaments they run, play in and follow, and anything asking "Is this you?" */
 export async function GET() {
-  const account = await touch();
+  const account = (await touch()) && (await getAccount());
   if (!account) return json({ account: null });
   const golf = await myGolf(account);
-  return json({ account, owner: isOwnerEmail(account.email), ...golf, here: await onThisPhone(account) });
+  const { data: requests } = await adminClient().from("data_requests").select("kind,created_at,done_at").eq("email", account.email.toLowerCase()).is("done_at", null);
+  return json({ account, owner: isOwnerEmail(account.email), console: !!(await consoleEmail(account.email)), ...golf, here: await onThisPhone(account), requests: requests ?? [] });
 }
 
 /**
@@ -66,6 +69,29 @@ export async function POST(req: Request) {
         if (s && !(here?.role === "organiser" && s.role !== "organiser")) await setSession(tid, s);
       }
       return json({ ok: true, ...(await myGolf(account)), here: await onThisPhone(account) });
+    }
+
+    // Your data: a copy of everything held about me, or delete me (the console's Needs you, answered within a month)
+    if (b.action === "data") {
+      const kind = b.kind === "delete" ? "delete" : b.kind === "copy" ? "copy" : null;
+      if (!kind) return bad("Which?");
+      const email = account.email.toLowerCase();
+      const db = adminClient();
+      const { data: open } = await db.from("data_requests").select("id").eq("email", email).eq("kind", kind).is("done_at", null).maybeSingle();
+      if (!open) {
+        const { data: r } = await db.from("data_requests").insert({ email, kind }).select("id").single();
+        if (r)
+          await raise({
+            kind: "data_request",
+            subject: r.id,
+            person: email,
+            title: kind === "copy" ? `Copy of data for ${email}` : `Delete ${email}`,
+            dueAt: new Date(Date.now() + 30 * 864e5).toISOString(),
+            detail: { kind },
+          });
+      }
+      const { data: requests } = await db.from("data_requests").select("kind,created_at,done_at").eq("email", email).is("done_at", null);
+      return json({ ok: true, requests: requests ?? [] });
     }
 
     if (b.action === "claim") {

@@ -9,6 +9,8 @@ import { COST, estimateCents, type Shape } from "./film";
 import { brandPack, filmLimits, filmSpend, musicTracks, tournamentFilms } from "./site";
 import { filmReadyEmail, mailConfigured, sendOne } from "./email";
 import type { TournamentRow } from "./types";
+import { canSpend, inTournament } from "./usage";
+import { raise, settle } from "./queue";
 
 /**
  * Making the film on the server, a step at a time, so the organiser can put the phone away:
@@ -111,7 +113,9 @@ export async function filmEdit(t: TournamentRow, plan: Plan, origin: string) {
 }
 
 async function fail(id: string, message: string) {
-  await adminClient().from("reels").update({ status: "failed", error: message, stage_at: null, updated_at: new Date().toISOString() }).eq("id", id);
+  const { data } = await adminClient().from("reels").update({ status: "failed", error: message, stage_at: null, updated_at: new Date().toISOString() }).eq("id", id).select("tournament_id").maybeSingle();
+  // The console's Needs you: a film that failed
+  await raise({ kind: "film", subject: id, tournamentId: data?.tournament_id ?? null, title: "A film failed", detail: { error: message } });
 }
 
 /** Take the step if nobody else is on it. */
@@ -134,6 +138,7 @@ export async function runStage(reelId: string, origin: string): Promise<boolean>
     return false;
   }
   if (!(await claim(reel))) return false;
+  inTournament(reel.tournament_id);
   const t = await tournamentOf(reel.tournament_id);
   if (!t) return false;
   const save = (patch: Record<string, unknown>) => db.from("reels").update({ ...patch, updated_at: new Date().toISOString() }).eq("id", reel.id);
@@ -144,6 +149,11 @@ export async function runStage(reelId: string, origin: string): Promise<boolean>
       return true;
     }
     if (reel.stage === "voices") {
+      const go = await canSpend("voices");
+      if (!go.ok) {
+        await fail(reel.id, go.why);
+        return false;
+      }
       const plan = reel.plan!;
       const r = await fitCommentary(t.slug, plan, 200_000);
       const cost = Number(reel.cost_cents ?? 0) + estimateCents(0, r.chars, false);
@@ -161,6 +171,11 @@ export async function runStage(reelId: string, origin: string): Promise<boolean>
       const [lim, spend, made] = await Promise.all([filmLimits(), filmSpend(), tournamentFilms(t.id)]);
       if (spend.cents + est > lim.monthlyCents) {
         await fail(reel.id, "This month's film budget for the site is used up. The site owner can raise it, or it resets on the 1st.");
+        return false;
+      }
+      const go = await canSpend("films");
+      if (!go.ok) {
+        await fail(reel.id, go.why);
         return false;
       }
       if (made.made >= lim.perTournament) {
@@ -209,6 +224,7 @@ export async function finishFilm(reel: FilmReel, origin: string): Promise<FilmRe
     .eq("id", reel.id)
     .select()
     .single();
+  await settle("film", reel.id, "system", "The film finished");
   // Tell the organiser (everyone signed in with email to this tournament)
   if (reel.stage && mailConfigured()) {
     const { data: links } = await db.from("account_tournaments").select("account_id").eq("tournament_id", t.id);

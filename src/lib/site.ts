@@ -6,13 +6,13 @@ import { DEFAULT_LIMITS, type BrandPack, type FilmLimits, type MusicTrack } from
  * Site-wide settings kept by the site owner: the brand pack, the music tracks, the film spending limits.
  * Before the database has the table (schema.sql not run yet), everything reads as unset.
  */
-async function getSetting<T>(key: string, fallback: T): Promise<T> {
+export async function getSetting<T>(key: string, fallback: T): Promise<T> {
   const { data, error } = await adminClient().from("site_settings").select("value").eq("key", key).maybeSingle();
   if (error || !data) return fallback;
   return (data.value as T) ?? fallback;
 }
 
-export async function setSetting(key: "brand" | "music" | "films" | "demo" | "sample", value: unknown) {
+export async function setSetting(key: "brand" | "music" | "films" | "demo" | "sample" | "budgets" | "console" | "bills" | "cron", value: unknown) {
   const { error } = await adminClient().from("site_settings").upsert({ key, value, updated_at: new Date().toISOString() });
   if (error) throw new Error(/site_settings/.test(error.message) ? "This needs the latest database update (run supabase/schema.sql)" : error.message);
 }

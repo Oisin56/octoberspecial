@@ -185,7 +185,7 @@ export default function NewTournament() {
                 I have the site owner&apos;s PIN
               </button>
             ) : (
-              <Link className="linklike wz-owner-skip" href="/owner?next=/new">
+              <Link className="linklike wz-owner-skip" href="/console?next=/new">
                 Site owner? Sign in
               </Link>
             )}

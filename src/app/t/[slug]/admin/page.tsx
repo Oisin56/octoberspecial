@@ -17,6 +17,7 @@ import {
   type AdminData,
 } from "@/components/editors";
 import { filmUnlock } from "@/lib/film";
+import { BRAND } from "@/lib/brand";
 import { EmailTab, useSubscribers } from "@/components/EmailAdmin";
 import { Writer, WRITE_TYPES, type WriteType } from "@/components/Writer";
 import { useCountdown } from "@/components/visual";
@@ -236,6 +237,13 @@ function OrganiserHome({ data }: { data: AdminData }) {
       </section>
 
       {!data.env.ai && <p className="notice">The AI writer is off until ANTHROPIC_API_KEY is added in Vercel.</p>}
+
+      {data.supportVisit && (
+        <p className="notice support-visit">
+          {BRAND.name} support looked in on{" "}
+          {new Date(data.supportVisit).toLocaleDateString("en-IE", { weekday: "long", day: "numeric", month: "long", timeZone: "Europe/Dublin" })} to help.
+        </p>
+      )}
 
       {data.needEmail && <KeepSafe data={data} />}
 

@@ -772,4 +772,394 @@ begin
   begin alter publication supabase_realtime add table live_pings; exception when others then null; end;
 end $$;
 
+-- ------------------------------------------------------------ stage 3: the console
+-- Everything here is read and written by the site's server only (nothing for browsers).
+create extension if not exists pg_trgm;
+
+-- Support staff (the owner is OWNER_EMAIL). Removing someone keeps the row, so the record shows who they were.
+create table if not exists staff (
+  email text primary key,
+  role text not null default 'support' check (role in ('support')),
+  added_by text not null,
+  added_at timestamptz not null default now(),
+  removed_at timestamptz
+);
+
+-- The activity record: every action in the console. Nobody can change it; kept two years.
+create table if not exists activity (
+  id bigserial primary key,
+  at timestamptz not null default now(),
+  actor text not null,                 -- an email, or 'system'
+  actor_role text not null,            -- owner | support | system
+  action text not null,                -- tournament.delete, person.view, export.people…
+  tournament_id uuid,                  -- not linked: the record outlives a deleted tournament
+  tournament_name text,
+  person text,                         -- an email
+  detail jsonb
+);
+create index if not exists activity_at_idx on activity (at desc);
+create index if not exists activity_t_idx on activity (tournament_id, at desc);
+create index if not exists activity_p_idx on activity (person, at desc);
+create or replace function activity_frozen() returns trigger language plpgsql as $$
+begin
+  if tg_op = 'DELETE' and old.at < now() - interval '2 years' then return old; end if;
+  raise exception 'The activity record can''t be changed';
+end $$;
+drop trigger if exists activity_frozen on activity;
+create trigger activity_frozen before update or delete on activity for each row execute function activity_frozen();
+
+-- Every paid call the site makes, with its estimated cost (US cents: the suppliers bill in dollars)
+create table if not exists usage (
+  id bigserial primary key,
+  at timestamptz not null default now(),
+  service text not null,               -- writing | voices | films | video | courses | email
+  what text,
+  tournament_id uuid,                  -- not linked: costs outlive a deleted tournament
+  ok boolean not null default true,
+  units jsonb,
+  cents numeric not null default 0
+);
+create index if not exists usage_at_idx on usage (at desc);
+create index if not exists usage_service_idx on usage (service, at desc);
+create index if not exists usage_t_idx on usage (tournament_id, at desc);
+
+-- The outside services: when each last worked, and since when it's been failing
+create table if not exists services (
+  service text primary key,
+  last_ok_at timestamptz,
+  last_fail_at timestamptz,
+  failing_since timestamptz,
+  alerted_at timestamptz,
+  last_error text,
+  fails_day date,
+  fails int not null default 0
+);
+
+-- Errors, grouped: one fault happening 200 times is one row
+create table if not exists incidents (
+  key text primary key,
+  place text not null,
+  message text not null,
+  count int not null default 1,
+  first_at timestamptz not null default now(),
+  last_at timestamptz not null default now(),
+  tournaments uuid[] not null default '{}',
+  last_detail text
+);
+create index if not exists incidents_last_idx on incidents (last_at desc);
+create or replace function record_incident(k text, p text, m text, tid uuid, d text) returns void
+language plpgsql as $$
+begin
+  insert into incidents (key, place, message, tournaments, last_detail)
+  values (k, left(p, 200), left(m, 1000), case when tid is null then '{}' else array[tid] end, left(d, 4000))
+  on conflict (key) do update set
+    count = incidents.count + 1,
+    last_at = now(),
+    last_detail = coalesce(excluded.last_detail, incidents.last_detail),
+    tournaments = case when tid is null or tid = any(incidents.tournaments) or cardinality(incidents.tournaments) >= 20
+                       then incidents.tournaments else incidents.tournaments || tid end;
+end $$;
+
+-- Counts by day (emails sent by kind, sign-in codes, wrong codes…), Irish days
+create table if not exists day_counts (
+  day date not null,
+  name text not null,
+  n int not null default 0,
+  primary key (day, name)
+);
+create or replace function bump(nm text, by_n int default 1) returns void language sql as $$
+  insert into day_counts (day, name, n) values ((now() at time zone 'Europe/Dublin')::date, nm, by_n)
+  on conflict (day, name) do update set n = day_counts.n + excluded.n;
+$$;
+
+-- Emails that didn't go, and addresses the site has stopped emailing
+create table if not exists email_failures (
+  id bigserial primary key,
+  at timestamptz not null default now(),
+  email text not null,
+  kind text,
+  error text,
+  tournament_id uuid
+);
+create index if not exists email_failures_idx on email_failures (email, at desc);
+create table if not exists email_blocks (
+  email text primary key,
+  at timestamptz not null default now(),
+  by_who text,
+  reason text
+);
+
+-- People: one row per email, however they came in
+create table if not exists people (
+  email text primary key,
+  name text,
+  first_at timestamptz not null default now(),
+  last_at timestamptz,
+  roles text[] not null default '{}',
+  marketing_at timestamptz,
+  marketing_wording text,
+  marketing_tournament uuid,
+  marketing_stopped_at timestamptz
+);
+create index if not exists people_email_trgm on people using gin (email gin_trgm_ops);
+create index if not exists people_name_trgm on people using gin (lower(name) gin_trgm_ops);
+create index if not exists people_last_idx on people (last_at desc nulls last);
+create index if not exists people_first_idx on people (first_at desc);
+create index if not exists people_marketing_idx on people (marketing_at desc) where marketing_at is not null;
+
+create or replace function touch_person(e text, nm text, role text, seen timestamptz, since timestamptz) returns void
+language plpgsql as $$
+begin
+  if e is null or position('@' in e) = 0 then return; end if;
+  insert into people (email, name, first_at, last_at, roles)
+  values (lower(trim(e)), nullif(trim(nm), ''), coalesce(since, now()), seen, case when role is null then '{}' else array[role] end)
+  on conflict (email) do update set
+    name = coalesce(people.name, excluded.name),
+    first_at = least(people.first_at, excluded.first_at),
+    last_at = greatest(people.last_at, excluded.last_at),
+    roles = case when role is null or role = any(people.roles) then people.roles else people.roles || role end;
+end $$;
+
+create or replace function people_from_accounts() returns trigger language plpgsql as $$
+begin perform touch_person(new.email, new.name, null, new.last_seen_at, new.created_at); return null; end $$;
+drop trigger if exists people_accounts on accounts;
+create trigger people_accounts after insert or update on accounts for each row execute function people_from_accounts();
+
+create or replace function people_from_joins() returns trigger language plpgsql as $$
+declare e text;
+begin
+  select email into e from accounts where id = new.account_id;
+  perform touch_person(e, null, new.role, null, new.created_at);
+  return null;
+end $$;
+drop trigger if exists people_joins on account_tournaments;
+create trigger people_joins after insert or update on account_tournaments for each row execute function people_from_joins();
+
+create or replace function people_from_players() returns trigger language plpgsql as $$
+begin perform touch_person(new.email, new.name, 'player', null, null); return null; end $$;
+drop trigger if exists people_players on players;
+create trigger people_players after insert or update of email on players for each row when (new.email is not null) execute function people_from_players();
+
+create or replace function people_from_fans() returns trigger language plpgsql as $$
+begin
+  if new.email is null or new.verified_at is null then return null; end if;
+  perform touch_person(new.email, new.name, 'follower', new.verified_at, new.created_at);
+  if new.marketing_at is not null then
+    update people set marketing_at = new.marketing_at, marketing_wording = new.marketing_wording, marketing_tournament = new.tournament_id
+    where email = lower(trim(new.email)) and (marketing_at is null or marketing_at < new.marketing_at) and marketing_stopped_at is null;
+  end if;
+  return null;
+end $$;
+drop trigger if exists people_fans on fans;
+create trigger people_fans after insert or update on fans for each row execute function people_from_fans();
+
+create or replace function people_from_subscribers() returns trigger language plpgsql as $$
+begin perform touch_person(new.email, new.name, 'subscriber', null, new.created_at); return null; end $$;
+drop trigger if exists people_subscribers on subscribers;
+create trigger people_subscribers after insert on subscribers for each row execute function people_from_subscribers();
+
+-- Everyone already here
+do $$
+declare r record;
+begin
+  for r in select email, name, last_seen_at, created_at from accounts loop perform touch_person(r.email, r.name, null, r.last_seen_at, r.created_at); end loop;
+  for r in select a.email, j.role, j.created_at from account_tournaments j join accounts a on a.id = j.account_id loop perform touch_person(r.email, null, r.role, null, r.created_at); end loop;
+  for r in select email, name from players where email is not null loop perform touch_person(r.email, r.name, 'player', null, null); end loop;
+  for r in select email, name, verified_at, created_at from fans where email is not null and verified_at is not null loop perform touch_person(r.email, r.name, 'follower', r.verified_at, r.created_at); end loop;
+  for r in select email, name, created_at from subscribers loop perform touch_person(r.email, r.name, 'subscriber', null, r.created_at); end loop;
+  update people p set marketing_at = f.marketing_at, marketing_wording = f.marketing_wording, marketing_tournament = f.tournament_id
+  from (select distinct on (lower(email)) lower(email) e, marketing_at, marketing_wording, tournament_id from fans
+        where marketing_at is not null and verified_at is not null order by lower(email), marketing_at desc) f
+  where p.email = f.e and p.marketing_at is null and p.marketing_stopped_at is null;
+end $$;
+
+-- Needs you: everything waiting on a person. One open item per thing
+create table if not exists queue (
+  id uuid primary key default gen_random_uuid(),
+  kind text not null,                  -- data_request | report | film | invite | spend | follow_wait | email_failing | research
+  subject text not null,               -- what it's about: a post, a film, an invite, an email…
+  tournament_id uuid,
+  person text,
+  title text not null,
+  detail jsonb,
+  created_at timestamptz not null default now(),
+  due_at timestamptz,
+  snoozed_until timestamptz,
+  assigned_to text,
+  resolved_at timestamptz,
+  resolved_by text,
+  resolution text
+);
+create unique index if not exists queue_open on queue (kind, subject) where resolved_at is null;
+create index if not exists queue_created_idx on queue (created_at) where resolved_at is null;
+
+-- Asked for from My golf: a copy of my data, or delete me
+create table if not exists data_requests (
+  id uuid primary key default gen_random_uuid(),
+  email text not null,
+  kind text not null check (kind in ('copy', 'delete')),
+  created_at timestamptz not null default now(),
+  done_at timestamptz,
+  done_by text
+);
+
+-- Each tournament's figures, refreshed each night and whenever they're more than an hour old
+create table if not exists tournament_stats (
+  tournament_id uuid primary key references tournaments(id) on delete cascade,
+  status text not null default 'setting up',     -- setting up | coming up | live | finished
+  first_day date,
+  last_day date,
+  players int not null default 0,
+  signed_in int not null default 0,
+  followers int not null default 0,
+  posts int not null default 0,
+  comments int not null default 0,
+  clips int not null default 0,
+  films int not null default 0,
+  cost_cents numeric not null default 0,
+  last_activity_at timestamptz,
+  updated_at timestamptz not null default now()
+);
+create index if not exists tstats_status_idx on tournament_stats (status, first_day);
+create index if not exists tstats_cost_idx on tournament_stats (cost_cents desc);
+create index if not exists tournaments_name_trgm on tournaments using gin (lower(name) gin_trgm_ops);
+create index if not exists tournaments_created_idx on tournaments (created_at desc);
+create index if not exists fans_created_idx on fans (created_at);
+create index if not exists rounds_play_date_idx on rounds (play_date);
+create index if not exists posts_t_created_idx on posts (tournament_id, created_at desc);
+create index if not exists comments_t_created_idx on comments (tournament_id, created_at desc);
+create index if not exists players_t_idx on players (tournament_id);
+create index if not exists fans_t_idx on fans (tournament_id);
+create index if not exists account_tournaments_t_idx on account_tournaments (tournament_id);
+
+create or replace function refresh_tournament_stats(only_id uuid default null) returns void language sql as $$
+  insert into tournament_stats as s (tournament_id, status, first_day, last_day, players, signed_in, followers, posts, comments, clips, films, cost_cents, last_activity_at, updated_at)
+  select t.id,
+    case
+      when r.live > 0 or r.today > 0 then 'live'
+      when r.first_day is null then 'setting up'
+      when r.first_day > (now() at time zone 'Europe/Dublin')::date then 'coming up'
+      when r.last_day < (now() at time zone 'Europe/Dublin')::date then 'finished'
+      else 'live'
+    end,
+    r.first_day, r.last_day,
+    coalesce(pl.n, 0), coalesce(j.n, 0), coalesce(f.n, 0), coalesce(po.n, 0), coalesce(c.n, 0), coalesce(po.clips, 0), coalesce(rl.n, 0),
+    coalesce(u.cents, 0),
+    greatest(po.last_at, c.last_at),
+    now()
+  from tournaments t
+  left join lateral (select min(play_date) first_day, max(play_date) last_day, count(*) filter (where status = 'live') live,
+                            count(*) filter (where play_date = (now() at time zone 'Europe/Dublin')::date) today
+                     from rounds where tournament_id = t.id) r on true
+  left join lateral (select count(*) n from players where tournament_id = t.id) pl on true
+  left join lateral (select count(*) n from account_tournaments where tournament_id = t.id) j on true
+  left join lateral (select count(*) n from fans where tournament_id = t.id and status = 'approved') f on true
+  left join lateral (select count(*) n, count(*) filter (where kind = 'video') clips, max(created_at) last_at from posts where tournament_id = t.id) po on true
+  left join lateral (select count(*) n, max(created_at) last_at from comments where tournament_id = t.id) c on true
+  left join lateral (select count(*) n from reels where tournament_id = t.id and status = 'done') rl on true
+  left join lateral (select sum(cents) cents from usage where tournament_id = t.id) u on true
+  where only_id is null or t.id = only_id
+  on conflict (tournament_id) do update set
+    status = excluded.status, first_day = excluded.first_day, last_day = excluded.last_day, players = excluded.players,
+    signed_in = excluded.signed_in, followers = excluded.followers, posts = excluded.posts, comments = excluded.comments,
+    clips = excluded.clips, films = excluded.films, cost_cents = excluded.cost_cents,
+    last_activity_at = excluded.last_activity_at, updated_at = excluded.updated_at;
+$$;
+
+-- A month's spend (or any period's), for one service or all, for one tournament or all
+create or replace function usage_sum(svc text, since timestamptz, tid uuid default null) returns numeric language sql stable as $$
+  select coalesce(sum(cents), 0) from usage
+  where (svc is null or service = svc) and at >= since and (tid is null or tournament_id = tid);
+$$;
+
+-- Room used: the database, and the files in storage (nothing when storage isn't in this database, as in testing)
+create or replace function console_room() returns jsonb language plpgsql security definer set search_path = public as $$
+declare files bigint := null; bytes bigint := null;
+begin
+  begin
+    execute 'select count(*), coalesce(sum((metadata->>''size'')::bigint), 0) from storage.objects' into files, bytes;
+  exception when others then null;
+  end;
+  return jsonb_build_object('db', pg_database_size(current_database()), 'files', files, 'fileBytes', bytes);
+end $$;
+revoke execute on function console_room() from public, anon, authenticated;
+grant execute on function console_room() to service_role;
+
+-- The console's tournament list: each tournament with its figures and its first organiser
+create or replace view console_tournaments with (security_invoker = false) as
+  select t.id, t.slug, t.name, t.privacy, t.created_at,
+         coalesce(s.status, 'setting up') as status, s.first_day, s.last_day,
+         coalesce(s.players, 0) as players, coalesce(s.signed_in, 0) as signed_in, coalesce(s.followers, 0) as followers,
+         coalesce(s.posts, 0) as posts, coalesce(s.comments, 0) as comments, coalesce(s.clips, 0) as clips, coalesce(s.films, 0) as films,
+         coalesce(s.cost_cents, 0) as cost_cents, s.last_activity_at, s.updated_at as stats_at,
+         (select a.email from account_tournaments j join accounts a on a.id = j.account_id
+          where j.tournament_id = t.id and j.role = 'organiser' order by j.created_at limit 1) as organiser
+  from tournaments t left join tournament_stats s on s.tournament_id = t.id;
+revoke all on console_tournaments from anon, authenticated;
+grant select on console_tournaments to service_role;
+
+-- Spend by service since a time (calls and failures too)
+create or replace function usage_breakdown(since timestamptz, tid uuid default null)
+returns table (service text, cents numeric, calls bigint, fails bigint) language sql stable as $$
+  select service, coalesce(sum(cents), 0), count(*), count(*) filter (where not ok)
+  from usage where at >= since and (tid is null or tournament_id = tid) group by service;
+$$;
+-- Spend by month and service, for the twelve-month chart
+create or replace function usage_months(since timestamptz)
+returns table (month text, service text, cents numeric) language sql stable as $$
+  select to_char(date_trunc('month', at at time zone 'Europe/Dublin'), 'YYYY-MM'), service, coalesce(sum(cents), 0)
+  from usage where at >= since group by 1, 2 order by 1;
+$$;
+-- The most expensive tournaments since a time, and how many tournaments spent anything
+create or replace function usage_top(since timestamptz, n int default 10)
+returns table (tournament_id uuid, cents numeric) language sql stable as $$
+  select tournament_id, sum(cents) from usage
+  where at >= since and tournament_id is not null group by tournament_id order by 2 desc limit n;
+$$;
+create or replace function usage_tournaments(since timestamptz) returns bigint language sql stable as $$
+  select count(distinct tournament_id) from usage where at >= since and tournament_id is not null and cents > 0;
+$$;
+create or replace function usage_by_tournament(svc text, since timestamptz)
+returns table (tournament_id uuid, cents numeric) language sql stable as $$
+  select tournament_id, sum(cents) from usage where service = svc and at >= since and tournament_id is not null group by 1;
+$$;
+revoke execute on function usage_by_tournament(text, timestamptz) from public, anon, authenticated;
+grant execute on function usage_by_tournament(text, timestamptz) to service_role;
+create or replace function usage_sum_tournaments(since timestamptz) returns numeric language sql stable as $$
+  select coalesce(sum(cents), 0) from usage where at >= since and tournament_id is not null;
+$$;
+revoke execute on function usage_breakdown(timestamptz, uuid), usage_months(timestamptz), usage_top(timestamptz, int), usage_tournaments(timestamptz),
+  usage_sum_tournaments(timestamptz) from public, anon, authenticated;
+grant execute on function usage_breakdown(timestamptz, uuid), usage_months(timestamptz), usage_top(timestamptz, int), usage_tournaments(timestamptz),
+  usage_sum_tournaments(timestamptz) to service_role;
+
+-- One row a day: what the front page's growth chart is drawn from
+create table if not exists daily_stats (
+  day date primary key,
+  figures jsonb not null,
+  made_at timestamptz not null default now()
+);
+
+-- The console signed this person out on every phone (sign-ins before this no longer count)
+alter table accounts add column if not exists signout_at timestamptz;
+
+-- A tournament's own monthly limit on AI writing (US cents)
+alter table tournaments add column if not exists ai_cap_cents int not null default 1000;
+
+do $$
+declare t text;
+begin
+  foreach t in array array['staff', 'activity', 'usage', 'services', 'incidents', 'day_counts', 'email_failures', 'email_blocks',
+                            'people', 'queue', 'data_requests', 'tournament_stats', 'daily_stats'] loop
+    execute format('alter table %I enable row level security', t);
+    execute format('revoke all on %I from anon, authenticated', t);
+    execute format('grant all on %I to service_role', t);
+  end loop;
+end $$;
+grant usage, select on all sequences in schema public to service_role;
+revoke execute on function record_incident(text, text, text, uuid, text), bump(text, int), touch_person(text, text, text, timestamptz, timestamptz),
+  refresh_tournament_stats(uuid), usage_sum(text, timestamptz, uuid) from public, anon, authenticated;
+grant execute on function record_incident(text, text, text, uuid, text), bump(text, int), refresh_tournament_stats(uuid),
+  usage_sum(text, timestamptz, uuid) to service_role;
+
 notify pgrst, 'reload schema';

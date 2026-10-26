@@ -1,9 +1,11 @@
 import { adminClient } from "@/lib/admin";
 import { EMAIL_RE, inviteRequestEmail, mailConfigured, sendOne } from "@/lib/email";
-import { inviteFor, ownerEmail } from "@/lib/invites";
+import { inviteFor } from "@/lib/invites";
 import { bad, json, siteOrigin } from "@/lib/server-data";
 import { clientIp, tooFast } from "@/lib/social";
 import { BRAND } from "@/lib/brand";
+import { raise } from "@/lib/queue";
+import { consoleAddress } from "@/lib/console-mail";
 
 /**
  *   request  {name, email, about}   ask to run a tournament (the site owner is told by email)
@@ -26,13 +28,14 @@ export async function POST(req: Request) {
   // Asked already and still waiting: no second request
   const { data: open } = await db.from("invite_requests").select("id").eq("email", email).eq("status", "new").maybeSingle();
   if (!open) {
-    const { error } = await db.from("invite_requests").insert({ name, email, about });
-    if (error) return bad(/invite_requests/.test(error.message) ? "Requests aren't open just yet. Try again soon." : "Couldn't send that just now. Try again.", 500);
-    const to = ownerEmail();
-    if (!to || !mailConfigured()) console.error("[invites] no owner email to notify (set OWNER_EMAIL and the SMTP settings)");
+    const { data: row, error } = await db.from("invite_requests").insert({ name, email, about }).select("id").single();
+    if (error || !row) return bad(/invite_requests/.test(error?.message ?? "") ? "Requests aren't open just yet. Try again soon." : "Couldn't send that just now. Try again.", 500);
+    await raise({ kind: "invite", subject: row.id, person: email, title: `Invite request: ${name}`, detail: { about } });
+    const to = await consoleAddress();
+    if (!to || !mailConfigured()) console.error("[invites] no console email to notify (set OWNER_EMAIL and the SMTP settings)");
     else
-      await sendOne({ name: BRAND.name }, to, inviteRequestEmail({ name, email, about }, `${siteOrigin(req)}/owner`)).catch((e) =>
-        console.error("[invites] couldn't email the owner:", e instanceof Error ? e.message : e),
+      await sendOne({ name: BRAND.name }, to, inviteRequestEmail({ name, email, about }, `${siteOrigin(req)}/console/needs`)).catch((e) =>
+        console.error("[invites] couldn't email the console:", e instanceof Error ? e.message : e),
       );
   }
   return json({ ok: true });

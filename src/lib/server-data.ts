@@ -4,6 +4,8 @@ import { adminClient } from "./admin";
 import { normalizeRound, type TournamentRow, type TournamentState, type RoundRow } from "./types";
 import { getAccount, getSession, isOwner, type Session } from "./auth";
 import { isAccountOrganiser } from "./accounts";
+import { inTournament } from "./usage";
+import { recordError } from "./incidents";
 
 export interface TournamentPrivate extends TournamentRow {
   organiser_pin_hash: string | null;
@@ -34,6 +36,8 @@ export async function context(req: Request, body?: Record<string, unknown>, opts
     t = null;
     session = null;
   }
+  // What's paid for while answering this request is this tournament's (the console's costs)
+  if (t) inTournament(t.id);
   // The example tournament on the front page can be looked at, never changed (except by the site owner)
   const demo = !!t && req.method !== "GET" && (await isDemo(t.slug)) && !(await isOwner());
   return { t, session: demo ? null : session, demo };
@@ -97,6 +101,11 @@ async function stillGood(t: TournamentPrivate, s: Session | null): Promise<Sessi
       }
       case "owner":
         return (await isOwner()) ? s : null;
+      case "staff": {
+        // Support staff helping: only while they're still staff, signed in to the console
+        const { consoleUser } = await import("./console-auth");
+        return (await consoleUser()) ? s : null;
+      }
       case "create":
         // The phone that made it, until its email is confirmed (asked on every visit), for 30 days at most
         return s.at && Date.now() - s.at < 30 * 864e5 ? s : null;
@@ -166,6 +175,8 @@ export function json(data: unknown, status = 200) {
 }
 
 export function bad(message: string, status = 400) {
+  // Something broke on our side: it goes in the console's error list
+  if (status >= 500) void recordError(`answer ${status}`, message);
   return Response.json({ error: message }, { status });
 }
 

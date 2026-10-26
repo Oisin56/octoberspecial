@@ -37,6 +37,7 @@ export interface AdminData {
   organisers?: { email: string; pending: boolean; you: boolean }[];
   /** Signed in here without an email yet: asked to add one */
   needEmail?: boolean;
+  supportVisit?: string | null;
   /** The email this phone is signed in with, if any */
   accountEmail?: string | null;
   organiserPinSet: boolean;

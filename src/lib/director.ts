@@ -1,3 +1,4 @@
+import { PRICES, claude, paidFetch } from "./usage";
 import "server-only";
 import { prizeLines, winBoard } from "./boards";
 import Anthropic from "@anthropic-ai/sdk";
@@ -335,7 +336,7 @@ async function clipTranscript(slug: string, c: PostRow): Promise<{ text: string;
     f.append("cloud_storage_url", mediaUrl(c.media_path)!);
     f.append("timestamps_granularity", "word");
     f.append("tag_audio_events", "false");
-    const r = await fetch(`${base}/v1/speech-to-text`, { method: "POST", headers: { "xi-api-key": process.env.ELEVENLABS_API_KEY }, body: f });
+    const r = await paidFetch("voices", "clip transcript", `${base}/v1/speech-to-text`, { method: "POST", headers: { "xi-api-key": process.env.ELEVENLABS_API_KEY }, body: f }, { cents: PRICES.listenPerMinute / 2 });
     if (!r.ok) return null;
     const j = (await r.json()) as { text?: string; words?: { text: string; start: number; end: number; type?: string }[] };
     const out = { text: (j.text ?? "").trim(), words: (j.words ?? []).filter((w) => w.type !== "spacing" && w.text?.trim()).map((w) => ({ w: w.text.trim(), s: w.start, e: w.end })) };
@@ -526,7 +527,7 @@ export async function writePlan(tournamentId: string, brief: Brief, probes: Clip
     }
     content.push({ type: "text", text: task });
 
-    const client = new Anthropic({ baseURL: process.env.ANTHROPIC_BASE_URL || undefined });
+    const client = claude("film plan");
     const system = `You are the director and lead commentator of a golf highlights package for a private tournament between friends. House style for the event: ${tone.voice}. Irish/British English.`;
     const messages: Anthropic.MessageParam[] = [{ role: "user", content }];
     // The plan must come back as readable JSON with the story in it; if not, ask once more before giving up
@@ -745,11 +746,17 @@ export const voiceModel = () => process.env.ELEVENLABS_MODEL || "eleven_v3";
 
 async function tts(text: string, model: string, voiceId: string) {
   const base = process.env.ELEVENLABS_BASE_URL || "https://api.elevenlabs.io";
-  return fetch(`${base}/v1/text-to-speech/${encodeURIComponent(voiceId)}?output_format=mp3_44100_128`, {
-    method: "POST",
-    headers: { "xi-api-key": process.env.ELEVENLABS_API_KEY!, "content-type": "application/json", accept: "audio/mpeg" },
-    body: JSON.stringify({ text, model_id: model }),
-  });
+  return paidFetch(
+    "voices",
+    "voice line",
+    `${base}/v1/text-to-speech/${encodeURIComponent(voiceId)}?output_format=mp3_44100_128`,
+    {
+      method: "POST",
+      headers: { "xi-api-key": process.env.ELEVENLABS_API_KEY!, "content-type": "application/json", accept: "audio/mpeg" },
+      body: JSON.stringify({ text, model_id: model }),
+    },
+    { cents: (text.length / 1000) * PRICES.voicePer1k, units: { chars: text.length } },
+  );
 }
 
 /** Record one line of commentary. Falls back to the older model (tags removed) if v3 isn't available. */
@@ -860,7 +867,7 @@ export function applyRecorded(plan: Plan, recorded: Map<string, Recorded>) {
 /** Ask Claude to say the same thing in fewer words, for lines that ran longer than their slot. */
 async function tightenLines(items: { id: string; text: string; sec: number; max: number; payoff: boolean; part?: LinePart }[]): Promise<Record<string, string>> {
   if (!items.length || !process.env.ANTHROPIC_API_KEY) return {};
-  const client = new Anthropic({ baseURL: process.env.ANTHROPIC_BASE_URL || undefined });
+  const client = claude("commentary lines");
   const msg = await client.messages.create({
     model: MODEL,
     max_tokens: 2000,
@@ -1227,7 +1234,7 @@ export async function whooshSound(): Promise<string | null> {
   if (head?.ok) return url;
   try {
     const base = process.env.ELEVENLABS_BASE_URL || "https://api.elevenlabs.io";
-    const r = await fetch(`${base}/v1/sound-generation?output_format=mp3_44100_128`, {
+    const r = await paidFetch("voices", "sound effect", `${base}/v1/sound-generation?output_format=mp3_44100_128`, {
       method: "POST",
       headers: { "xi-api-key": process.env.ELEVENLABS_API_KEY, "content-type": "application/json", accept: "audio/mpeg" },
       body: JSON.stringify({
@@ -1235,7 +1242,7 @@ export async function whooshSound(): Promise<string | null> {
         duration_seconds: 1.1,
         prompt_influence: 0.6,
       }),
-    });
+    }, { cents: 2 });
     if (!r.ok) return null;
     await adminClient().storage.from("media").upload(path, await r.arrayBuffer(), { contentType: "audio/mpeg", upsert: true });
     return url;
@@ -1247,14 +1254,29 @@ export async function whooshSound(): Promise<string | null> {
 export async function shotstackRender(edit: Json): Promise<string> {
   // A private tournament's clips and voices: links that work long enough for the render
   const signedEdit = await signStoredLinks(edit);
-  const r = await fetch(`${SHOTSTACK()}/render`, {
-    method: "POST",
-    headers: { "x-api-key": process.env.SHOTSTACK_API_KEY!, "content-type": "application/json" },
-    body: JSON.stringify(signedEdit),
-  });
+  const secs = editSeconds(edit);
+  const r = await paidFetch(
+    "films",
+    "render",
+    `${SHOTSTACK()}/render`,
+    {
+      method: "POST",
+      headers: { "x-api-key": process.env.SHOTSTACK_API_KEY!, "content-type": "application/json" },
+      body: JSON.stringify(signedEdit),
+    },
+    { cents: (secs / 60) * PRICES.renderPerMinute, units: { seconds: Math.round(secs) } },
+  );
   const j = await r.json().catch(() => ({}));
   if (!r.ok || !j.response?.id) throw new Error(`Shotstack didn't accept the edit (${r.status}): ${JSON.stringify(j).slice(0, 300)}`);
   return j.response.id as string;
+}
+
+/** How long a finished film runs: the end of its last clip on any track. */
+function editSeconds(edit: Json): number {
+  const tracks = ((edit as { timeline?: { tracks?: { clips?: { start?: unknown; length?: unknown }[] }[] } })?.timeline?.tracks ?? []) as { clips?: { start?: unknown; length?: unknown }[] }[];
+  let end = 0;
+  for (const t of tracks) for (const c of t.clips ?? []) if (typeof c.start === "number" && typeof c.length === "number") end = Math.max(end, c.start + c.length);
+  return end;
 }
 
 export async function shotstackStatus(id: string): Promise<{ status: string; url?: string; poster?: string; error?: string }> {

@@ -37,6 +37,8 @@ interface Golf {
   account: { email: string } | null;
   here?: Here[];
   owner?: boolean;
+  console?: boolean;
+  requests?: { kind: "copy" | "delete"; created_at: string }[];
   running?: Tile[];
   playing?: Tile[];
   following?: Tile[];
@@ -59,6 +61,7 @@ function AccountInner() {
   const [g, setG] = useState<Golf | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [sure, setSure] = useState(false);
 
   const load = useCallback(
     () =>
@@ -184,10 +187,10 @@ function AccountInner() {
               </div>
             ))}
 
-            {g.owner && (
-              <Link className="acct-t golf-site" href="/owner">
-                <strong>The site</strong>
-                <span>Every tournament, invites, films and the course library</span>
+            {(g.owner || g.console) && (
+              <Link className="acct-t golf-site" href="/console">
+                <strong>The console</strong>
+                <span>Everything on the site: what&apos;s live, what needs you, people and costs</span>
               </Link>
             )}
 
@@ -208,6 +211,54 @@ function AccountInner() {
             )}
 
             {empty && <p>Nothing here yet. Tap the link you were sent for a tournament, or start your own.</p>}
+
+            <section className="golf-list golf-data" aria-labelledby="your-data">
+              <h2 id="your-data">Your data</h2>
+              <p style={{ margin: 0 }}>Ask for a copy of everything we hold about you, or for your account to be deleted. We&apos;ll do it within a month.</p>
+              {(g.requests ?? []).map((r) => (
+                <p key={r.kind} className="golf-asked">
+                  {r.kind === "copy" ? "You've asked for a copy of your data." : "You've asked for your account to be deleted."} We&apos;ll email you when it&apos;s done.
+                </p>
+              ))}
+              {!(g.requests ?? []).some((r) => r.kind === "copy") && (
+                <button
+                  className="btn secondary block"
+                  disabled={!!busy}
+                  onClick={async () => {
+                    const j = await call({ action: "data", kind: "copy" }, "copy");
+                    if (j) setG((x) => (x ? { ...x, requests: j.requests } : x));
+                  }}
+                >
+                  Email me a copy of my data
+                </button>
+              )}
+              {!(g.requests ?? []).some((r) => r.kind === "delete") &&
+                (sure ? (
+                  <div className="panel stack golf-offer" role="group" aria-label="Delete my account">
+                    <p style={{ margin: 0 }}>Ask us to delete your account? We&apos;ll email you before anything is deleted.</p>
+                    <div className="golf-yes-no">
+                      <button
+                        className="btn big"
+                        disabled={!!busy}
+                        onClick={async () => {
+                          const j = await call({ action: "data", kind: "delete" }, "delete");
+                          if (j) setG((x) => (x ? { ...x, requests: j.requests } : x));
+                          setSure(false);
+                        }}
+                      >
+                        Yes, ask to delete it
+                      </button>
+                      <button className="btn secondary big" onClick={() => setSure(false)}>
+                        No
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button className="btn secondary block" disabled={!!busy} onClick={() => setSure(true)}>
+                    Delete my account
+                  </button>
+                ))}
+            </section>
 
             <div className="stack golf-acts">
               <Link className="btn secondary block big" href="/new">

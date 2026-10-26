@@ -1,5 +1,5 @@
+import { PRICES, claude, paidFetch } from "@/lib/usage";
 import { isCrew } from "@/lib/auth";
-import Anthropic from "@anthropic-ai/sdk";
 import { adminClient } from "@/lib/admin";
 import { bad, context, json, DEMO_READONLY } from "@/lib/server-data";
 import { GOLF_TERMS } from "@/lib/golfTerms";
@@ -50,7 +50,7 @@ async function transcribe(audio: Blob, keyterms: string[]): Promise<{ ok: true; 
     f.append("tag_audio_events", "false");
     if (mode === "repeat") keyterms.forEach((k) => f.append("keyterms", k));
     if (mode === "json") f.append("keyterms", JSON.stringify(keyterms));
-    return fetch(`${base}/v1/speech-to-text`, { method: "POST", headers: { "xi-api-key": process.env.ELEVENLABS_API_KEY! }, body: f });
+    return paidFetch("voices", "spoken note", `${base}/v1/speech-to-text`, { method: "POST", headers: { "xi-api-key": process.env.ELEVENLABS_API_KEY! }, body: f }, { cents: PRICES.listenPerMinute / 4 });
   };
   // The word list is sent as repeated fields; if the service wants it another way, try that, then without it
   let last = "";
@@ -70,7 +70,7 @@ async function transcribe(audio: Blob, keyterms: string[]): Promise<{ ok: true; 
 /** Fix misheard names and golf words only; never rewrite what was said. */
 async function tidyUp(text: string, names: string[]): Promise<string> {
   if (!process.env.ANTHROPIC_API_KEY) return text;
-  const client = new Anthropic({ baseURL: process.env.ANTHROPIC_BASE_URL || undefined });
+  const client = claude("note tidy-up");
   const msg = await client.messages.create({
     model: MODEL,
     max_tokens: 400,
