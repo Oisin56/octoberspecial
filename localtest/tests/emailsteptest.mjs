@@ -182,7 +182,7 @@ const view = async (a, v, p = {}) => {
 const act = (a, body) => a("/api/console/email", body);
 ok((await fetch(`${BASE}/api/console/email?view=every`, { headers: { cookie: owner.cookie() } })).status === 400, "the Email section can't be read from a plain link");
 r = await view(owner, "every");
-ok(r.status === 200 && r.j.emails.length === 12 && r.j.internal.length === 4, `Every email: 12 to edit, 4 to you and support (${r.j.emails?.length})`);
+ok(r.status === 200 && r.j.emails.length === 15 && r.j.internal.length === 4, `Every email: 15 to edit (with the three for the end of a trip), 4 to you and support (${r.j.emails?.length})`);
 ok(r.j.emails.find((e) => e.key === "sign-in").sent30 >= 2, "with how many went in the last 30 days");
 r = await act(owner, { action: "preview", key: "player-link", words: { subject: "Here's your link for {tournament}", headline: "Hi {first name}", lines: "Tap it.", button: "Open my link" } });
 ok(r.status === 200 && /Kinsale Spring Classic/.test(r.j.html) && r.j.subject === "Here's your link for Kinsale Spring Classic", "a preview of unsaved words, filled in with made-up details");
