@@ -477,8 +477,10 @@ function FilmProgress({ initial, left, onAnother, onDone }: { initial: FilmReel;
             </button>
           )}
         </div>
-        <p className="film-sub">It&apos;s in Highlights for everyone. {left > 0 ? `${left} more film${left === 1 ? "" : "s"} can be made for this tournament.` : ""}</p>
-        <p className="film-sub">{FILM_KEPT}</p>
+        <p className="film-sub">
+          It&apos;s in Highlights for everyone. {left > 0 ? `${left} more film${left === 1 ? "" : "s"} can be made for this tournament. ` : ""}
+          {FILM_KEPT}
+        </p>
       </section>
     );
   }

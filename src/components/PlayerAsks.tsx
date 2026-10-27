@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useT } from "./Providers";
@@ -26,13 +26,17 @@ export function usePlayerMe(enabled: boolean, again?: string) {
   const { api, session } = useT();
   const [me, setMe] = useState<PlayerMe | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const last = useRef(0);
   const load = useCallback(async () => {
+    last.current = Date.now();
     const r = await api("/api/player", { action: "me" }).catch(() => null);
     if (r?.ok) setMe(r.j as unknown as PlayerMe);
     setLoaded(true);
   }, [api]);
   useEffect(() => {
     if (!enabled || !session?.playerId || session.role === "fan") return;
+    // Moving between pages: looked at again at most once a minute
+    if (again !== undefined && last.current && Date.now() - last.current < 60e3) return;
     const t = setTimeout(load, 0);
     return () => clearTimeout(t);
   }, [enabled, session?.playerId, session?.role, load, again]);

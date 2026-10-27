@@ -188,7 +188,7 @@ export async function finishTomorrowMail(t: TLike, site: string, to: string, nam
     vars: { tournament: t.name, "first name": firstName(name) },
     look: tournamentLook(t),
     footer: await serviceFooter(),
-    href: `${site}/t/${t.slug}/admin/cards`,
+    href: `${site}/t/${t.slug}/admin#cards`,
     after: [{ type: "link", label: "Finish it now", href: `${site}/t/${t.slug}/admin#finish` }],
     words,
   });
