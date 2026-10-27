@@ -68,7 +68,7 @@ async function filmPeople(tid: string): Promise<{ email: string; name: string | 
   return [...out.values()];
 }
 
-/** The hourly film work: remove films past 12 months, and (in the daytime) send the reminders due. */
+/** The film work (twice a day): remove films past 12 months, and (in the daytime) send the reminders due. */
 export async function runFilms(site: string, opts: { remind: boolean }): Promise<{ removed: number; reminded: number }> {
   const db = adminClient();
   const now = Date.now();

@@ -61,7 +61,7 @@ export async function finishTournament(tid: string, by: { name: string; actor?: 
     try {
       await endPiece(tid);
     } catch (e) {
-      // Tried again by the hourly run
+      // Tried again by the next end-of-trip run
       console.error("[finish] end piece", e);
     }
   }
@@ -149,7 +149,7 @@ export async function unfinishedPast(today = dublinToday()): Promise<Candidate[]
   return out;
 }
 
-/** The hourly end-of-trip work: finish what's due, then write any end pieces still missing (within the time given). */
+/** The end-of-trip work (twice a day): finish what's due, then write any end pieces still missing (within the time given). */
 export async function runFinishing(deadline: number): Promise<{ finished: number; written: number }> {
   const today = dublinToday();
   let finished = 0;

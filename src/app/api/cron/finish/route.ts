@@ -13,7 +13,8 @@ export const maxDuration = 300;
 export const dynamic = "force-dynamic";
 
 /**
- * The end-of-trip work, every hour (Vercel calls it with the CRON_SECRET setting):
+ * The end-of-trip work, twice a day (Vercel calls it at 00:20 and 10:20 UTC with the CRON_SECRET setting; the site's
+ * plan allows each job once a day, so it's listed twice):
  *  - tournaments due to finish by themselves are finished, and their final report or write-up written
  *  - between 10am and 8pm Irish time: organisers hear the day before a trip finishes by itself, and films due to be
  *    removed in a month send their reminder
