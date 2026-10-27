@@ -218,6 +218,23 @@ function standingsText(s: TournamentState) {
   return lines.join("\n");
 }
 
+/** On your own: each round's score, no standings */
+function soloText(s: TournamentState) {
+  const cfg = toTournamentCfg(s);
+  const t = tournamentSummary(cfg, toEntries(s.entries));
+  const totals = totalsView(s, t);
+  const lines = [`Played on their own, scored by ${s.tournament.win?.kind === "stroke" ? "stroke play (net to par after handicap shots)" : "Stableford points"}.`];
+  if (totals?.rows[0] && s.rounds.length > 1) lines.push(`Total: ${totals.rows[0].score}${totals.rows[0].gross ? ` (${totals.rows[0].gross.toLowerCase()})` : ""}.`);
+  s.rounds.forEach((r, i) => {
+    const rs = t.rounds[i];
+    const g = rs?.games[0];
+    if (!g?.holesPlayed) return lines.push(`- R${r.number} ${r.course_name}: not played`);
+    const v = g.full.ranking[0]?.value;
+    lines.push(`- R${r.number} ${r.course_name} (${formatLabel(r)}): ${v != null ? fmt(v) : "?"} ${cfg.rounds[i].scoring === "stableford" ? "points" : "net strokes"} after ${g.holesPlayed} holes`);
+  });
+  return lines.join("\n");
+}
+
 function handicapText(game: Game, gs: GameSummary, players: PlayerRow[]) {
   const shots = Object.entries(gs.shots).filter(([, v]) => v > 0);
   if (!shots.length) return "off scratch (no shots)";
@@ -334,8 +351,8 @@ export const TONES: Record<Tone, { label: string; voice: string }> = {
   dry: { label: "Club secretary", voice: "a bone-dry, understated club secretary writing the newsletter: deadpan, precise, quietly devastating" },
 };
 
-function style(tone: Tone, name: string) {
-  return `You write for "${name}", a private golf tournament between friends. Write as ${(TONES[tone] ?? TONES.broadsheet).voice}. Irish/British English spelling.
+function style(tone: Tone, name: string, solo = false) {
+  return `You write for "${name}", ${solo ? "a golfer's own round (or golf trip) played on their own, not a competition" : "a private golf tournament between friends"}. Write as ${(TONES[tone] ?? TONES.broadsheet).voice}. Irish/British English spelling.
 
 HARD RULES:
 - Only use facts given to you. Never invent scores, results, shots, holes, quotes or events that are not in the data or notes.
@@ -381,10 +398,11 @@ export async function generatePiece(
   const round = roundId ? s.rounds.find((r) => r.id === roundId) ?? null : null;
   if (roundId && !round) throw new Error("Round not found");
 
+  const solo = !!s.tournament.solo;
   const parts: string[] = [];
-  parts.push(`PLAYERS\n${playerProfiles(s)}`);
+  parts.push(`${solo ? "THE GOLFER" : "PLAYERS"}\n${playerProfiles(s)}`);
   if (s.tournament.teams.length) parts.push(`TEAMS\n${s.tournament.teams.map((t) => `- ${t.name}`).join("\n")}`);
-  parts.push(`TOURNAMENT STANDINGS\n${standingsText(s)}`);
+  parts.push(solo ? `THEIR SCORES\n${soloText(s)}` : `TOURNAMENT STANDINGS\n${standingsText(s)}`);
 
   if (round) {
     parts.push(`THIS ROUND\n${roundDetails(round, s)}`);
@@ -432,6 +450,21 @@ export async function generatePiece(
       parts.push(`WEATHER FORECAST, ROUND ${r.number}\n${await forecast(info.lat, info.lon, r.course_name, r.play_date)}`);
     }
     if (s.posts.length) parts.push(`NOTES SO FAR\n${notesText(s, null)}`);
+  } else if (solo) {
+    // A round on your own: the write-up tells the round itself, so it gets each round's card
+    const players = toTournamentCfg(s).players;
+    for (const r of [...s.rounds].sort((a, b) => a.number - b.number)) {
+      const entries = toEntries(s.entries)[r.id] ?? [];
+      if (!entries.length) continue;
+      const cfg = toRoundCfg(r, s.players);
+      parts.push(`ROUND ${r.number}\n${roundDetails(r, s)}`);
+      const guide = guideText(r);
+      if (guide) parts.push(`COURSE GUIDE, ROUND ${r.number} (background, not events)\n${guide}`);
+      for (const g of cfg.games) parts.push(`HOLE-BY-HOLE, ROUND ${r.number}\n${scorecardText(cfg, g, gameSummary(cfg, g, players, entries), entries, s.players)}`);
+      const log = roundTimeline(s, r.id, (k) => KIND_LABEL[k as ShotKind] ?? k);
+      if (log) parts.push(`SHOTS LOGGED, ROUND ${r.number} (partial; the scorecard is the truth for scores)\n${log}`);
+    }
+    parts.push(`NOTES\n${notesText(s, null)}`);
   } else {
     parts.push(`ALL NOTES\n${notesText(s, null)}`);
   }
@@ -445,9 +478,11 @@ export async function generatePiece(
         ? `Write a LIVE BULLETIN for followers at home. What just happened: ${opts.reason ?? opts.trigger}. Focus on that and the current state of play. Present tense.`
         : kind === "report"
           ? `Write the REPORT for Round ${round?.number}. Tell the story in order: turning points (saying what makes a key hole difficult where the course guide helps), results of each match or group, side games, birdies, and what it means for the overall standings.`
-          : `Write the end-of-tournament REVIEW: the story of the event, the decisive moments, the final standings and awards.`;
+          : solo
+            ? `Write a short WRITE-UP of ${s.players[0]?.name ?? "the golfer"}'s ${s.rounds.length > 1 ? "golf trip" : "round"}, played on their own. It is not a competition: never say won, winner, champion, leader, field or tournament. Tell it in order from the scorecard: the good holes and the bad ones, the turning points, and the final score, with the course guide for colour. Call them by their first name.`
+            : `Write the end-of-tournament REVIEW: the story of the event, the decisive moments, the final standings and awards.`;
 
-  const baseLength = lengthFor(kind, !round);
+  const baseLength = solo && kind === "tournament" ? "250–400 words" : lengthFor(kind, !round);
   const lengthLine =
     opts.length === "short" ? `about half the usual length (usual: ${baseLength}), tight and punchy` : opts.length === "long" ? `about half as long again as usual (usual: ${baseLength})` : baseLength;
   let user = `${parts.join("\n\n")}\n\nTASK\n${task}\nLength: ${lengthLine}.${opts.extra ? `\nOrganiser's steer: ${opts.extra}` : ""}`;
@@ -470,7 +505,7 @@ export async function generatePiece(
   const msg = await client.messages.create({
     model: MODEL,
     max_tokens: kind === "bulletin" ? 1200 : 4000,
-    system: style(opts.tone ?? s.tournament.tone, s.tournament.name),
+    system: style(opts.tone ?? s.tournament.tone, s.tournament.name, solo),
     tools: [
       {
         name: "publish_article",
@@ -587,7 +622,33 @@ export async function roundFinal(tid: string, roundId: string) {
   const s = await loadServerState(tid);
   if (!process.env.ANTHROPIC_API_KEY || s.tournament.auto_bulletins === false) return;
   if (s.pieces.some((p) => p.round_id === roundId && p.trigger === "auto-report")) return;
+  // On your own: the write-up when it finishes tells the round
+  if (s.tournament.solo) return;
   await writeClaimed(tid, roundId, "report", "auto-report", { publish: false });
+}
+
+/**
+ * When a tournament finishes: the final report (for the organiser to OK) or, on your own, the write-up of the round
+ * (published straight away). Once only; nothing when automatic writing is off.
+ */
+export async function writeEndPiece(tid: string): Promise<"written" | "skipped"> {
+  const s = await loadServerState(tid);
+  if (!process.env.ANTHROPIC_API_KEY || s.tournament.ai_on === false || s.tournament.auto_bulletins === false) return "skipped";
+  if (s.pieces.some((p) => p.kind === "tournament" && (p.trigger === "auto-review" || p.status !== "hidden"))) return "skipped";
+  if (!s.entries.length) return "skipped";
+  const { data, error } = await adminClient()
+    .from("ai_pieces")
+    .insert({ tournament_id: tid, round_id: null, kind: "tournament", trigger: "auto-review", status: "hidden", body: "(writing…)" })
+    .select("id")
+    .single();
+  if (error || !data) return "skipped";
+  try {
+    await generatePiece(tid, "tournament", null, { trigger: "auto-review", claimId: data.id, publish: !!s.tournament.solo });
+  } catch (e) {
+    await adminClient().from("ai_pieces").delete().eq("id", data.id);
+    throw e;
+  }
+  return "written";
 }
 
 /**

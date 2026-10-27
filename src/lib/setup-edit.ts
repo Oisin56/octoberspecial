@@ -191,6 +191,9 @@ export async function applySetupEdit(t: TournamentRow, raw: unknown, scope: stri
       }
       for (const p of gone) await db.from("players").delete().eq("id", p.id).eq("tournament_id", t.id);
       await updateT({ organiser_player_id: w.organiserPlays && w.players[0] ? idOf[w.players[0].key] : null });
+      // Just me: one player, who set it up. Adding friends makes it a group trip
+      const solo = w.players.length === 1 && !!w.organiserPlays;
+      if (solo !== !!t.solo) await updateT({ solo }).catch(() => {});
       if (!legacy && (added.length || gone.length || teamsChanged)) await redrawUnstarted("their groups and matches");
       break;
     }

@@ -16,6 +16,17 @@ interface Tile {
   as?: string | null;
 }
 
+interface RoundTile extends Tile {
+  course: string | null;
+  score: string;
+  film: boolean;
+  now: boolean;
+}
+
+interface PastTile extends Tile {
+  was: "Organised" | "Played" | "Followed";
+}
+
 interface Offer {
   id: string;
   role: "organiser" | "player";
@@ -42,6 +53,8 @@ interface Golf {
   running?: Tile[];
   playing?: Tile[];
   following?: Tile[];
+  rounds?: RoundTile[];
+  past?: PastTile[];
   offers?: Offer[];
 }
 
@@ -61,7 +74,9 @@ function AccountInner() {
   const [g, setG] = useState<Golf | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [sure, setSure] = useState(false);
+  const [sure, setSure] = useState<null | "choose" | "all" | "keep">(null);
+  const [gone, setGone] = useState(false);
+  const [allRounds, setAllRounds] = useState(false);
 
   const load = useCallback(
     () =>
@@ -94,7 +109,8 @@ function AccountInner() {
         ["Following", g.following ?? [], (t) => `/t/${t.slug}`],
       ]
     : [];
-  const empty = lists.every(([, xs]) => !xs.length) && !g?.offers?.length && !g?.here?.length;
+  const empty = lists.every(([, xs]) => !xs.length) && !g?.rounds?.length && !g?.past?.length && !g?.offers?.length && !g?.here?.length;
+  const rounds = g?.rounds ?? [];
 
   return (
     <div className="theme-root mgs" data-theme="clubhouse">
@@ -108,7 +124,15 @@ function AccountInner() {
         </div>
       </header>
       <main className="acct">
-        {!g ? (
+        {gone ? (
+          <section className="stack golf">
+            <h1>Your account has been deleted</h1>
+            <p className="lead">We&apos;ve sent a short email to say so. Thanks for playing.</p>
+            <Link className="btn secondary block big" href="/">
+              Back to the home page
+            </Link>
+          </section>
+        ) : !g ? (
           <p>Loading…</p>
         ) : !g.account ? (
           <EmailSignIn
@@ -210,6 +234,49 @@ function AccountInner() {
               ) : null,
             )}
 
+            {rounds.length > 0 && (
+              <section className="golf-list" aria-label="My rounds">
+                <h2>My rounds</h2>
+                <div className="acct-list">
+                  {(allRounds ? rounds : rounds.slice(0, 10)).map((t) => (
+                    <Link key={t.id} className="acct-t golf-round" href={`/t/${t.slug}`}>
+                      <strong>
+                        {t.course ?? t.name}
+                        {t.now && <em className="golf-tag now">Playing now</em>}
+                        {t.film && <em className="golf-tag">Film</em>}
+                      </strong>
+                      <span>{[when(t), t.score].filter(Boolean).join(", ")}</span>
+                    </Link>
+                  ))}
+                </div>
+                {!allRounds && rounds.length > 10 && (
+                  <button className="btn secondary block" onClick={() => setAllRounds(true)}>
+                    Show all {rounds.length}
+                  </button>
+                )}
+                <Link className="btn block big golf-record" href={`/new?again=${encodeURIComponent(rounds[0].slug)}`}>
+                  Record a round
+                </Link>
+              </section>
+            )}
+
+            {(g.past ?? []).length > 0 && (
+              <section className="golf-list" aria-label="Past trips">
+                <h2>Past trips</h2>
+                <div className="acct-list">
+                  {(g.past ?? []).map((t) => (
+                    <Link key={t.id} className="acct-t" href={`/t/${t.slug}`}>
+                      <strong>
+                        {t.name}
+                        <em className="golf-tag">{t.was}</em>
+                      </strong>
+                      <span>{[t.as ? `As ${t.as}` : null, when(t)].filter(Boolean).join(", ")}</span>
+                    </Link>
+                  ))}
+                </div>
+              </section>
+            )}
+
             {empty && <p>Nothing here yet. Tap the link you were sent for a tournament, or start your own.</p>}
 
             <section className="golf-list golf-data" aria-labelledby="your-emails">
@@ -233,7 +300,7 @@ function AccountInner() {
 
             <section className="golf-list golf-data" aria-labelledby="your-data">
               <h2 id="your-data">Your data</h2>
-              <p style={{ margin: 0 }}>Ask for a copy of everything we hold about you, or for your account to be deleted. We&apos;ll do it within a month.</p>
+              <p style={{ margin: 0 }}>Get a copy of everything we hold about you, or delete your account.</p>
               {(g.requests ?? []).map((r) => (
                 <p key={r.kind} className="golf-asked">
                   {r.kind === "copy" ? "You've asked for a copy of your data." : "You've asked for your account to be deleted."} We&apos;ll email you when it&apos;s done.
@@ -251,32 +318,54 @@ function AccountInner() {
                   Email me a copy of my data
                 </button>
               )}
-              {!(g.requests ?? []).some((r) => r.kind === "delete") &&
-                (sure ? (
-                  <div className="panel stack golf-offer" role="group" aria-label="Delete my account">
-                    <p style={{ margin: 0 }}>Ask us to delete your account? We&apos;ll email you before anything is deleted.</p>
-                    <div className="golf-yes-no">
-                      <button
-                        className="btn big"
-                        disabled={!!busy}
-                        onClick={async () => {
-                          const j = await call({ action: "data", kind: "delete" }, "delete");
-                          if (j) setG((x) => (x ? { ...x, requests: j.requests } : x));
-                          setSure(false);
-                        }}
-                      >
-                        Yes, ask to delete it
-                      </button>
-                      <button className="btn secondary big" onClick={() => setSure(false)}>
-                        No
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <button className="btn secondary block" disabled={!!busy} onClick={() => setSure(true)}>
-                    Delete my account
+              {sure === null ? (
+                <button className="btn secondary block" disabled={!!busy} onClick={() => setSure("choose")}>
+                  Delete my account
+                </button>
+              ) : sure === "choose" ? (
+                <div className="panel stack golf-offer" role="group" aria-label="Delete my account">
+                  <h3 style={{ margin: 0 }}>Delete my account</h3>
+                  <p style={{ margin: 0 }}>
+                    Your account, email, bio and photo are deleted either way. Scores, results, reports and films stay, as the privacy policy says.
+                  </p>
+                  <button className="btn big block" onClick={() => setSure("all")}>
+                    Delete my account and everything I posted
                   </button>
-                ))}
+                  <button className="btn big block" onClick={() => setSure("keep")}>
+                    Delete my account, keep my posts
+                  </button>
+                  <button className="btn secondary block" onClick={() => setSure(null)}>
+                    Keep my account
+                  </button>
+                </div>
+              ) : (
+                <div className="panel stack golf-offer" role="group" aria-label="Are you sure?">
+                  <h3 style={{ margin: 0 }}>This can&apos;t be undone</h3>
+                  <p style={{ margin: 0 }}>
+                    {sure === "all"
+                      ? "Your account goes, and every comment, photo and video you posted. A clip already in a film stays in the film."
+                      : "Your account goes. Your comments, photos and videos stay up under your name."}
+                  </p>
+                  <div className="golf-yes-no">
+                    <button
+                      className="btn big danger"
+                      disabled={!!busy}
+                      onClick={async () => {
+                        const j = await call({ action: "delete", keepPosts: sure === "keep", confirm: true }, "delete");
+                        if (j) {
+                          setSure(null);
+                          setGone(true);
+                        }
+                      }}
+                    >
+                      Yes, delete my account
+                    </button>
+                    <button className="btn secondary big" disabled={!!busy} onClick={() => setSure(null)}>
+                      Keep my account
+                    </button>
+                  </div>
+                </div>
+              )}
             </section>
 
             <div className="stack golf-acts">

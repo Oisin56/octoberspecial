@@ -6,8 +6,9 @@ import { ballsOfGame, cardHole, type BallHole } from "@/lib/engine";
 import { toRoundCfg, type PlayerRow, type RoundRow } from "@/lib/types";
 import { maybeBulletin } from "@/lib/ai";
 import { syncKnockout } from "@/lib/knockout-server";
+import { FINISHED_PLAYER, finishedAsk, maybeFinishSolo } from "@/lib/finish";
 
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 /** The scorer saves one hole for one game. Re-sending a hole overwrites it. `final: false` = still being entered (no bulletin yet). */
 export async function POST(req: Request) {
@@ -66,6 +67,12 @@ export async function POST(req: Request) {
   const conceded =
     cfg.scoring === "match" && game.sides.length === 2 && typeof body.conceded === "string" && game.sides.some((sd) => sd.id === body.conceded) ? (body.conceded as string) : null;
 
+  // Finished: players can't change scores; the organiser can, once they've said yes (and it's logged). On your own,
+  // you can always fix your own card.
+  const afterFinish = !!t.finished_at && !t.solo;
+  if (afterFinish && session.role !== "organiser") return bad(FINISHED_PLAYER, 409);
+  if (afterFinish && body.confirmFinished !== true) return finishedAsk();
+
   // A submitted card is taken back by any change (signatures cleared); a final one only the organiser can change, and it's logged
   const cardKey = { round_id: roundId, game: gameId };
   const { data: card, error: cardErr } = await db.from("cards").select("status").match(cardKey).maybeSingle();
@@ -98,8 +105,11 @@ export async function POST(req: Request) {
   if (correcting && changed && !final) {
     await db.from("score_changes").insert({ tournament_id: t.id, ...cardKey, hole, action: "score corrected by the organiser", before: before ?? null, after: after_, by_name: session.name });
   }
+  if (afterFinish && changed && !final) {
+    await db.from("score_changes").insert({ tournament_id: t.id, ...cardKey, hole, action: "score changed after the finish", before: before ?? null, after: after_, by_name: session.name });
+  }
   if (final && changed) {
-    await db.from("score_changes").insert({ tournament_id: t.id, ...cardKey, hole, action: "score changed on a final card", before: before ?? null, after: after_, by_name: session.name });
+    await db.from("score_changes").insert({ tournament_id: t.id, ...cardKey, hole, action: afterFinish ? "score changed after the finish" : "score changed on a final card", before: before ?? null, after: after_, by_name: session.name });
     if (card) await db.from("cards").update({ amended: true }).match(cardKey);
     else await db.from("cards").upsert({ ...cardKey, status: "final", final_at: new Date().toISOString(), finalised_by: "Closed round", amended: true }, { onConflict: "round_id,game" });
   } else if (card?.status === "submitted" && changed) {
@@ -107,7 +117,7 @@ export async function POST(req: Request) {
     await db.from("cards").delete().match(cardKey);
   }
 
-  if (round.status === "upcoming") await db.from("rounds").update({ status: "live" }).eq("id", roundId);
+  if (round.status === "upcoming" && !t.finished_at) await db.from("rounds").update({ status: "live" }).eq("id", roundId);
 
   // Scores are saved as they're tapped in; news of the hole waits until the scorer has finished with it
   if (body.final === false) return json({ ok: true });
@@ -123,6 +133,14 @@ export async function POST(req: Request) {
       await maybeBulletin(t.id, roundId, gameId, hole);
     } catch (e) {
       console.error("bulletin failed", e);
+    }
+    // On your own: the last hole of the last round finishes it
+    if (t.solo && !t.finished_at) {
+      try {
+        await maybeFinishSolo(t.id);
+      } catch (e) {
+        console.error("[finish] solo", e);
+      }
     }
     // Clips of this hole can now get their broadcast version (the score is known)
     try {

@@ -5,6 +5,7 @@ import { isOrganiser, type Session } from "@/lib/auth";
 import { cardInfo, roundStage } from "@/lib/scorecards";
 import { roundFinal } from "@/lib/ai";
 import { toRoundCfg } from "@/lib/types";
+import { FINISHED_PLAYER, finishedAsk } from "@/lib/finish";
 
 export const maxDuration = 60;
 
@@ -52,6 +53,12 @@ export async function POST(req: Request) {
         }
       });
     }
+  }
+
+  // Finished: the cards are settled. The organiser can still take one back after saying yes; on your own, always
+  if (t.finished_at && !t.solo) {
+    if (!org) return bad(FINISHED_PLAYER, 409);
+    if (b.confirmFinished !== true) return finishedAsk();
   }
 
   switch (b.action) {
@@ -105,7 +112,7 @@ export async function POST(req: Request) {
       if (!scorer) return bad("Only this match's scorer can take the card back", 403);
       if (info.stage === "final") {
         await log("reopened", { status: "final" }, null);
-        if (round.status === "complete") await db.from("rounds").update({ status: "live" }).eq("id", roundId);
+        if (round.status === "complete" && !t.finished_at) await db.from("rounds").update({ status: "live" }).eq("id", roundId);
       }
       await db.from("card_signatures").delete().match(key);
       await db.from("cards").delete().match(key);

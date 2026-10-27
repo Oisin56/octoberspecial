@@ -6,6 +6,9 @@ import { EMAIL_RE } from "./email-re";
 import { deliver, mailConfigured } from "./mail/send";
 import { signInMail } from "./mail/emails";
 import { recordMarketing } from "./mail/prefs";
+import { soloRounds, soloTotal } from "./solo";
+import { bioFromAccount } from "./bios";
+import { normalizeRound, type HoleEntryRow, type PlayerRow, type RoundRow, type TournamentRow, type TournamentState } from "./types";
 
 /**
  * One sign-in per person: their email, a one-tap link or a 6-digit code (no password). What they can do depends on
@@ -184,6 +187,8 @@ export async function linkRole(accountId: string, tournamentId: string, role: "o
   };
   const { error } = await db.from("account_tournaments").upsert(next, { onConflict: "account_id,tournament_id" });
   if (error) throw new SignInError(/column/.test(error.message) ? "This needs the latest database update (schema.sql)" : "Couldn't save that just now. Try again.", 500);
+  // Their bio from earlier trips fills in this one (nothing the spot has already is changed)
+  if (next.player_id) await bioFromAccount(accountId, tournamentId, next.player_id).catch((e) => console.warn("[bio] carry over", e));
 }
 
 /** Kept for the wizard and the owner page: make this account an organiser of the tournament. */
@@ -386,10 +391,29 @@ export interface GolfTile {
   as?: string | null;
 }
 
+export interface PastTile extends GolfTile {
+  /** What they were on it */
+  was: "Organised" | "Played" | "Followed";
+}
+
+export interface RoundTile extends GolfTile {
+  course: string | null;
+  /** "36 points", "79, +7", or "" before a hole is in */
+  score: string;
+  film: boolean;
+  /** Being played now (not finished, and a round is today or live) */
+  now: boolean;
+}
+
 export interface MyGolf {
+  /** Live or coming up: what they run, play in or follow */
   running: GolfTile[];
   playing: GolfTile[];
   following: GolfTile[];
+  /** Rounds and trips on their own, newest first */
+  rounds: RoundTile[];
+  /** Finished group trips, newest first, whatever their part */
+  past: PastTile[];
   offers: Offer[];
 }
 
@@ -399,22 +423,88 @@ export async function myGolf(a: Account): Promise<MyGolf> {
   const { data: fans } = await db.from("fans").select("tournament_id,verified_at,blocked").eq("email", String(a.email).toLowerCase());
   const followIds = (fans ?? []).filter((f) => f.verified_at && !f.blocked).map((f) => f.tournament_id);
   const ids = [...new Set([...rows.map((r) => r.tournament_id), ...followIds])];
-  const { data: ts } = ids.length ? await db.from("public_tournaments").select("id,slug,name,subtitle,start_date,end_date,created_at").in("id", ids) : { data: [] };
+  type T = { id: string; slug: string; name: string; subtitle: string | null; start_date: string | null; end_date: string | null; created_at: string; solo?: boolean | null; finished_at?: string | null; win?: { kind?: string } | null; standings?: string | null };
+  let ts: T[] = [];
+  if (ids.length) {
+    const full = await db.from("public_tournaments").select("id,slug,name,subtitle,start_date,end_date,created_at,solo,finished_at,win,standings").in("id", ids);
+    // Before the database update: no solo or finished columns yet
+    ts = (full.error ? (await db.from("public_tournaments").select("id,slug,name,subtitle,start_date,end_date,created_at").in("id", ids)).data ?? [] : full.data ?? []) as T[];
+  }
   const pids = rows.map((r) => r.player_id).filter(Boolean) as string[];
   const { data: ps } = pids.length ? await db.from("players").select("id,name,tournament_id").in("id", pids) : { data: [] };
   const tile = (id: string, as?: string | null): GolfTile | null => {
-    const t = (ts ?? []).find((x) => x.id === id);
+    const t = ts.find((x) => x.id === id);
     return t ? { id: t.id, slug: t.slug, name: t.name, subtitle: t.subtitle, start_date: t.start_date, end_date: t.end_date, as: as ?? null } : null;
   };
+  const tOf = (id: string) => ts.find((x) => x.id === id);
   // Newest first: by the trip's start date, then when it was made
-  const order = (xs: (GolfTile | null)[]) =>
-    (xs.filter(Boolean) as GolfTile[]).sort((x, y) => (y.start_date ?? "9999").localeCompare(x.start_date ?? "9999") || 0);
+  const order = <X extends GolfTile>(xs: (X | null)[]) =>
+    (xs.filter(Boolean) as X[]).sort((x, y) => (y.start_date ?? "9999").localeCompare(x.start_date ?? "9999") || (tOf(y.id)?.created_at ?? "").localeCompare(tOf(x.id)?.created_at ?? ""));
   const nameOf = (r: RoleRow) => (ps ?? []).find((p) => p.id === r.player_id && p.tournament_id === r.tournament_id)?.name ?? null;
-  const running = order(rows.filter((r) => r.role === "organiser").map((r) => tile(r.tournament_id)));
-  const playing = order(rows.filter((r) => r.role === "player" && r.player_id).map((r) => tile(r.tournament_id, nameOf(r))));
+  const current = (id: string) => !tOf(id)?.solo && !tOf(id)?.finished_at;
+  const running = order(rows.filter((r) => r.role === "organiser" && current(r.tournament_id)).map((r) => tile(r.tournament_id)));
+  const playing = order(rows.filter((r) => r.role === "player" && r.player_id && current(r.tournament_id)).map((r) => tile(r.tournament_id, nameOf(r))));
   const mine = new Set(rows.map((r) => r.tournament_id));
-  const following = order(followIds.filter((id) => !mine.has(id)).map((id) => tile(id)));
-  return { running, playing, following, offers: await offersFor(a.email) };
+  const following = order(followIds.filter((id) => !mine.has(id) && current(id)).map((id) => tile(id)));
+  const past = order<PastTile>([
+    ...rows.filter((r) => !tOf(r.tournament_id)?.solo && tOf(r.tournament_id)?.finished_at).map((r) => {
+      const x = tile(r.tournament_id, r.role === "player" ? nameOf(r) : null);
+      return x ? { ...x, was: r.role === "organiser" ? ("Organised" as const) : ("Played" as const) } : null;
+    }),
+    ...followIds.filter((id) => !mine.has(id) && !tOf(id)?.solo && tOf(id)?.finished_at).map((id) => {
+      const x = tile(id);
+      return x ? { ...x, was: "Followed" as const } : null;
+    }),
+  ]);
+  const soloIds = [...new Set(rows.filter((r) => tOf(r.tournament_id)?.solo).map((r) => r.tournament_id))];
+  return { running, playing, following, rounds: await roundTiles(soloIds.map((id) => tOf(id)!).filter(Boolean)), past, offers: await offersFor(a.email) };
+}
+
+/** My rounds: each solo round's course, score and whether there's a film, from three reads for all of them */
+async function roundTiles(ts: { id: string; slug: string; name: string; subtitle: string | null; start_date: string | null; end_date: string | null; created_at: string; finished_at?: string | null; win?: { kind?: string } | null; standings?: string | null }[]): Promise<RoundTile[]> {
+  if (!ts.length) return [];
+  const db = adminClient();
+  const ids = ts.map((t) => t.id);
+  const [players, rounds, films] = await Promise.all([
+    db.from("public_players").select("*").in("tournament_id", ids),
+    db.from("rounds").select("*").in("tournament_id", ids),
+    db.from("posts").select("tournament_id").in("tournament_id", ids).eq("author_name", "AI director").eq("kind", "video"),
+  ]);
+  const rids = (rounds.data ?? []).map((r) => r.id);
+  const entries: HoleEntryRow[] = [];
+  for (let i = 0; i < rids.length; i += 200) entries.push(...(((await db.from("hole_entries").select("*").in("round_id", rids.slice(i, i + 200))).data ?? []) as HoleEntryRow[]));
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "Europe/Dublin" });
+  const out: RoundTile[] = ts.map((t) => {
+    const rs = ((rounds.data ?? []) as RoundRow[]).filter((r) => r.tournament_id === t.id).map(normalizeRound);
+    const state = {
+      tournament: t as unknown as TournamentRow,
+      players: ((players.data ?? []) as PlayerRow[]).filter((p) => p.tournament_id === t.id),
+      rounds: rs,
+      entries: entries.filter((e) => rs.some((r) => r.id === e.round_id)),
+    } as unknown as TournamentState;
+    let score = "";
+    try {
+      const sr = soloRounds(state);
+      score = sr.length > 1 ? soloTotal(sr) || sr.find((r) => r.played)?.score || "" : (sr[0]?.score ?? "");
+    } catch {
+      score = "";
+    }
+    const now = !t.finished_at && rs.some((r) => r.status === "live" || r.play_date === today);
+    return {
+      id: t.id,
+      slug: t.slug,
+      name: t.name,
+      subtitle: t.subtitle,
+      start_date: t.start_date,
+      end_date: t.end_date,
+      course: rs.length === 1 ? rs[0].course_name : null,
+      score,
+      film: (films.data ?? []).some((f) => f.tournament_id === t.id),
+      now,
+    };
+  });
+  // Being played now first, then newest
+  return out.sort((x, y) => Number(y.now) - Number(x.now) || (y.start_date ?? "9999").localeCompare(x.start_date ?? "9999"));
 }
 
 /** The signed-in person, if any, refreshed. */

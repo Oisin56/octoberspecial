@@ -4,6 +4,7 @@ import { useT } from "@/components/Providers";
 import { Loading, pts } from "@/components/ui";
 import { mediaUrl } from "@/lib/supabase";
 import type { PlayerRow } from "@/lib/types";
+import { MyPlayerTools } from "@/components/PlayerAsks";
 
 export default function Players() {
   const { state, summary } = useT();
@@ -18,7 +19,8 @@ export default function Players() {
 
   return (
     <>
-      <h1 style={{ marginBottom: 14 }}>The players</h1>
+      <h1 style={{ marginBottom: 14 }}>{state.tournament.solo ? "The golfer" : "The players"}</h1>
+      <MyPlayerTools />
       {groups.map((g) => (
         <section key={g.name ?? "all"} className="section" style={{ marginTop: g.name ? 24 : 0 }}>
           {g.name && (

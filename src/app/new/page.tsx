@@ -52,7 +52,22 @@ export default function NewTournament() {
 
   // Pick up where you left off
   useEffect(() => {
+    // "Set up next year's trip" or "Record another round": start from that tournament's answers
+    const again = new URLSearchParams(window.location.search).get("again");
+    if (again) {
+      fetch(`/api/again?t=${encodeURIComponent(again)}`, { cache: "no-store" })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((j) => {
+          if (j?.draft) setD({ ...fresh(), ...(j.draft as Draft) });
+        })
+        .catch(() => {})
+        .finally(() => {
+          setLoaded(true);
+          window.history.replaceState(null, "", "/new");
+        });
+    }
     const t = setTimeout(() => {
+      if (again) return;
       try {
         const raw = localStorage.getItem(KEY);
         if (raw) {
@@ -83,7 +98,7 @@ export default function NewTournament() {
         try {
           localStorage.removeItem(INVITE_KEY);
         } catch {}
-      setMe({ owner: !!o.owner, email: a.account?.email ?? null, invite: okInvite ? invite : null, ownerPin: !!o.pin, organiser: !!a.account && (a.running ?? []).length > 0 });
+      setMe({ owner: !!o.owner, email: a.account?.email ?? null, invite: okInvite ? invite : null, ownerPin: !!o.pin, organiser: !!a.account && ((a.running ?? []).length > 0 || (a.rounds ?? []).length > 0 || (a.past ?? []).some((x: { was?: string }) => x.was === "Organised")) });
     });
     return () => clearTimeout(t);
   }, []);

@@ -272,9 +272,10 @@ export async function createFromWizard(w: Wizard): Promise<Created> {
     share_shape: w.share ?? "portrait",
     win,
     prizes: w.prizes,
+    solo: w.who === "solo",
   };
   const { data: t, error } = await db.from("tournaments").insert(base).select("id,slug,name").single();
-  if (error && /win|prizes|tees|standings|feed_on|share_shape|units/.test(error.message))
+  if (error && /win|prizes|tees|standings|feed_on|share_shape|units|solo/.test(error.message))
     throw new WizardError("This needs the latest database update. Run supabase/schema.sql in Supabase, then try again.");
   if (error || !t) throw new Error(error?.message ?? "Couldn't create the tournament");
 

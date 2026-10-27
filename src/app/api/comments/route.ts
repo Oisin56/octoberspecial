@@ -2,6 +2,7 @@ import { adminClient } from "@/lib/admin";
 import { bad, context, json, DEMO_READONLY } from "@/lib/server-data";
 import { isOrganiser } from "@/lib/auth";
 import { fanAllowed, tooFast } from "@/lib/social";
+import { FEED_CLOSED, feedOpen } from "@/lib/types";
 
 const UUID = /^[0-9a-f-]{36}$/i;
 
@@ -28,6 +29,7 @@ export async function POST(req: Request) {
     return json({ ok: true });
   }
 
+  if (!feedOpen(t)) return bad(FEED_CLOSED, 403);
   const body = String(b.body ?? "").replace(/\s+\n/g, "\n").trim().slice(0, 500);
   if (!body) return bad("Write a comment first");
   const postId = String(b.postId ?? "");

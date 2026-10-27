@@ -13,6 +13,7 @@ import { mediaUrl } from "@/lib/supabase";
 import { roundPointsAvailable } from "@/lib/engine";
 import { CourseImage, PhotoCredit, useCountdown } from "@/components/visual";
 import type { RoundRow, TournamentState } from "@/lib/types";
+import { RoundPage, TripPage } from "@/components/TripPage";
 
 export default function Home() {
   const { state, summary, href, session } = useT();
@@ -33,6 +34,9 @@ export default function Home() {
       </div>
     );
   }
+
+  // Finished: the story of the trip (or, on your own, your round)
+  if (state.tournament.finished_at) return state.tournament.solo ? <RoundPage /> : <TripPage />;
 
   const live = state.rounds.find((r) => r.status === "live");
   const liveStatus = (r: RoundRow) => {

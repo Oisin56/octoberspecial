@@ -358,11 +358,16 @@ alter table rounds add column if not exists player_tees jsonb;
 -- A knockout match level after 18 goes on to extra holes: the 19th, 20th… (played as the 1st, 2nd…)
 alter table hole_entries drop constraint if exists hole_entries_hole_check;
 alter table hole_entries add constraint hole_entries_hole_check check (hole between 1 and 27);
+-- Stage 4 (the end of a trip): a round on your own, when it finished, and how long its feed stays open
+alter table tournaments add column if not exists solo boolean not null default false;
+alter table tournaments add column if not exists finished_at timestamptz;
+alter table tournaments add column if not exists feed_until timestamptz;
+alter table tournaments add column if not exists film_removed_at timestamptz;   -- its film reached 12 months and was removed
 create view public_tournaments with (security_invoker = false) as
   select id, slug, name, subtitle, start_date, end_date, theme, custom_colors, logo_path, hero_path, tone,
          side_games, side_games_by, teams, auto_bulletins, video_enabled, organiser_player_id, published, created_at, reel_music_path,
          require_attestation, broadcast_on, broadcast_cap_cents, standings, feed_on, ai_on, setup_jobs, units, share_shape, win, prizes,
-         privacy, players_need_email
+         privacy, players_need_email, solo, finished_at, feed_until, film_removed_at
   from tournaments
   -- a browser never sees a private tournament here (the site's server sees them all)
   where privacy is distinct from 'private' or current_user not in ('anon', 'authenticated');
@@ -1472,5 +1477,69 @@ end $$;
 revoke execute on function email_ref_stats(text[]), email_template_counts(timestamptz), email_health(timestamptz), email_queue(jsonb), email_mark(jsonb), campaign_audience(text[], int, int, int, int), emails_on_trip(date) from public, anon, authenticated;
 grant execute on function email_ref_stats(text[]), email_template_counts(timestamptz), email_health(timestamptz), email_queue(jsonb), email_mark(jsonb), campaign_audience(text[], int, int, int, int), emails_on_trip(date) to service_role;
 grant execute on function touch_person(text, text, text, timestamptz, timestamptz) to service_role;
+
+-- ------------------------------------------------------------ stage 4: the end of a trip
+-- Finishing: by the organiser's button or by itself 3 days after the last round (a round on your own: the day after).
+-- The rounds it closed are kept, to put back if the organiser opens scoring again.
+alter table tournaments add column if not exists finished_by text;
+alter table tournaments add column if not exists finish_rounds jsonb;
+alter table tournaments add column if not exists reopened_at timestamptz;
+alter table tournaments add column if not exists finish_warned_at timestamptz;   -- organisers told the day before
+alter table tournaments add column if not exists end_piece text;                  -- the final report or write-up: written | skipped
+create index if not exists tournaments_finished_idx on tournaments (finished_at);
+-- Films are kept for 12 months from the day they're made; a reminder goes a month before
+alter table reels add column if not exists expires_at timestamptz;
+alter table reels add column if not exists reminded_at timestamptz;
+alter table reels add column if not exists removed_at timestamptz;
+-- A player's bio follows them: kept on their account once they have one
+alter table accounts add column if not exists bio jsonb;
+-- What a player has been asked on their own phone (the bio, their email) and how they answered
+alter table players add column if not exists asks jsonb not null default '{}'::jsonb;
+-- Deleted accounts: only a scrambled copy of the address, so marketing can never reach it again
+create table if not exists deleted_emails (
+  hash text primary key,
+  at timestamptz not null default now()
+);
+alter table deleted_emails enable row level security;
+revoke all on deleted_emails from anon, authenticated;
+grant all on deleted_emails to service_role;
+
+-- Once, when this goes live: rounds on your own are marked as such, every trip whose last round was more than 3 days
+-- ago is finished quietly (no emails, no writing), and films already made get 12 months from today.
+do $$
+begin
+  if not exists (select 1 from site_settings where key = 'stage4_backfill') then
+    update tournaments t set solo = true
+      where not t.solo and t.organiser_player_id is not null
+        and (select count(*) from players p where p.tournament_id = t.id) = 1
+        and exists (select 1 from players p where p.tournament_id = t.id and p.id = t.organiser_player_id);
+    with due as (
+      select t.id from tournaments t
+      where t.finished_at is null
+        and (select max(r.play_date) from rounds r where r.tournament_id = t.id) < (now() at time zone 'Europe/Dublin')::date - 3
+    )
+    update tournaments t set finished_at = now(), finished_by = 'Finished when this part of the site went live', end_piece = 'skipped',
+        feed_until = now() + interval '30 days',
+        finish_rounds = (select coalesce(jsonb_agg(r.id), '[]'::jsonb) from rounds r where r.tournament_id = t.id and r.status <> 'complete')
+      from due where t.id = due.id;
+    update rounds r set status = 'complete'
+      from tournaments t where t.id = r.tournament_id and t.finished_by = 'Finished when this part of the site went live' and r.status <> 'complete';
+    update reels set expires_at = now() + interval '12 months' where status = 'done' and expires_at is null;
+    insert into site_settings (key, value) values ('stage4_backfill', jsonb_build_object('at', now()));
+  end if;
+end $$;
+
+-- Unfinished tournaments whose last round was before today (the hourly run finishes those that are due)
+create or replace function finish_candidates(today date)
+returns table (id uuid, name text, slug text, theme text, custom_colors jsonb, solo boolean, reopened_at timestamptz, finish_warned_at timestamptz, last_day date)
+language sql stable as $$
+  select t.id, t.name, t.slug, t.theme, t.custom_colors, t.solo, t.reopened_at, t.finish_warned_at, r.last_day
+  from tournaments t
+  join lateral (select max(play_date) last_day from rounds where tournament_id = t.id) r on true
+  where t.finished_at is null and r.last_day < today
+  order by t.id
+$$;
+revoke execute on function finish_candidates(date) from public, anon, authenticated;
+grant execute on function finish_candidates(date) to service_role;
 
 notify pgrst, 'reload schema';

@@ -23,7 +23,7 @@ export async function POST(req: Request) {
   const b = await req.json().catch(() => ({}));
   const owner = await isOwner();
   const invite = !owner && b.invite ? await inviteFor(String(b.invite)) : null;
-  const returning = !owner && !invite && b.wizard ? await ranOneBefore() : false;
+  const returning = !owner && !invite && b.wizard ? await ranOneBefore((b.wizard as { who?: string })?.who === "solo") : false;
   if (!owner && !invite && !returning) {
     if (b.invite) return bad("That invite link has been used or has expired. Ask for a new one.", 410);
     // The old owner PIN, only until the owner has signed in with their email
@@ -35,8 +35,11 @@ export async function POST(req: Request) {
   return bare(b);
 }
 
-/** Signed in, and an organiser of a tournament that's been played; and not more than two new ones a month this way */
-async function ranOneBefore(): Promise<boolean> {
+/**
+ * Signed in, and an organiser of a tournament that's been played; and not more than two new group trips a month this
+ * way. Rounds on your own are counted separately and allowed more often (a weekly golfer): up to 12 a month.
+ */
+async function ranOneBefore(solo: boolean): Promise<boolean> {
   const a = await getAccount();
   if (!a) return false;
   const db = adminClient();
@@ -44,10 +47,15 @@ async function ranOneBefore(): Promise<boolean> {
   const ids = (mine ?? []).map((m) => m.tournament_id);
   if (!ids.length) return false;
   const today = new Date().toISOString().slice(0, 10);
-  const { data: played } = await db.from("rounds").select("id").in("tournament_id", ids).lt("play_date", today).limit(1);
+  // (a round with its date gone by, or one with scores in: a round on your own is played the day it's set up)
+  const { data: played } = await db.from("rounds").select("id").in("tournament_id", ids).or(`play_date.lt.${today},status.neq.upcoming`).limit(1);
   if (!played?.length) return false;
   const month = Date.now() - 30 * 864e5;
-  return (mine ?? []).filter((m) => Date.parse(m.created_at) > month).length < 3;
+  const recent = (mine ?? []).filter((m) => Date.parse(m.created_at) > month).map((m) => m.tournament_id);
+  if (!recent.length) return true;
+  const { data: kinds } = await db.from("tournaments").select("id,solo").in("id", recent);
+  const soloCount = (kinds ?? []).filter((k) => k.solo).length;
+  return solo ? soloCount < 12 : recent.length - soloCount < 2;
 }
 
 /** The site owner only: an empty tournament with just a name, set up by hand from the organiser home. */

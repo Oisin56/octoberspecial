@@ -17,6 +17,10 @@ import { cardInfo, gameComplete } from "@/lib/scorecards";
 import { fieldPosition, roundBoard } from "@/lib/live";
 import { ballName, sideLabel, toRoundCfg } from "@/lib/types";
 import { scoreWord } from "@/lib/scoreEntry";
+import { soloRounds } from "@/lib/solo";
+import { BioCard, usePlayerMe } from "@/components/PlayerAsks";
+
+const FINISHED_NOTE = "This tournament is finished, so scores can't be changed now. Ask the organiser if something's wrong.";
 
 type Draft = Record<string, BallHole>;
 
@@ -64,6 +68,14 @@ function ScoreInner() {
   const [moments, setMoments] = useState<number | null>(null);
   /** Which way the last move went, for the slide-in */
   const [slide, setSlide] = useState<"fwd" | "back" | null>(null);
+  /** A finished tournament: the organiser said yes to changing a score */
+  const [finishedOk, setFinishedOk] = useState(false);
+  /** On your own: the round's last hole is in */
+  const [soloDone, setSoloDone] = useState(false);
+  // On your own: the player bio is offered once, on the screen before the first round
+  const firstRound = !!state?.tournament.solo && !(state?.entries.length ?? 0);
+  const { me: soloMe } = usePlayerMe(firstRound && !sample);
+  const [bioLater, setBioLater] = useState(false);
 
   const round = useMemo(() => {
     if (!state) return null;
@@ -201,6 +213,36 @@ function ScoreInner() {
     );
   if (!round || !rcfg) return <p>No round to score.</p>;
   const ri = state.rounds.indexOf(round);
+  const t = state.tournament;
+  // Finished (a group trip): the cards are settled. The organiser can still correct one, after saying yes
+  const groupFinished = !!t.finished_at && !t.solo;
+  if (groupFinished && !correcting) {
+    return (
+      <div className="scorer stack">
+        <p className="notice">{FINISHED_NOTE}</p>
+        {session.role === "organiser" && (
+          <Link className="btn secondary" href={href("/admin#cards")}>
+            Correct a score
+          </Link>
+        )}
+        <LiveCard roundNumber={round.number} />
+      </div>
+    );
+  }
+  if (groupFinished && correcting && !finishedOk) {
+    return (
+      <div className="scorer stack finish-ask">
+        <h1>This tournament is finished</h1>
+        <p>Change this score? Everyone sees the change on the leaderboard, and it&apos;s logged with your name. The final report and the film stay as they are.</p>
+        <button className="btn block" onClick={() => setFinishedOk(true)}>
+          Yes, change it
+        </button>
+        <Link className="btn secondary block" href={href("/admin#cards")}>
+          Go back
+        </Link>
+      </div>
+    );
+  }
 
   // Not the scorer (or not yet chosen): the live card
   if (!game) {
@@ -251,7 +293,7 @@ function ScoreInner() {
     if (!round || !game) return;
     const hh = round.holes.find((x) => x.number === holeNo)!;
     const { draft: d, ctp: c, ld: l, conceded: k } = latest.current;
-    const payload = { scores: d, ctpWinner: hh.par === 3 ? c : null, ldWinner: hh.par === 5 ? l : null, conceded: k, final, ...(correcting ? { correct: true } : {}) };
+    const payload = { scores: d, ctpWinner: hh.par === 3 ? c : null, ldWinner: hh.par === 5 ? l : null, conceded: k, final, ...(correcting ? { correct: true } : {}), ...(finishedOk ? { confirmFinished: true } : {}) };
     patch((st) => ({
       ...st,
       entries: [
@@ -421,6 +463,8 @@ function ScoreInner() {
     setSlide("fwd");
     // The match is over (all in, or decided early): check and submit the card
     // (The sample round has no card to sign: it goes straight on to what everyone at home saw)
+    // On your own there's no card to hand in: the round is done
+    if (!sample && state?.tournament.solo && round && game && gameComplete(state, round.id, game)) return setSoloDone(true);
     if (!sample && state && round && game && gameComplete(state, round.id, game) && cardInfo(state, round.id, game.id).stage !== "final") return setReview(true);
     const n = after(was);
     if (n != null) return setHole(n);
@@ -440,8 +484,10 @@ function ScoreInner() {
         : `${conceded ? `${sideLabel(conceded, game, state.players)} ${game.sides.find((s) => s.id === conceded)!.playerIds.length > 1 ? "concede" : "concedes"}. ` : ""}${sideLabel(preview.winner, game, state.players)} win${game.sides.find((s) => s.id === preview.winner)!.playerIds.length > 1 ? "" : "s"} the hole`
       : null;
 
+  if (soloDone) return <SoloDone roundId={round.id} onBack={() => setSoloDone(false)} />;
+
   // The card: checking and submitting at the end, signing, or a final card (read-only unless correcting)
-  if (review || card.stage === "submitted" || (card.stage === "final" && !correcting)) {
+  if (!t.solo && (review || card.stage === "submitted" || (card.stage === "final" && !correcting))) {
     const early = card.stage === "finished" && entries.length < round.holes.length;
     return (
       <div className="scorer">
@@ -466,6 +512,7 @@ function ScoreInner() {
           <Link href={href("/admin#cards")}>Done</Link>
         </p>
       )}
+      {firstRound && soloMe?.bioDue === "first" && !bioLater && <BioCard onLater={() => setBioLater(true)} />}
       <div className="score-top">
         <span className="where">
           R{round.number} · {round.course_name}
@@ -869,6 +916,40 @@ function Stepper({ label, par, value, onSet, onOpen }: { label: string; par: num
       <button className="ss-btn ss-plus" aria-label={`${label}: one more`} disabled={value != null && value >= 15} onClick={() => onSet(value == null ? par + 1 : Math.min(15, value + 1))}>
         <span aria-hidden>+</span>
       </button>
+    </div>
+  );
+}
+
+/** On your own: the last hole is in. "That's your round", the score, and where to go next. */
+function SoloDone({ roundId, onBack }: { roundId: string; onBack: () => void }) {
+  const { state, href } = useT();
+  if (!state) return null;
+  const rounds = soloRounds(state);
+  const r = rounds.find((x) => x.id === roundId);
+  const lastOne = rounds.every((x) => x.id === roundId || x.played >= x.holes);
+  return (
+    <div className="scorer solo-done">
+      <p className="solo-done-kicker">{r ? `${r.course}` : ""}</p>
+      <h1>{lastOne ? "That's your round" : `That's round ${r?.number ?? ""}`}</h1>
+      {r?.big && (
+        <p className="solo-done-score">
+          <span className="big">{r.big}</span>
+          <span className="small">{r.small}</span>
+        </p>
+      )}
+      <div className="stack">
+        <Link className="btn block" href={href("/")}>
+          {lastOne ? "See your round" : "See your trip"}
+        </Link>
+        {lastOne && state.tournament.video_enabled !== false && (
+          <Link className="btn secondary block" href={href("/film")}>
+            Make your film
+          </Link>
+        )}
+        <button type="button" className="linkish" onClick={onBack}>
+          Back to the card
+        </button>
+      </div>
     </div>
   );
 }

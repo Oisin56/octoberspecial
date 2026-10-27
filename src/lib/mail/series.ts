@@ -21,7 +21,7 @@ import type { Stream } from "./postmark";
  */
 
 export type From = "setup" | "round1" | "lastRound" | "idle";
-export type SeriesKey = "welcome" | "owntrip" | "anniversary" | "comeback";
+export type SeriesKey = "welcome" | "owntrip" | "friends" | "anniversary" | "comeback";
 
 export interface StepCfg {
   id: string;
@@ -56,7 +56,7 @@ export const SERIES: SeriesDef[] = [
   {
     key: "welcome",
     name: "Welcome, for new organisers",
-    about: "Tips while they set up their first tournament. It's about the service they're using, so it doesn't need the marketing tick, but they can turn it off (Tips for my tournament).",
+    about: "Tips while they set up a group trip (not a round on their own). It's about the service they're using, so it doesn't need the marketing tick, but they can turn it off (Tips for my tournament).",
     stream: "updates",
     pref: "tips",
     froms: ["setup", "round1"],
@@ -130,9 +130,34 @@ export const SERIES: SeriesDef[] = [
     ],
   },
   {
+    key: "friends",
+    name: "Bring your friends, for golfers on their own",
+    about: "Two weeks after a round recorded on their own. Only to people with the marketing tick, never to someone who already runs a group trip, and at most once a year.",
+    stream: "marketing",
+    pref: "tripNews",
+    froms: ["lastRound"],
+    placeholders: ["first name", "course"],
+    look: "brand",
+    target: "new",
+    steps: [
+      {
+        id: "invite",
+        from: "lastRound",
+        days: 14,
+        on: true,
+        words: {
+          subject: "Bring your friends next time",
+          headline: "Bring your friends next time",
+          lines: "Next time, bring the group. Live scores for everyone, a leaderboard for the people at home, and one film of the whole trip.",
+          button: "Set up a trip",
+        },
+      },
+    ],
+  },
+  {
     key: "anniversary",
     name: "A year ago today, for everyone on the trip",
-    about: "On the anniversary of the last round, to the players and organisers with the marketing tick. Only for trips with a film and a clear winner. The organiser's email also has a small link to set up this year's trip.",
+    about: "On the anniversary of the last round, to the players and organisers with the marketing tick. Only for group trips with a film and a clear winner (never a round on your own). The organiser's email also has a small link to set up this year's trip.",
     stream: "marketing",
     pref: "tripNews",
     froms: ["lastRound"],
@@ -245,7 +270,7 @@ const addDays = (day: string, n: number) => {
   return d.toISOString().slice(0, 10);
 };
 
-async function organisersOf(tids: string[]): Promise<Map<string, { email: string; name: string | null }[]>> {
+export async function organisersOf(tids: string[]): Promise<Map<string, { email: string; name: string | null }[]>> {
   const db = adminClient();
   const out = new Map<string, { email: string; name: string | null }[]>();
   if (!tids.length) return out;
@@ -259,7 +284,24 @@ async function organisersOf(tids: string[]): Promise<Map<string, { email: string
   return out;
 }
 
-const T_COLS = "id,name,slug,theme,custom_colors,created_at";
+/** Of these emails, the people who organise a group trip (not just rounds on their own) */
+async function groupOrganisers(emails: string[]): Promise<Set<string>> {
+  const db = adminClient();
+  const out = new Set<string>();
+  for (let i = 0; i < emails.length; i += 200) {
+    const { data: accts } = await db.from("accounts").select("id,email").in("email", emails.slice(i, i + 200));
+    const ids = (accts ?? []).map((a) => a.id);
+    if (!ids.length) continue;
+    const { data: rows } = await db.from("account_tournaments").select("account_id,tournament_id").in("account_id", ids).eq("role", "organiser");
+    const tids = [...new Set((rows ?? []).map((r) => r.tournament_id))];
+    const { data: ts } = tids.length ? await db.from("tournaments").select("id").in("id", tids).eq("solo", false) : { data: [] };
+    const group = new Set((ts ?? []).map((t) => t.id));
+    for (const r of rows ?? []) if (group.has(r.tournament_id)) out.add(String((accts ?? []).find((a) => a.id === r.account_id)?.email).toLowerCase());
+  }
+  return out;
+}
+
+const T_COLS = "id,name,slug,theme,custom_colors,created_at,solo";
 
 /** Tournaments by when they were set up, their first round or their last */
 async function tournamentsFor(step: StepCfg, today: string) {
@@ -349,7 +391,8 @@ async function candidates(def: SeriesDef, step: StepCfg, today: string, site: st
     return out;
   }
 
-  const tours = await tournamentsFor(step, today);
+  // A round on your own: no setup tips or anniversary (that's for group trips); "Bring your friends" only for these
+  const tours = (await tournamentsFor(step, today)).filter((t) => (def.key === "friends" ? !!t.solo : !(t.solo && (def.key === "welcome" || def.key === "anniversary"))));
   if (!tours.length) return out;
   const orgs = await organisersOf(tours.map((t) => t.id));
   for (const t of tours) {
@@ -365,6 +408,9 @@ async function candidates(def: SeriesDef, step: StepCfg, today: string, site: st
         if ((count ?? 0) > 0) continue;
       }
       for (const o of organisers) out.push({ email: o.email, name: o.name, tournament: t, vars: { tournament: t.name, "first name": firstName(o.name) }, organiser: true });
+    } else if (def.key === "friends") {
+      const { data: last } = await db.from("rounds").select("course_name").eq("tournament_id", t.id).order("number", { ascending: false }).limit(1).maybeSingle();
+      for (const o of organisers) out.push({ email: o.email, name: o.name, tournament: t, vars: { "first name": firstName(o.name), course: last?.course_name ?? "" }, organiser: true });
     } else if (def.key === "owntrip") {
       for (const p of await tripPeople(t.id)) out.push({ email: p.email, name: p.name, tournament: t, vars: { tournament: t.name, "first name": firstName(p.name) }, organiser: false });
     } else if (def.key === "anniversary") {
@@ -455,6 +501,11 @@ async function narrow(def: SeriesDef, step: StepCfg, firstStep: StepCfg | null, 
     if (def.key === "owntrip" && (p?.roles ?? []).includes("organiser")) return false;
     return true;
   });
+  // Bring your friends: not for someone who already runs a group trip
+  if (def.key === "friends" && out.length) {
+    const groups = await groupOrganisers([...new Set(out.map((c) => c.email))]);
+    out = out.filter((c) => !groups.has(c.email));
+  }
   // A later step only for people who had the first one, for that tournament
   if (firstStep && firstStep.id !== step.id) {
     const ref = stepKey(def.key, firstStep.id);
@@ -465,8 +516,8 @@ async function narrow(def: SeriesDef, step: StepCfg, firstStep: StepCfg | null, 
     }
     out = out.filter((c) => had.has(`${c.email}|${c.tournament.id}`));
   }
-  // Your own trip: once a year at most, whatever the trip
-  if (def.key === "owntrip") {
+  // Your own trip, bring your friends: once a year at most, whatever the trip
+  if (def.key === "owntrip" || def.key === "friends") {
     const since = new Date(Date.now() - 365 * 864e5).toISOString();
     const recent = new Set<string>();
     const left = [...new Set(out.map((c) => c.email))];
@@ -513,7 +564,7 @@ export async function startWelcome(site: string, tournamentId: string) {
   const first = st.steps.find((s) => s.on);
   if (!first || first.from !== "setup" || first.days !== 0) return 0;
   const { data: t } = await adminClient().from("tournaments").select(T_COLS).eq("id", tournamentId).maybeSingle();
-  if (!t) return 0;
+  if (!t || t.solo) return 0;
   const orgs = (await organisersOf([t.id])).get(t.id) ?? [];
   const list = await narrow(
     def,

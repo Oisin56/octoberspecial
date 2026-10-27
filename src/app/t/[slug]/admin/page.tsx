@@ -25,6 +25,7 @@ import { THEMES, TONE_LABEL, toRoundCfg, type SetupJob } from "@/lib/types";
 import { cardInfo } from "@/lib/scorecards";
 import { CardsAdmin } from "@/components/CardsAdmin";
 import { BroadcastSettings } from "@/components/BroadcastSettings";
+import { FinishCard, FinishSettings, longDay } from "@/components/FinishPanel";
 
 const SECTIONS = {
   rounds: "Rounds and courses",
@@ -39,6 +40,7 @@ const SECTIONS = {
   look: "Look and style",
   share: "Share and invite",
   settings: "Settings",
+  finish: "Finish the tournament",
 } as const;
 type Section = keyof typeof SECTIONS;
 
@@ -86,7 +88,7 @@ export default function Admin() {
   if (!data) return <Loading />;
 
   const s = route.section;
-  if (!s) return <OrganiserHome data={data} />;
+  if (!s) return <OrganiserHome data={data} onSaved={reload} />;
 
   return (
     <div className="stack org-section">
@@ -117,16 +119,18 @@ export default function Admin() {
       {s === "organisers" && <OrganisersEditor data={data} onSaved={reload} />}
       {s === "settings" && (
         <>
+          <FinishSettings data={data} onSaved={reload} />
           <ResetTestData onSaved={reload} />
         </>
       )}
+      {s === "finish" && <FinishCard data={data} onSaved={reload} full />}
     </div>
   );
 }
 
 // ------------------------------------------------------------ home
 
-function OrganiserHome({ data }: { data: AdminData }) {
+function OrganiserHome({ data, onSaved }: { data: AdminData; onSaved: () => void }) {
   const { href } = useT();
   const subs = useSubscribers();
   const st = data.state;
@@ -162,7 +166,7 @@ function OrganiserHome({ data }: { data: AdminData }) {
       to: fresh ? href("/setup") : "#rounds",
       external: fresh,
     });
-  if (st.players.length < 2) todo.push({ text: "Add the players.", action: "Add players", to: "#players" });
+  if (st.players.length < 2 && !t.solo) todo.push({ text: "Add the players.", action: "Add players", to: "#players" });
   // Everyone's link first: then they can keep score and post from their phones
   if (noWay.length) todo.push({ text: `Send ${listNames(noWay.map((p) => p.name))} ${noWay.length === 1 ? "their link" : "their links"}, so they can keep score and post from their phones.`, action: "Send links", to: "#players" });
   // Straight after setting up: the first preview, written while the courses were read up on
@@ -188,6 +192,15 @@ function OrganiserHome({ data }: { data: AdminData }) {
     todo.push({ text: `No preview yet for round ${next.number} at ${next.course_name}.`, action: "Write the preview", to: `#write/preview/${next.id}` });
   if (drafts.length && !firstPreview && !todo.some((x) => x.to === "#write"))
     todo.push({ text: `${drafts.length} ${drafts.length === 1 ? "draft is" : "drafts are"} waiting to be read.`, action: "Read them", to: "#write" });
+
+  // Bios give the commentary its colour: the organiser can fill them in, or the players do from their own phones
+  const noBio = t.solo || t.finished_at ? [] : st.players.filter((p) => !p.home_club && !p.best_club && !p.worst_club && !p.weakness && !p.nickname && !p.bio);
+  if (noBio.length && rounds.some((r) => r.status === "upcoming"))
+    todo.push({ text: `${noBio.length === 1 ? `${noBio[0].name} has` : `${noBio.length} players have`} no bio yet. The commentary is better with one.`, action: "Add bios", to: "#players" });
+
+  // The end: the final report waits for the organiser's OK
+  const review = pieces.find((p) => p.kind === "tournament" && p.status === "draft");
+  if (t.finished_at && review) todo.unshift({ text: t.solo ? "The write-up of your round is ready." : "The final report is written and waiting for you.", action: "Read and publish", to: "#write" });
 
   const asking = (data.fans ?? []).filter((f) => f.asking).length;
   const following = (data.fans ?? []).filter((f) => (f.status ?? "approved") === "approved").length;
@@ -223,7 +236,9 @@ function OrganiserHome({ data }: { data: AdminData }) {
         <p className="org-hello">Organiser</p>
         <h1>{t.name}</h1>
         <p className="org-when">
-          {live
+          {t.finished_at
+            ? `Finished on ${longDay(t.finished_at)}.`
+            : live
             ? `Round ${live.number} is being played now at ${live.course_name}.`
             : next
               ? `Round ${next.number}, ${next.course_name}${countdown ? `, ${countdown}` : ""}.`
@@ -248,6 +263,8 @@ function OrganiserHome({ data }: { data: AdminData }) {
       {data.needEmail && <KeepSafe data={data} />}
 
       <SetupResume jobs={t.setup_jobs ?? []} />
+
+      <FinishCard data={data} onSaved={onSaved} />
 
       <section className={`next-up${todo.length ? "" : " calm"}`} aria-label="Next up">
         <h2>Next up</h2>
@@ -344,8 +361,10 @@ function FilmCard({ data }: { data: AdminData }) {
   return (
     <section className="panel stack">
       <h2>The film</h2>
-      {made.length ? (
-        <p>Your film is in Highlights. Share it, change something in the film studio, or make another version.</p>
+      {!made.length && st.tournament.film_removed_at ? (
+        <p>The film was removed after 12 months.</p>
+      ) : made.length ? (
+        <p>Your film is in Highlights. Share it, change something in the film studio, or make another version. Films are kept for 12 months.</p>
       ) : unlock.ok ? (
         <p>The tournament is over: everything&apos;s ready for the film.</p>
       ) : (

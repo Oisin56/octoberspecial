@@ -95,6 +95,17 @@ async function allowed(emails: string[], stream: Stream): Promise<Set<string>> {
       if (stream === "updates" && r?.updates_stopped_at) out.delete(e);
       if (stream === "marketing" && (!r || !r.marketing_at || r.marketing_stopped_at)) out.delete(e);
     }
+    // A deleted account: marketing only if they've said yes again since
+    if (stream === "marketing") {
+      const { deletedHash } = await import("../deleting");
+      const hashes = new Map(chunk.map((e) => [deletedHash(e), e]));
+      const { data: gone } = await db.from("deleted_emails").select("hash,at").in("hash", [...hashes.keys()]);
+      for (const g of gone ?? []) {
+        const e = hashes.get(g.hash)!;
+        const yes = by.get(e)?.marketing_at;
+        if (!yes || Date.parse(yes) < Date.parse(g.at)) out.delete(e);
+      }
+    }
   }
   return out;
 }

@@ -1,4 +1,5 @@
 import "server-only";
+import { filmExpiry } from "./films";
 import { createHmac } from "node:crypto";
 import { adminClient } from "./admin";
 import { loadServerState } from "./server-data";
@@ -222,7 +223,7 @@ export async function finishFilm(reel: FilmReel, origin: string): Promise<FilmRe
   const now = new Date().toISOString();
   const { data } = await db
     .from("reels")
-    .update({ status: "done", stage: "done", stage_at: null, video_path: pub.mediaPath, post_id: pub.postId, done_at: now, renders: Number(reel.renders ?? 0) + 1, updated_at: now })
+    .update({ status: "done", stage: "done", stage_at: null, video_path: pub.mediaPath, post_id: pub.postId, done_at: now, expires_at: filmExpiry(now), reminded_at: null, renders: Number(reel.renders ?? 0) + 1, updated_at: now })
     .eq("id", reel.id)
     .select()
     .single();

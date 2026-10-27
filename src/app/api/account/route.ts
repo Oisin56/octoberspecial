@@ -5,6 +5,9 @@ import { bad, json, siteOrigin, crossSite, CROSS_SITE } from "@/lib/server-data"
 import { clientIp, tooFast } from "@/lib/social";
 import { consoleEmail } from "@/lib/console-auth";
 import { raise } from "@/lib/queue";
+import { deleteAccount, soleOrganiserOf } from "@/lib/deleting";
+import { accountDeletedMail } from "@/lib/mail/emails";
+import { deliver, mailConfigured } from "@/lib/mail/send";
 
 /** Who's signed in, and My golf: the tournaments they run, play in and follow, and anything asking "Is this you?" */
 export async function GET() {
@@ -92,6 +95,23 @@ export async function POST(req: Request) {
       }
       const { data: requests } = await db.from("data_requests").select("kind,created_at,done_at").eq("email", email).is("done_at", null);
       return json({ ok: true, requests: requests ?? [] });
+    }
+
+    // Delete my account: everything I posted too, or keep my posts up under my name
+    if (b.action === "delete") {
+      if (b.confirm !== true) return bad("Confirm first");
+      const sole = await soleOrganiserOf(account.id);
+      if (sole.length)
+        return bad(
+          `You're the only organiser of ${sole.join(" and ")}. Finish ${sole.length === 1 ? "it" : "them"} first, or add someone to help run ${sole.length === 1 ? "it" : "them"}, then delete your account.`,
+          409,
+        );
+      // The goodbye goes first: afterwards there's no record of the address to send it with
+      const bye = mailConfigured() ? await accountDeletedMail(account.email).catch(() => null) : null;
+      if (bye) await deliver(bye).catch(() => null);
+      await deleteAccount(account, b.keepPosts === true);
+      await clearAccount();
+      return json({ ok: true, deleted: true });
     }
 
     if (b.action === "claim") {

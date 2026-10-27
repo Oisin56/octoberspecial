@@ -44,6 +44,8 @@ export interface AdminData {
   env: { ai: boolean; courses: boolean; mail?: boolean };
   /** Followers who joined the conversation */
   fans?: { id: string; name: string; blocked: boolean; created_at: string; status?: string; asking?: boolean }[];
+  /** Where it stands with finishing */
+  finish?: import("./FinishPanel").FinishInfo;
 }
 
 export function useAdmin() {

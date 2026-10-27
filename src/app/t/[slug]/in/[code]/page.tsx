@@ -7,6 +7,8 @@ import { useT } from "@/components/Providers";
 import { Loading } from "@/components/ui";
 import { landingPath } from "@/lib/landing";
 import { EmailSignIn } from "@/components/EmailSignIn";
+import { BioFlow } from "@/components/BioFlow";
+import { usePlayerMe } from "@/components/PlayerAsks";
 
 interface Look {
   name: string;
@@ -32,7 +34,10 @@ function LinkInner({ code }: { code: string }) {
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<{ name: string; role: "organiser" | "player"; playerId?: string } | null>(null);
   const [signedIn, setSignedIn] = useState(false);
+  const [bioDone, setBioDone] = useState(false);
   const sent = useRef(false);
+  // Straight after "I'm Neil", the first time: the player bio (Complete player bio or Later)
+  const { me, loaded } = usePlayerMe(!!done && !!look && !look.already);
 
   useEffect(() => {
     if (sent.current) return;
@@ -88,6 +93,9 @@ function LinkInner({ code }: { code: string }) {
         </Link>
       </div>
     );
+
+  if (done && look && !look.already && !loaded) return <Loading />;
+  if (done && look && !look.already && me?.bioDue === "first" && !bioDone) return <BioFlow initial={me.bio} name={done.name} onFinish={() => setBioDone(true)} />;
 
   if (done && look && !look.already)
     return (

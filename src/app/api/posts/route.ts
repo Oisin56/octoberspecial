@@ -4,6 +4,8 @@ import { bad, context, json, siteOrigin, DEMO_READONLY } from "@/lib/server-data
 import { sweep } from "@/lib/broadcast";
 import { isCrew, isOrganiser } from "@/lib/auth";
 import { fanAllowed, tooFast } from "@/lib/social";
+import { FEED_CLOSED, feedOpen } from "@/lib/types";
+import { removeStored } from "@/lib/films";
 
 export const maxDuration = 60;
 
@@ -23,7 +25,7 @@ export async function POST(req: Request) {
   // Delete your own post (the organiser can delete any)
   if (b.action === "delete") {
     const id = String(b.id ?? "");
-    const { data: p } = await adminClient().from("posts").select("id,fan_id,author_player_id,author_name").eq("id", id).eq("tournament_id", t.id).maybeSingle();
+    const { data: p } = await adminClient().from("posts").select("id,fan_id,author_player_id,author_name,media_path,broadcast_path").eq("id", id).eq("tournament_id", t.id).maybeSingle();
     if (!p) return json({ ok: true });
     const mine =
       (session.fanId && p.fan_id === session.fanId) ||
@@ -31,8 +33,16 @@ export async function POST(req: Request) {
       isOrganiser(session);
     if (!mine) return bad("You can only delete your own posts", 403);
     await adminClient().from("posts").delete().eq("id", id);
+    // The photo or clip goes too (a film keeps what it was made with; the film itself is looked after on its own page)
+    if (p.author_name !== "AI director") {
+      await removeStored(p.media_path);
+      await removeStored(p.broadcast_path);
+    }
     return json({ ok: true });
   }
+
+  // Finished more than 30 days ago (or the organiser closed it): the feed is read-only
+  if (!feedOpen(t)) return bad(FEED_CLOSED, 403);
 
   // Fans post photos (with a caption if they like) to the public feed: no clips, no notes on the play
   if (session.fanId) {

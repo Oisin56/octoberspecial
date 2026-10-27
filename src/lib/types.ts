@@ -65,7 +65,24 @@ export interface TournamentRow {
   privacy?: "friends" | "private";
   /** Private: players sign in with their email as well as their link */
   players_need_email?: boolean;
+  /** A round (or a trip) on your own: one player, who set it up */
+  solo?: boolean;
+  /** When it finished (the organiser's button, or by itself after the last round); none = still going */
+  finished_at?: string | null;
+  /** Photos, videos and comments can be posted until then (set when it finishes) */
+  feed_until?: string | null;
+  /** Its film reached 12 months and was removed */
+  film_removed_at?: string | null;
 }
+
+/** Finished: scoring is closed for players and the home page tells the story. */
+export const isFinished = (t: Pick<TournamentRow, "finished_at">) => !!t.finished_at;
+/** Said wherever a film is: on its page, the trip page and in the film email */
+export const FILM_KEPT = "Films are kept for 12 months. Download it to keep it for good.";
+export const FEED_CLOSED = "The feed is closed now the tournament has finished. Everything posted is still here to look back on.";
+/** Can people still post photos, videos and comments? */
+export const feedOpen = (t: Pick<TournamentRow, "finished_at" | "feed_until">, now = Date.now()) =>
+  !t.finished_at || !t.feed_until || new Date(t.feed_until).getTime() > now;
 
 export interface SetupJob {
   id: string;

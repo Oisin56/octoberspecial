@@ -1,7 +1,7 @@
 import "server-only";
 import { adminClient } from "../admin";
 import { paletteFor } from "../themes";
-import type { TournamentRow } from "../types";
+import { FILM_KEPT, type TournamentRow } from "../types";
 import { compose, type Footer, type Look, type Piece } from "./design";
 import { SERVICE, fill, paragraphs, wordsFor, type Words, type WordsDef } from "./words";
 import { emailSettings } from "./settings";
@@ -80,6 +80,7 @@ export async function build(
 
 const safety = "Didn't ask for this? Ignore this email and nothing happens.";
 
+
 // ------------------------------------------------------------ service emails
 
 export async function signInMail(email: string, link: string, code: string, intro?: string | null, words?: Words): Promise<Outgoing> {
@@ -101,9 +102,10 @@ const viaName = (organiser: string | null | undefined, t: { name: string }) => {
   return f && !/^(organiser|support|owner)$/i.test(f) ? `${f} via MyGolfBroadcast` : t.name;
 };
 
-export async function playerLinkMail(t: TLike, p: { name: string; email: string }, link: string, rounds: IcsRound[], organiser: string | null, words?: Words): Promise<Outgoing> {
+export async function playerLinkMail(t: TLike, p: { name: string; email: string; needsBio?: boolean }, link: string, rounds: IcsRound[], organiser: string | null, words?: Words): Promise<Outgoing> {
   const ics = roundsIcs(t.name, rounds, link);
   const after: Piece[] = [];
+  if (p.needsBio) after.push({ type: "p", text: "Fill in your player bio before the trip so the commentators know who you are." });
   if (ics) after.push({ type: "small", text: "The rounds are attached as a calendar file. Tap it to put them in your phone's calendar." });
   after.push({ type: "small", text: `This link is yours alone: it signs you in as ${p.name}. Please don't forward it.` });
   const m = await build(serviceDef("player-link"), {
@@ -170,8 +172,57 @@ export async function followWaitingMail(t: TLike, names: string[], link: string,
 }
 
 export async function filmReadyMail(t: TLike, link: string, to: string, words?: Words): Promise<Outgoing> {
-  const m = await build(serviceDef("film-ready"), { vars: { tournament: t.name }, look: tournamentLook(t), footer: await serviceFooter(), href: link, words });
+  const m = await build(serviceDef("film-ready"), {
+    vars: { tournament: t.name },
+    look: tournamentLook(t),
+    footer: await serviceFooter(),
+    href: link,
+    after: [{ type: "small", text: FILM_KEPT }],
+    words,
+  });
   return { ...m, to, kind: "film", stream: "service", template: "film-ready", tournamentId: t.id, fromName: BRAND_FROM, replyTo: await supportReplyTo() };
+}
+
+export async function finishTomorrowMail(t: TLike, site: string, to: string, name: string | null, words?: Words): Promise<Outgoing> {
+  const m = await build(serviceDef("finish-tomorrow"), {
+    vars: { tournament: t.name, "first name": firstName(name) },
+    look: tournamentLook(t),
+    footer: await serviceFooter(),
+    href: `${site}/t/${t.slug}/admin/cards`,
+    after: [{ type: "link", label: "Finish it now", href: `${site}/t/${t.slug}/admin#finish` }],
+    words,
+  });
+  return { ...m, to, kind: "finish", stream: "service", template: "finish-tomorrow", tournamentId: t.id, fromName: BRAND_FROM, replyTo: await supportReplyTo() };
+}
+
+/** A month before a film is removed. Followers get it as an update (one tap stops the trip's updates). */
+export async function filmReminderMail(
+  t: TLike,
+  site: string,
+  p: { email: string; name: string | null; follower: boolean },
+  film: { href: string; removeOn: string },
+  words?: Words,
+): Promise<Outgoing> {
+  const vars = { tournament: t.name, date: film.removeOn, "first name": firstName(p.name) };
+  if (!p.follower) {
+    const m = await build(serviceDef("film-reminder"), { vars, look: tournamentLook(t), footer: await serviceFooter(), href: film.href, words });
+    return { ...m, to: p.email, kind: "film", stream: "service", template: "film-reminder", tournamentId: t.id, fromName: t.name, replyTo: await organiserReplyTo(t.id) };
+  }
+  const sendId = newSendId();
+  const scope: Scope = `u:${t.id}`;
+  const m = await build(serviceDef("film-reminder"), {
+    vars,
+    look: tournamentLook(t),
+    footer: await listFooter(site, p.email, `You're getting this because you signed up for updates from ${t.name}.`, scope, sendId),
+    href: film.href,
+    words,
+  });
+  return { ...m, to: p.email, sendId, kind: "film", stream: "updates", template: "film-reminder", tournamentId: t.id, fromName: t.name, replyTo: await organiserReplyTo(t.id), unsubscribe: oneTap(site, p.email, scope, sendId) };
+}
+
+export async function accountDeletedMail(email: string, words?: Words): Promise<Outgoing> {
+  const m = await build(serviceDef("account-deleted"), { vars: {}, look: BRAND_LOOK, footer: await serviceFooter(), words });
+  return { ...m, to: email, kind: "account", stream: "service", template: "account-deleted", fromName: BRAND_FROM, replyTo: await supportReplyTo() };
 }
 
 export async function filmFailedMail(t: TLike, link: string, to: string, words?: Words): Promise<Outgoing> {
@@ -251,7 +302,7 @@ export async function previewService(key: string, site: string, words?: Words): 
     case "sign-in":
       return signInMail("neil@example.com", at, "482913", null, words);
     case "player-link":
-      return playerLinkMail(SAMPLE_T, { name: "Neil Byrne", email: "neil@example.com" }, at, SAMPLE_ROUNDS, "Ciarán Walsh", words);
+      return playerLinkMail(SAMPLE_T, { name: "Neil Byrne", email: "neil@example.com", needsBio: true }, at, SAMPLE_ROUNDS, "Ciarán Walsh", words);
     case "dates-changed":
       return datesChangedMail(SAMPLE_T, { name: "Neil Byrne", email: "neil@example.com" }, at, SAMPLE_ROUNDS, "Ciarán Walsh", words);
     case "follow-approved":
@@ -262,6 +313,12 @@ export async function previewService(key: string, site: string, words?: Words): 
       return filmReadyMail(SAMPLE_T, at, "neil@example.com", words);
     case "film-failed":
       return filmFailedMail(SAMPLE_T, at, "neil@example.com", words);
+    case "finish-tomorrow":
+      return finishTomorrowMail(SAMPLE_T, site, "neil@example.com", "Neil Byrne", words);
+    case "film-reminder":
+      return filmReminderMail(SAMPLE_T, site, { email: "neil@example.com", name: "Neil Byrne", follower: false }, { href: at, removeOn: "14 June" }, words);
+    case "account-deleted":
+      return accountDeletedMail("neil@example.com", words);
     case "invite-approved":
       return inviteApprovedMail("Neil Byrne", "neil@example.com", at, words);
     case "data-copy":

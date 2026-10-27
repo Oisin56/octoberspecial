@@ -9,6 +9,7 @@ import { LiveStrip } from "@/components/LiveStrip";
 import { TabBar } from "@/components/TabBar";
 import { GpsTab } from "@/components/GpsTab";
 import { PrivateGate } from "@/components/PrivateGate";
+import { PlayerAsks } from "@/components/PlayerAsks";
 import type { Metadata, Viewport } from "next";
 import { tournamentBySlug } from "@/lib/server-data";
 import { paletteFor } from "@/lib/themes";
@@ -50,7 +51,10 @@ export default async function TournamentLayout({ children, params }: LayoutProps
         <ClipQueue />
         <SignPrompt />
         <main className="wrap">
-          <PrivateGate>{children}</PrivateGate>
+          <PrivateGate>
+            <PlayerAsks />
+            {children}
+          </PrivateGate>
         </main>
         <TabBar />
         <GpsTab />

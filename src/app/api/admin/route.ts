@@ -1,15 +1,17 @@
 import { randomBytes } from "node:crypto";
+import { after } from "next/server";
+import { endPiece, finishTournament, finishedAsk, reopenTournament, setFeed, autoFinishDay, REOPEN_DAYS } from "@/lib/finish";
 import { adminClient } from "@/lib/admin";
 import { getAccount, isOrganiser } from "@/lib/auth";
 import { BRAND } from "@/lib/brand";
 import { SignInError, cleanEmail, emailProof, makeOffer, sendSignIn } from "@/lib/accounts";
-import { bad, context, json, loadServerState, siteOrigin, slugify, DEMO_READONLY, crossSite, CROSS_SITE } from "@/lib/server-data";
+import { bad, context, json, loadServerState, siteOrigin, slugify, DEMO_READONLY, crossSite, CROSS_SITE, type TournamentPrivate } from "@/lib/server-data";
 import { EMAIL_RE, emailPiece, mailConfigured } from "@/lib/email";
 import { NotSent, deliver } from "@/lib/mail/send";
 import { playerLinkMail } from "@/lib/mail/emails";
 import { datesSignature } from "@/lib/mail/ics";
 import { draftGuide, generatePiece, type PieceKind } from "@/lib/ai";
-import { cleanGuide, normalizeRound, type CourseGuide, type RoundRow, type Tone } from "@/lib/types";
+import { cleanGuide, feedOpen, normalizeRound, type CourseGuide, type RoundRow, type Tone } from "@/lib/types";
 import { guideFrom, guideStep, newGuideWork, type GuideWork } from "@/lib/guide";
 const TONE_IDS: Tone[] = ["broadsheet", "tabloid", "commentator", "dry"];
 import { getCourse, validStrokeIndexes } from "@/lib/courses";
@@ -102,8 +104,29 @@ export async function POST(req: Request) {
         supportVisit: (await db.from("activity").select("at").eq("tournament_id", t.id).eq("action", "tournament.open").eq("actor_role", "support").gte("at", new Date(Date.now() - 30 * 864e5).toISOString()).order("at", { ascending: false }).limit(1).maybeSingle()).data?.at ?? null,
         accountEmail: (await getAccount())?.email ?? null,
         organiserPinSet: !!t.organiser_pin_hash,
+        finish: await finishInfo(t),
         env: { ai: !!process.env.ANTHROPIC_API_KEY, courses: !!process.env.GOLFCOURSEAPI_KEY || !!process.env.GOLFAPI_KEY, mail: mailConfigured() },
       });
+    }
+
+    // ---------------------------------------------------------------- the end of the trip
+    case "finish": {
+      if (t.finished_at) return json({ ok: true, already: true });
+      const me = await getAccount();
+      const done = await finishTournament(t.id, { name: session.name, actor: { email: me?.email ?? session.name, role: "person" } }, { write: false });
+      // The final report (or the write-up) is written after answering
+      if (done) after(() => endPiece(t.id).then(() => {}, (e) => console.error("[finish] end piece", e)));
+      return json({ ok: true });
+    }
+    case "reopen": {
+      const me = await getAccount();
+      const r = await reopenTournament(t.id, { name: session.name, actor: { email: me?.email ?? session.name, role: "person" } });
+      if (r === "too-late") return bad(`Scoring can only be opened again in the first ${REOPEN_DAYS} days after finishing.`);
+      return json({ ok: true });
+    }
+    case "feed": {
+      if (!t.finished_at) return bad("The feed stays open until the tournament finishes.");
+      return json({ ok: true, feedUntil: await setFeed(t.id, b.open === true) });
     }
 
     case "updateTournament": {
@@ -177,7 +200,7 @@ export async function POST(req: Request) {
     // Send a player's link by email from the site. Tapping it also confirms the email is theirs.
     case "emailLink": {
       const pid = String(b.playerId ?? "");
-      const { data: p } = await db.from("players").select("id,name,email,link_code").eq("tournament_id", t.id).eq("id", pid).maybeSingle();
+      const { data: p } = await db.from("players").select("id,name,email,link_code,home_club,best_club,worst_club,weakness,nickname,bio").eq("tournament_id", t.id).eq("id", pid).maybeSingle();
       if (!p) return bad("Player not found", 404);
       if (!p.email) return bad("Add their email first");
       if (!mailConfigured()) return bad("Email isn't set up on this site yet. Send the link by WhatsApp or text instead.", 503);
@@ -189,7 +212,8 @@ export async function POST(req: Request) {
       const url = `${siteOrigin(req)}/t/${t.slug}/in/${code}?e=${emailProof(code, p.email)}`;
       const { data: rounds } = await db.from("rounds").select("id,number,course_name,play_date,tee_time").eq("tournament_id", t.id).order("number");
       try {
-        await deliver(await playerLinkMail(t, { name: p.name, email: p.email }, url, rounds ?? [], session.name));
+        const needsBio = !t.solo && !p.home_club && !p.best_club && !p.worst_club && !p.weakness && !p.nickname && !p.bio;
+        await deliver(await playerLinkMail(t, { name: p.name, email: p.email, needsBio }, url, rounds ?? [], session.name));
       } catch (e) {
         if (e instanceof NotSent) return bad("The site has stopped emailing that address (it bounced). Check it, or send the link by WhatsApp.", 409);
         return bad("Couldn't send the email just now. Check the address and try again.", 502);
@@ -523,6 +547,11 @@ export async function POST(req: Request) {
     case "deleteHole": {
       const { data: round } = await db.from("rounds").select("id").eq("id", b.roundId).eq("tournament_id", t.id).maybeSingle();
       if (!round) return bad("Round not found", 404);
+      if (t.finished_at && !t.solo && b.confirmFinished !== true) return finishedAsk();
+      if (t.finished_at && !t.solo) {
+        const { data: before } = await db.from("hole_entries").select("scores,ctp_winner,ld_winner").match({ round_id: b.roundId, game: b.game ?? "main", hole: b.hole }).maybeSingle();
+        await db.from("score_changes").insert({ tournament_id: t.id, round_id: b.roundId, game: b.game ?? "main", hole: b.hole, action: "score removed after the finish", before: before ?? null, after: null, by_name: session.name });
+      }
       const { error } = await db
         .from("hole_entries")
         .delete()
@@ -674,6 +703,8 @@ export async function POST(req: Request) {
         if (error) return bad(error.message, 500);
       }
       await db.from("rounds").update({ status: "upcoming" }).eq("tournament_id", t.id);
+      // Not finished any more: it starts again
+      await db.from("tournaments").update({ finished_at: null, finished_by: null, feed_until: null, finish_rounds: null, reopened_at: null, finish_warned_at: null, end_piece: null }).eq("id", t.id);
       return json({ ok: true });
     }
 
@@ -717,3 +748,20 @@ async function organiserList(tournamentId: string): Promise<{ email: string; acc
   for (const o of offers ?? []) if (!out.some((x) => x.email === cleanEmail(o.email))) out.push({ email: cleanEmail(o.email), accountId: null, pending: true, you: false });
   return out;
 }
+
+/** Where the tournament stands with finishing, for the organiser's page */
+async function finishInfo(t: TournamentPrivate) {
+  const { data: last } = await adminClient().from("rounds").select("play_date").eq("tournament_id", t.id).not("play_date", "is", null).order("play_date", { ascending: false }).limit(1).maybeSingle();
+  const lastDay = (last?.play_date as string | null) ?? null;
+  const { data: removed } = await adminClient().from("reels").select("id").eq("tournament_id", t.id).not("removed_at", "is", null).limit(1);
+  return {
+    lastDay,
+    autoDay: t.finished_at ? null : autoFinishDay({ solo: !!t.solo, reopened_at: t.reopened_at ?? null }, lastDay),
+    finishedBy: t.finished_by ?? null,
+    reopenUntil: t.finished_at ? new Date(Date.parse(t.finished_at) + REOPEN_DAYS * 864e5).toISOString() : null,
+    filmRemoved: !!removed?.length,
+    canReopen: !!t.finished_at && Date.now() - Date.parse(t.finished_at) < REOPEN_DAYS * 864e5,
+    feedOpen: feedOpen(t),
+  };
+}
+

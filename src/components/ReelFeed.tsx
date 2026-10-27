@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { mediaUrl } from "@/lib/supabase";
+import { useT } from "./Providers";
 import { AWARDS, type PostRow, type TournamentState } from "@/lib/types";
 
 /** One video in the feed: a highlights film or a clip from the course. */
@@ -106,6 +107,11 @@ const I = {
       <path d="M15 5l-7 7 7 7" />
     </svg>
   ),
+  trash: (
+    <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M4 7h16M10 7V4h4v3M6 7l1 13h10l1-13" />
+    </svg>
+  ),
 };
 
 /** Phone-style video feed: full screen and swipeable on phones; a phone or cinema frame on laptops. */
@@ -133,7 +139,8 @@ export function ReelFeed({
   const [sound, setSound] = useState(false);
   const [paused, setPaused] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
-  const [sheet, setSheet] = useState<null | "share" | "vote" | "awards">(null);
+  const [sheet, setSheet] = useState<null | "share" | "vote" | "awards" | "delete">(null);
+  const { session } = useT();
   const [shape, setShape] = useState<Record<string, "portrait" | "landscape">>({});
   const [progress, setProgress] = useState(0);
   const [wide, setWide] = useState(false);
@@ -335,6 +342,12 @@ export function ReelFeed({
         {I.sound(sound)}
         <span>{sound ? "Sound" : "Muted"}</span>
       </button>
+      {cur && !cur.film && !!session?.playerId && cur.post.author_player_id === session.playerId && (
+        <button onClick={() => setSheet("delete")} aria-label="Delete my clip">
+          {I.trash}
+          <span>Delete</span>
+        </button>
+      )}
     </div>
   );
 
@@ -423,6 +436,25 @@ export function ReelFeed({
           {sheet === "share" && <ShareSheet item={cur} tournamentName={tournamentName} onDone={() => setSheet(null)} />}
           {sheet === "vote" && <VoteSheet item={cur} state={state} api={api} refresh={refresh} />}
           {sheet === "awards" && <AwardsSheet state={state} api={api} refresh={refresh} />}
+          {sheet === "delete" && cur && (
+            <div className="stack">
+              <h2 style={{ margin: 0 }}>Delete this clip?</h2>
+              <p style={{ margin: 0 }}>It goes from Highlights and the feed for good. If it&apos;s already in a film, it stays in the film.</p>
+              <button
+                className="btn danger block"
+                onClick={async () => {
+                  const r = await api("/api/posts", { action: "delete", id: cur.post.id });
+                  setSheet(null);
+                  if (r.ok) refresh();
+                }}
+              >
+                Delete it
+              </button>
+              <button className="btn secondary block" onClick={() => setSheet(null)}>
+                Cancel
+              </button>
+            </div>
+          )}
         </Sheet>
       )}
     </div>

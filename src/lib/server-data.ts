@@ -10,6 +10,10 @@ import { recordError } from "./incidents";
 export interface TournamentPrivate extends TournamentRow {
   organiser_pin_hash: string | null;
   contributor_pin_hash: string | null;
+  /** Who finished it (a name, or "Finished by itself…") */
+  finished_by?: string | null;
+  /** Scoring opened again after finishing (it finishes by itself again 3 days later) */
+  reopened_at?: string | null;
 }
 
 export async function tournamentBySlug(slug: string): Promise<TournamentPrivate | null> {

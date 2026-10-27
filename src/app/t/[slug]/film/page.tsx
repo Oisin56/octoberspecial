@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { FILM_KEPT } from "@/lib/types";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useT } from "@/components/Providers";
@@ -477,6 +478,7 @@ function FilmProgress({ initial, left, onAnother, onDone }: { initial: FilmReel;
           )}
         </div>
         <p className="film-sub">It&apos;s in Highlights for everyone. {left > 0 ? `${left} more film${left === 1 ? "" : "s"} can be made for this tournament.` : ""}</p>
+        <p className="film-sub">{FILM_KEPT}</p>
       </section>
     );
   }
