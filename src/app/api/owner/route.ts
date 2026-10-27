@@ -13,7 +13,9 @@ import { brandPack, demoSlug, filmLimits, filmSpend, musicTracks, sampleFilm, se
 import { defaultVoices, speak } from "@/lib/director";
 import { SAMPLE_LINES } from "@/lib/sampleLines";
 import { approveInvite, listInvites, ownerEmail } from "@/lib/invites";
-import { inviteApprovedEmail, mailConfigured, mailSetup, sendOne, testEmail } from "@/lib/email";
+import { mailConfigured, mailSetup } from "@/lib/email";
+import { deliver } from "@/lib/mail/send";
+import { inviteApprovedMail, noteMail } from "@/lib/mail/emails";
 import { siteOrigin } from "@/lib/server-data";
 import { BRAND } from "@/lib/brand";
 import { BRAND_SLOTS, MAX_TRACKS, type BrandPack, type BrandSlot, type MusicTrack, type Shape } from "@/lib/film";
@@ -61,7 +63,7 @@ export async function GET() {
     invites,
     demo,
     library,
-    mail: { ...mailSetup(), ownerEmail: ownerEmail() || null },
+    mail: { ...(await mailSetup()), ownerEmail: ownerEmail() || null },
     films: {
       brand: Object.fromEntries(
         Object.entries(brand).map(([slot, shapes]) => [slot, Object.fromEntries(Object.entries(shapes ?? {}).map(([shape, c]) => [shape, c ? { ...c, src: mediaUrl(c.path) } : null]))]),
@@ -214,9 +216,10 @@ export async function POST(req: Request) {
   if (b.action === "testEmail") {
     const to = String(b.to ?? "").trim() || ownerEmail();
     if (!to) return bad("No address to send to. Set OWNER_EMAIL in Vercel, or type an address.");
-    if (!mailConfigured()) return bad("Email isn't set up: SMTP_USER and SMTP_PASS are missing in Vercel.");
+    if (!mailConfigured()) return bad("Email isn't set up: add POSTMARK_TOKEN in Vercel.");
     try {
-      await sendOne({ name: BRAND.name }, to, testEmail(siteOrigin(req)));
+      const site = siteOrigin(req);
+      await deliver({ ...(await noteMail(to, `Test email from ${BRAND.name}`, [`This is a test from ${BRAND.name}. If you can read it, the site can send email.`], { label: "Open the site", href: site })), kind: "test" });
       return json({ ok: true, to });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -243,7 +246,7 @@ export async function POST(req: Request) {
     if (!done) return bad("That request has been used already, or is gone", 404);
     const link = `${siteOrigin(req)}/new?invite=${done.token}`;
     try {
-      await sendOne({ name: BRAND.name }, done.invite.email, inviteApprovedEmail(done.invite.name, link));
+      await deliver(await inviteApprovedMail(done.invite.name, done.invite.email, link));
     } catch {
       return bad("Approved, but the email didn't send. Try Approve again.", 502);
     }

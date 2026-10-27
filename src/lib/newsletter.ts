@@ -1,4 +1,3 @@
-import { BRAND } from "./brand";
 /**
  * The newsletter email: masthead, hero, scoreboard strip, the article with a drop cap
  * and pull quote, a round card, results, a highlight, buttons and footer.
@@ -8,6 +7,7 @@ import { BRAND } from "./brand";
  */
 import { cleanBody, cleanTitle } from "./cleanText";
 import type { Palette } from "./themes";
+import { companyLine } from "./mail/design";
 
 export interface NewsletterData {
   tournamentName: string;
@@ -31,8 +31,11 @@ export interface NewsletterData {
   links: { primary: { label: string; href: string }; secondary: { label: string; href: string } };
   siteHref: string;
   siteLabel: string;
-  promoHref?: string | null;
-  unsubscribe: string;
+  /** This person's preferences page and the page to stop this tournament's emails */
+  prefs: string;
+  stop: string;
+  /** The company's postal address, for the footer */
+  address: string;
 }
 
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -213,9 +216,8 @@ ${roundCard}
 ${results}
 ${highlight}
 <tr><td class="nl-pad" align="center" style="padding:18px 24px 8px"><table role="presentation" cellpadding="0" cellspacing="0"><tr>${btn(d.links.primary.label, d.links.primary.href, true)}${btn(d.links.secondary.label, d.links.secondary.href, false)}</tr></table></td></tr>
-<tr><td class="nl-pad" style="padding:18px 28px 24px;border-top:1px solid #e3e8e5;font-family:Arial,sans-serif;font-size:12px;line-height:1.6;color:#6b756f">
- ${d.promoHref ? `<div style="padding-bottom:8px"><a href="${esc(d.promoHref)}" style="color:${p.board};font-weight:bold;text-decoration:none">Run your own golf event with ${BRAND.name}</a></div>` : ""}
- You're getting this because you follow ${esc(d.tournamentName)} at <a href="${esc(d.siteHref)}" style="color:#6b756f">${esc(d.siteLabel)}</a>. <a href="${esc(d.unsubscribe)}" style="color:#6b756f">Unsubscribe</a>.
+<tr><td class="nl-pad" style="padding:18px 28px 26px;border-top:1px solid #e3e8e5;font-family:Arial,sans-serif;font-size:14px;line-height:1.6;color:#56635b">
+ You're getting this because you signed up for updates from ${esc(d.tournamentName)} at <a href="${esc(d.siteHref)}" style="color:#56635b">${esc(d.siteLabel)}</a>.<br>${esc(companyLine(d.address))}<br><br><a href="${esc(d.prefs)}" style="color:#56635b;text-decoration:underline">Change what you get</a>&nbsp;&nbsp;&nbsp;<a href="${esc(d.stop)}" style="color:#56635b;text-decoration:underline">Stop these emails</a>
 </td></tr>
 </table></td></tr></table></body></html>`;
 
@@ -235,7 +237,11 @@ ${highlight}
     `${d.links.primary.label}: ${d.links.primary.href}`,
     `${d.links.secondary.label}: ${d.links.secondary.href}`,
     "",
-    `Unsubscribe: ${d.unsubscribe}`,
+    "--",
+    `You're getting this because you signed up for updates from ${d.tournamentName}.`,
+    companyLine(d.address),
+    `Change what you get: ${d.prefs}`,
+    `Stop these emails: ${d.stop}`,
   ]
     .filter((x) => x !== null)
     .join("\n")

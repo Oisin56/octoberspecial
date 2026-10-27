@@ -82,6 +82,7 @@ fs.writeFileSync(`${repo}/.env.local`, [
   "SMTP_HOST=127.0.0.1", "SMTP_PORT=2525", "SMTP_USER=me@test.ie", "SMTP_PASS=app-pass", // the test mailbox's login
   "OWNER_EMAIL=owner@test.ie", // the site owner signs in with this email (the PIN works until they have)
   "CRON_SECRET=local-cron-secret", // made up: the daily jobs only run when this is sent
+  "POSTMARK_TOKEN=local-postmark-token", "POSTMARK_API_URL=http://127.0.0.1:54321/postmark", // made up: the Postmark stand-in
   "GOLFAPI_KEY=local-stub", `GOLFAPI_BASE_URL=${STUB}/golfapi`, "",
 ].join("\n"));
 console.log("new local keys written");

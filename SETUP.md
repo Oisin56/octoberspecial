@@ -76,17 +76,20 @@ The main address is now the MyGolfSpecial front page. Your trip lives at `/t/oct
 
 The "See an example trip" button opens the October Special. To show a different tournament, set `NEXT_PUBLIC_DEMO_TOURNAMENT` to its slug.
 
-## Email (previews and reports to followers)
-Emails are sent from your own iCloud address. Nothing to buy.
-1. Go to **appleid.apple.com → Sign-In and Security → App-Specific Passwords**, create one called "October Special" and copy it. (Your Apple ID needs two-factor authentication, which it almost certainly has.)
-2. In **Vercel → Settings → Environment Variables** add:
-   - `SMTP_USER`: your iCloud email address
-   - `SMTP_PASS`: the app-specific password (not your Apple ID password)
-   - `SITE_URL`: `https://octoberspecial.vercel.app` (later `https://mygolfspecial.com`), so links in emails always go to the public site
-3. Run the latest `supabase/schema.sql` again (it adds the email list), then **Redeploy**.
-4. **Admin → Email list:** add people (one per line), or let them sign up on the home page.
-5. When you publish a preview, report or the tournament review, **Email it** is ticked: it goes to everyone on the list once. **Send me a test** sends it only to you first. Live bulletins are never emailed.
-- iCloud allows about 1,000 emails a day, plenty for a group of friends. Every email has an unsubscribe link.
+## Email (Postmark)
+Every email goes through Postmark, each kind on its own stream: service (sign-in codes, player links), updates
+(previews, reports, the evening email) and marketing (the series and campaigns). Until `POSTMARK_TOKEN` is set, the
+site keeps sending through the old mailbox (`SMTP_USER`, `SMTP_PASS`), so nothing breaks in between.
+1. Make a Postmark account and a server called MyGolfBroadcast. Ask Postmark to approve the account for sending to anyone.
+2. In Postmark, **Sender signatures → Add domain** for `mail.mygolfbroadcast.com` and for `news.mygolfbroadcast.com`. Copy
+   each DKIM and Return-Path record into **Vercel → Domains → mygolfbroadcast.com → DNS**. Add a DMARC record for
+   `_dmarc.mygolfbroadcast.com`: `v=DMARC1; p=none; rua=mailto:` plus an inbox of yours (tighten to `p=quarantine` after a month).
+3. In **Vercel → Settings → Environment Variables** add `POSTMARK_TOKEN` (the server's API token, never pasted in chat), then **Redeploy**.
+4. Run the latest `supabase/schema.sql`.
+5. **Console → Health → Set up Postmark**: makes the streams and tells Postmark to report bounces and complaints back. (The 10am run does it too.)
+6. **Console → Settings → Email**: the company's postal address (in every update and marketing email's footer) and where replies go.
+- Sending addresses can be changed with `MAIL_FROM_SERVICE`, `MAIL_FROM_UPDATES` and `MAIL_FROM_MARKETING`.
+- What every email says, the series, campaigns and stopped addresses are in **Console → Email**.
 
 ## The AI director (Admin → Highlights film)
 1. Choose the round or whole tournament and the length, then **Write the plan**. **Shape: Match my clips** makes the film portrait if most clips were filmed upright (best for phones and WhatsApp) or landscape otherwise; a clip filmed the other way gets a soft blurred fill behind it instead of black bars.

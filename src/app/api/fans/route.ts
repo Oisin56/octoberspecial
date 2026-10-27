@@ -1,6 +1,8 @@
 import { adminClient } from "@/lib/admin";
 import { bad, context, json, siteOrigin, DEMO_READONLY, crossSite, CROSS_SITE, canSee, fanStatus } from "@/lib/server-data";
-import { EMAIL_RE, followApprovedEmail, sendOne } from "@/lib/email";
+import { EMAIL_RE } from "@/lib/email-re";
+import { deliver } from "@/lib/mail/send";
+import { followApprovedMail } from "@/lib/mail/emails";
 import { isCrew, isOrganiser, setSession } from "@/lib/auth";
 import { SignInError, cleanEmail, sendSignIn, signIn } from "@/lib/accounts";
 import { clientIp, tooFast } from "@/lib/social";
@@ -111,7 +113,7 @@ export async function POST(req: Request) {
         if (fan.status !== "asking" && !(d === "approve" && fan.status === "declined")) return bad("That's been answered already", 409);
         await db.from("fans").update({ status: d === "approve" ? "approved" : "declined", decided_by: by, decided_at: at }).eq("id", fan.id);
         // They're told when they're let in (never when they're not)
-        if (d === "approve" && fan.email && fan.verified_at) await sendOne(t, fan.email, followApprovedEmail(t, fan.name, `${origin}/t/${t.slug}`)).catch(() => null);
+        if (d === "approve" && fan.email && fan.verified_at) await deliver(await followApprovedMail(t, fan.name, fan.email, `${origin}/t/${t.slug}`)).catch(() => null);
       } else if (d === "remove" || d === "mute" || d === "unmute") {
         if (!isOrganiser(session)) return bad("Only organisers can do that", 403);
         const patch = d === "remove" ? { status: "removed", decided_by: by, decided_at: at } : { blocked: d === "mute" };

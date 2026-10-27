@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { MARKETING_WORDING } from "@/lib/consent";
 import { useRouter } from "next/navigation";
 import { BRAND } from "@/lib/brand";
 import { formatName, inSentence, winName } from "@/lib/wizard";
@@ -39,7 +40,7 @@ import {
 const KEY = "mgb-wizard-v2";
 const INVITE_KEY = "mgb-invite";
 
-type Me = { owner: boolean; email: string | null; invite: string | null; ownerPin: boolean };
+type Me = { owner: boolean; email: string | null; invite: string | null; ownerPin: boolean; organiser: boolean };
 
 export default function NewTournament() {
   const router = useRouter();
@@ -82,7 +83,7 @@ export default function NewTournament() {
         try {
           localStorage.removeItem(INVITE_KEY);
         } catch {}
-      setMe({ owner: !!o.owner, email: a.account?.email ?? null, invite: okInvite ? invite : null, ownerPin: !!o.pin });
+      setMe({ owner: !!o.owner, email: a.account?.email ?? null, invite: okInvite ? invite : null, ownerPin: !!o.pin, organiser: !!a.account && (a.running ?? []).length > 0 });
     });
     return () => clearTimeout(t);
   }, []);
@@ -172,7 +173,7 @@ export default function NewTournament() {
   };
 
   if (!loaded) return <Shell>{null}</Shell>;
-  if (me && !me.owner && !me.invite && !pastGate && !hasOld)
+  if (me && !me.owner && !me.invite && !me.organiser && !pastGate && !hasOld)
     return (
       <Shell>
         <div className="wz">
@@ -268,10 +269,11 @@ function Shell({ children }: { children: React.ReactNode }) {
 
 function SafeStep({ d, setD, me, onDone, onFix }: { d: Draft; setD: (x: Draft) => void; me: Me | null; onDone: (slug: string) => void; onFix: (step: string) => void }) {
   const [ownerPin, setOwnerPin] = useState("");
+  const [news, setNews] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const signedIn = me?.email;
-  const needOwner = me && !me.owner && !me.invite;
+  const needOwner = me && !me.owner && !me.invite && !me.organiser;
   const okKeep = signedIn || /\S+@\S+\.\S+/.test(d.email);
 
   async function create() {
@@ -280,7 +282,7 @@ function SafeStep({ d, setD, me, onDone, onFix }: { d: Draft; setD: (x: Draft) =
     const r = await fetch("/api/tournaments", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ wizard: toWizard(d), email: signedIn ? "" : d.email, ownerPin: ownerPin || undefined, invite: me?.invite ?? undefined }),
+      body: JSON.stringify({ wizard: toWizard(d), email: signedIn ? "" : d.email, ownerPin: ownerPin || undefined, invite: me?.invite ?? undefined, marketing: news }),
     }).catch(() => null);
     const j = r ? await r.json().catch(() => ({})) : {};
     setBusy(false);
@@ -309,6 +311,12 @@ function SafeStep({ d, setD, me, onDone, onFix }: { d: Draft; setD: (x: Draft) =
           </p>
         </div>
       )}
+      <button type="button" className="cd-film-only wz-news" role="switch" aria-checked={news} onClick={() => setNews((v) => !v)}>
+        <span className="box" aria-hidden="true">
+          {news ? "✓" : ""}
+        </span>
+        <span>{MARKETING_WORDING}</span>
+      </button>
       <Summary d={d} onFix={onFix} />
       <Problems d={d} />
       {err && <p className="error">{err}</p>}

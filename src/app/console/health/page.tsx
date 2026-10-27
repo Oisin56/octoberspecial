@@ -1,6 +1,10 @@
 "use client";
 
+import { useState } from "react";
+import Link from "next/link";
 import { Light, Loading, PageHead, Problem, n, useView, when } from "@/components/console/kit";
+import { HealthLine, eact, useEmailView, type EmailHealth } from "@/components/console/email";
+import { useConsole } from "@/components/console/Shell";
 
 interface Health {
   lights: { id: string; name: string; light: "green" | "amber" | "red" | "idle"; lastOk: string | null; lastFail: string | null; failsToday: number; lastError: string | null }[];
@@ -54,6 +58,8 @@ export default function HealthPage() {
         </ul>
       </section>
 
+      <Sending />
+
       <div className="con-two">
         <section className="con-panel" aria-labelledby="h-mail">
           <h2 id="h-mail">Emails today</h2>
@@ -70,7 +76,9 @@ export default function HealthPage() {
               ))}
             </ul>
           )}
-          <p className="small con-quiet">The console&apos;s own emails go to {data.consoleEmail ?? "nobody yet (set one in Settings)"}. Bounces show here once the site moves to a sending service.</p>
+          <p className="small con-quiet">
+            The console&apos;s own emails go to {data.consoleEmail ?? "nobody yet (set one in Settings)"}. Bounces and stopped addresses are in <Link href="/console/email/stopped">Email</Link>.
+          </p>
         </section>
         <section className="con-panel" aria-labelledby="h-sign">
           <h2 id="h-sign">Sign-ins today</h2>
@@ -149,5 +157,50 @@ export default function HealthPage() {
         </section>
       </div>
     </>
+  );
+}
+
+/** How email goes out: Postmark (set up or not), or the old mailbox; this month's bounces and spam complaints. */
+function Sending() {
+  const { user } = useConsole();
+  const { data, reload } = useEmailView<{ health: EmailHealth }>("settings");
+  const [msg, setMsg] = useState<{ text: string; bad?: boolean } | null>(null);
+  const [busy, setBusy] = useState(false);
+  if (!data) return null;
+  const h = data.health;
+  const runs = (h.runs ?? {}) as Record<string, string>;
+  const words: Record<string, string> = {
+    postmark: `Through Postmark${h.postmark?.server ? ` (${h.postmark.server})` : ""}, each kind of email on its own stream.`,
+    "postmark-not-set-up": "Postmark's key is in, but it isn't set up yet. Set it up to make the streams and hear about bounces.",
+    mailbox: "Through the old mailbox, until Postmark's key (POSTMARK_TOKEN) is added in Vercel.",
+    none: "Nothing is set up to send email.",
+  };
+  return (
+    <section className="con-panel" aria-labelledby="h-send">
+      <h2 id="h-send">Sending email</h2>
+      <p>{words[h.sending] ?? h.sending}</p>
+      {h.postmark && !h.postmark.customUnsub && <p className="small con-quiet">Postmark handles the one-tap unsubscribe on news and offers for now (until they approve our own). The site still hears about every one and stops them.</p>}
+      <HealthLine h={h} />
+      <p className="small con-quiet" style={{ marginTop: 0 }}>
+        {runs.morningAt ? `The 10am run last went ${when(runs.morningAt)}. ` : "The 10am run hasn't gone yet. "}
+        {runs.eveningAt ? `The 8pm run last went ${when(runs.eveningAt)}.` : "The 8pm run hasn't gone yet."} How Gmail rates the site is in Gmail&apos;s Postmaster Tools (postmaster.google.com), once the domain is added there.
+      </p>
+      {user.role === "owner" && (h.sending === "postmark-not-set-up" || h.sending === "postmark") && (
+        <button
+          className="btn secondary"
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true);
+            const r = await eact({ action: "setup.postmark" });
+            setBusy(false);
+            setMsg(r.ok ? { text: "Postmark is set up: three streams, and bounces and complaints come back to the site." } : { text: String(r.j.error ?? "That didn't work"), bad: true });
+            if (r.ok) reload();
+          }}
+        >
+          {h.sending === "postmark" ? "Check the Postmark set-up again" : "Set up Postmark"}
+        </button>
+      )}
+      {msg && <p className={msg.bad ? "error" : "con-ok"}>{msg.text}</p>}
+    </section>
   );
 }

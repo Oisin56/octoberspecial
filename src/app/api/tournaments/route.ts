@@ -5,20 +5,26 @@ import { inviteFor, spendInvite } from "@/lib/invites";
 import { adminClient } from "@/lib/admin";
 import { bad, json, siteOrigin, slugify, crossSite, CROSS_SITE } from "@/lib/server-data";
 import { WizardError, cleanWizard, createFromWizard } from "@/lib/wizard-server";
-import { EMAIL_RE } from "@/lib/email";
+import { EMAIL_RE } from "@/lib/email-re";
+import { recordMarketing } from "@/lib/mail/prefs";
+import { MARKETING_WORDING } from "@/lib/consent";
+import { startWelcome } from "@/lib/mail/series";
+import { after } from "next/server";
 
 export const maxDuration = 60;
 
 /**
- * Create a new tournament with the setup wizard. Invitation-only: the site owner, or someone with an approved invite
- * link (good for one tournament).
+ * Create a new tournament with the setup wizard. Invitation-only: the site owner, someone with an approved invite link
+ * (good for one tournament), or someone signed in who has run one before (the "same time next year" emails send them
+ * back here).
  */
 export async function POST(req: Request) {
   if (crossSite(req)) return bad(CROSS_SITE, 403);
   const b = await req.json().catch(() => ({}));
   const owner = await isOwner();
   const invite = !owner && b.invite ? await inviteFor(String(b.invite)) : null;
-  if (!owner && !invite) {
+  const returning = !owner && !invite && b.wizard ? await ranOneBefore() : false;
+  if (!owner && !invite && !returning) {
     if (b.invite) return bad("That invite link has been used or has expired. Ask for a new one.", 410);
     // The old owner PIN, only until the owner has signed in with their email
     if (!b.ownerPin || !(await checkOwnerPin(String(b.ownerPin)))) return bad("New tournaments are invitation-only for now. Ask for an invite.", 401);
@@ -27,6 +33,21 @@ export async function POST(req: Request) {
   if (b.wizard) return fromWizard(req, b, invite?.id ?? null);
   if (invite) return bad("Use the setup wizard to make your tournament");
   return bare(b);
+}
+
+/** Signed in, and an organiser of a tournament that's been played; and not more than two new ones a month this way */
+async function ranOneBefore(): Promise<boolean> {
+  const a = await getAccount();
+  if (!a) return false;
+  const db = adminClient();
+  const { data: mine } = await db.from("account_tournaments").select("tournament_id,created_at").eq("account_id", a.id).eq("role", "organiser").limit(500);
+  const ids = (mine ?? []).map((m) => m.tournament_id);
+  if (!ids.length) return false;
+  const today = new Date().toISOString().slice(0, 10);
+  const { data: played } = await db.from("rounds").select("id").in("tournament_id", ids).lt("play_date", today).limit(1);
+  if (!played?.length) return false;
+  const month = Date.now() - 30 * 864e5;
+  return (mine ?? []).filter((m) => Date.parse(m.created_at) > month).length < 3;
 }
 
 /** The site owner only: an empty tournament with just a name, set up by hand from the organiser home. */
@@ -68,16 +89,30 @@ async function fromWizard(req: Request, b: Record<string, unknown>, inviteId: st
   }
   if (inviteId) await spendInvite(inviteId, created.id).catch(() => {});
   let emailed = false;
+  const news = b.marketing === true;
   if (account) {
     await linkRole(account.id, created.id, "organiser", created.organiser.playerId ?? null).catch(() => {});
     await setSession(created.id, await organiserSession(created.id, "account", created.organiser.playerId));
+    if (news) await recordMarketing(account.email, created.id, MARKETING_WORDING).catch(() => {});
   } else {
     // This phone runs it now. It joins that email's My golf when they confirm it (the link or the code we send)
     await setSession(created.id, { role: "organiser", name: created.organiser.name, playerId: created.organiser.playerId, via: "create", at: Date.now() });
     await makeOffer(created.id, email, "organiser", created.organiser.playerId ?? null, null).catch(() => {});
+    // Their tick is kept with the offer, and counts once they confirm the email is theirs
+    if (news)
+      await adminClient()
+        .from("account_offers")
+        .update({ marketing_at: new Date().toISOString(), marketing_wording: MARKETING_WORDING })
+        .eq("tournament_id", created.id)
+        .eq("role", "organiser")
+        .eq("email", email)
+        .is("answered_at", null);
     emailed = await sendSignIn(siteOrigin(req), email, { next: `/t/${created.slug}/admin`, intro: `Your tournament ${created.name} is ready. Tap the button to confirm your email, so you can get back in to run it on any phone.` })
       .then(() => true)
       .catch((e) => (e instanceof SignInError ? false : Promise.reject(e)));
   }
+  // The first of the welcome tips (when that series is switched on)
+  const origin = siteOrigin(req);
+  after(() => startWelcome(origin, created.id).catch((e) => console.error("[welcome]", e)));
   return json({ slug: created.slug, emailed });
 }

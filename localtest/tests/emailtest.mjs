@@ -40,7 +40,7 @@ ok(true, "follower signs up on the home page");
 await sleep(500);
 let m = mails();
 ok(m.length === 1 && m[0].to.join() === "clodagh@example.ie" && /You're signed up/.test(m[0].subject), "welcome email sent");
-ok(/unsubscribe\?token=[0-9a-f-]{36}/.test(m[0].html) && m[0].from.includes("The October Special"), "welcome has unsubscribe link, from the tournament name");
+ok(/\/email\?k=/.test(m[0].html) && /Stop these emails/.test(m[0].html) && m[0].from.includes("The October Special"), "welcome has the stop and preferences links, from the tournament name");
 
 ok((await anon("/api/subscribe", { email: "clodagh@example.ie", name: "C" })).j.already === true, "signing up twice is harmless");
 ok((await anon("/api/subscribe", { email: "not-an-email" })).status === 400, "bad address rejected");
@@ -78,7 +78,7 @@ ok(e0.subject === "Heath and heartache | The October Special", "subject is the h
 ok(e0.html.includes("Preview · Round 1") && e0.html.includes("The Opening Shots</h2>") && e0.html.includes("waits &amp; bites"), "article in full, subheading styled, text escaped");
 ok(/\/t\/october-special-2026\/rounds\/1/.test(e0.html), "button links to the round page");
 console.log("     list headers:", Object.keys(e0.headers).filter((k) => k.startsWith("list")).join(", "));
-ok(/unsubscribe\?token=/.test(JSON.stringify(e0.headers.list ?? e0.headers["list-unsubscribe"] ?? "")) && /One-Click/.test(JSON.stringify(e0.headers.list ?? "")), "one-click unsubscribe headers for mail apps");
+ok(/\/api\/email\/stop\?k=/.test(e0.headers["list-unsubscribe"] ?? "") && /One-Click/.test(e0.headers["list-unsubscribe-post"] ?? ""), "one-click unsubscribe headers for mail apps");
 fs.writeFileSync("/var/tmp/ospg/shots/email.html", e0.html);
 res = await org("/api/admin", { action: "emailPiece", id: pv.j.piece.id, test: true });
 await sleep(300);
@@ -88,9 +88,11 @@ await sleep(300);
 ok(mails().length === 4, "re-publishing doesn't email everyone twice");
 
 // ---- unsubscribe
-const link = e0.html.match(/href="([^"]*unsubscribe\?token=[^"]+)"/)[1].replace(/^https?:\/\/[^/]+/, BASE);
-await page.goto(link);
-ok((await page.getByText("You're unsubscribed from The October Special.").count()) === 1, "unsubscribe link works");
+const link = e0.text.match(/Stop these emails: (\S+)/)[1].replace(/^https?:\/\/[^/]+/, BASE);
+await page.goto(link, { waitUntil: "networkidle" });
+await page.getByRole("button", { name: "Stop them" }).click();
+await page.getByText("Done. You won't get emails about The October Special any more.").waitFor({ timeout: 10000 });
+ok(true, "the stop link in the footer works");
 const bul = await org("/api/admin", { action: "aiGenerate", kind: "bulletin", roundId: r1.id });
 res = await org("/api/admin", { action: "aiUpdate", id: bul.j.piece.id, status: "published", email: true });
 ok(res.j.emailed == null, "bulletins are never emailed");

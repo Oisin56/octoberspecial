@@ -263,7 +263,7 @@ export default function PersonPage({ params }: { params: Promise<{ id: string }>
               <span>
                 {ACTION_WORDS[a.action] ?? a.action}
                 <small>
-                  {a.actor_role === "support" ? "Support" : a.actor_role === "owner" ? "Owner" : "The site"}: {a.actor}
+                  {a.actor_role === "support" ? "Support" : a.actor_role === "owner" ? "Owner" : a.actor_role === "person" ? "Them" : "The site"}: {a.actor}
                 </small>
               </span>
               <span className="con-age">{when(a.at)}</span>

@@ -4,8 +4,8 @@ import { ConsoleDenied, requireConsole, type ConsoleUser } from "@/lib/console-a
 import { logActivity } from "@/lib/activity";
 import { bad } from "@/lib/server-data";
 import { PRIVATE_BUCKET } from "@/lib/files";
-import { brandEmail, sendOne } from "@/lib/email";
-import { BRAND } from "@/lib/brand";
+import { deliver } from "@/lib/mail/send";
+import { noteMail } from "@/lib/mail/emails";
 
 export const maxDuration = 60;
 
@@ -206,12 +206,14 @@ export async function GET(req: Request) {
         await db.storage.from(PRIVATE_BUCKET).upload(path, body, { contentType: "text/csv; charset=utf-8", upsert: false });
         const { data } = await db.storage.from(PRIVATE_BUCKET).createSignedUrl(path, 24 * 3600, { download: file });
         const link = data?.signedUrl?.startsWith("http") ? data.signedUrl : `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1${data?.signedUrl ?? ""}`;
-        await sendOne({ name: `${BRAND.name} console` }, user.email, {
-          subject: `Your export is ready: ${file}`,
-          html: brandEmail([`Your export of ${n.toLocaleString("en-IE")} rows is ready. The link works for 24 hours.`, ...((count ?? 0) > n ? [`It's the newest ${n.toLocaleString("en-IE")} of ${(count ?? 0).toLocaleString("en-IE")}. Narrow the filters for the rest.`] : [])], { label: "Download it", href: link }),
-          text: `Your export of ${n} rows is ready. The link works for 24 hours:\n\n${link}\n`,
-          kind: "console",
-        });
+        await deliver(
+          await noteMail(
+            user.email,
+            `Your export is ready: ${file}`,
+            [`Your export of ${n.toLocaleString("en-IE")} rows is ready. The link works for 24 hours.`, ...((count ?? 0) > n ? [`It's the newest ${n.toLocaleString("en-IE")} of ${(count ?? 0).toLocaleString("en-IE")}. Narrow the filters for the rest.`] : [])],
+            { label: "Download it", href: link },
+          ),
+        );
         await logActivity(user, `export.${what}`, { detail: { rows: n, filters, emailed: true } });
       } catch (e) {
         console.error("[export] background export failed", e);

@@ -212,6 +212,25 @@ function AccountInner() {
 
             {empty && <p>Nothing here yet. Tap the link you were sent for a tournament, or start your own.</p>}
 
+            <section className="golf-list golf-data" aria-labelledby="your-emails">
+              <h2 id="your-emails">Emails</h2>
+              <p style={{ margin: 0 }}>Choose what we email you: tournament updates, trip news, tips.</p>
+              <button
+                className="btn secondary block"
+                disabled={!!busy}
+                onClick={async () => {
+                  setBusy("emails");
+                  const r = await fetch("/api/email/prefs", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "mine" }) }).catch(() => null);
+                  const j = r ? await r.json().catch(() => ({})) : {};
+                  setBusy(null);
+                  if (r?.ok && j.k) router.push(`/email?k=${encodeURIComponent(j.k)}`);
+                  else setErr(j.error ?? "That didn't work. Try again.");
+                }}
+              >
+                Choose what we email you
+              </button>
+            </section>
+
             <section className="golf-list golf-data" aria-labelledby="your-data">
               <h2 id="your-data">Your data</h2>
               <p style={{ margin: 0 }}>Ask for a copy of everything we hold about you, or for your account to be deleted. We&apos;ll do it within a month.</p>

@@ -74,7 +74,7 @@ ok(/nl-drop/.test(h) && /&ldquo;/.test(h), "drop cap and pull quote");
 ok(/Round 1 results/.test(h) && /Front 9/.test(h) && /18 holes/.test(h) && /Birdies/.test(h), "results table from the scoring engine");
 ok(/Round 1 at a glance/.test(h) && /Played/.test(h) && /Hole to watch/.test(mp.html), "round card; signature hole in previews");
 ok(/Watch the highlight/.test(h) && /Quarry hole/.test(h) && /highlights\?round=1/.test(h), "highlight clip card");
-ok(/Full scorecard/.test(h) && /Leaderboard/.test(h) && /Run your own golf event with MyGolfBroadcast/.test(h) && /Unsubscribe/.test(h), "buttons and footer");
+ok(/Full scorecard/.test(h) && /Leaderboard/.test(h) && !/Run your own golf event/.test(h) && /Change what you get/.test(h) && /Stop these emails/.test(h), "buttons and footer (no advert in an update)");
 ok(!/__UNSUB__/.test(h) && !/__UNSUB__/.test(mr.text), "unsubscribe links filled in");
 ok(/OVERALL POINTS|Overall points/.test(mr.text) && /THE QUARRY HOLE/.test(mr.text), "plain-text version readable");
 ok(/Preview · Round 2/.test(mp.html) && /Tee time/.test(mp.html) && !/Round 2 results/.test(mp.html), "preview has round card, no results");

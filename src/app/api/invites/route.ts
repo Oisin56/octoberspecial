@@ -1,9 +1,10 @@
 import { adminClient } from "@/lib/admin";
-import { EMAIL_RE, inviteRequestEmail, mailConfigured, sendOne } from "@/lib/email";
+import { EMAIL_RE } from "@/lib/email-re";
+import { deliver, mailConfigured } from "@/lib/mail/send";
+import { noteMail } from "@/lib/mail/emails";
 import { inviteFor } from "@/lib/invites";
 import { bad, json, siteOrigin } from "@/lib/server-data";
 import { clientIp, tooFast } from "@/lib/social";
-import { BRAND } from "@/lib/brand";
 import { raise } from "@/lib/queue";
 import { consoleAddress } from "@/lib/console-mail";
 
@@ -35,9 +36,9 @@ export async function POST(req: Request) {
     // A flood of requests: they all go in Needs you, but the console's inbox hears about the first ten an hour
     const { count: lastHour } = await db.from("invite_requests").select("id", { count: "exact", head: true }).gte("created_at", new Date(Date.now() - 3600e3).toISOString());
     if ((lastHour ?? 0) > 10) return json({ ok: true });
-    if (!to || !mailConfigured()) console.error("[invites] no console email to notify (set OWNER_EMAIL and the SMTP settings)");
+    if (!to || !mailConfigured()) console.error("[invites] no console email to notify (set OWNER_EMAIL, and POSTMARK_TOKEN or the SMTP settings)");
     else
-      await sendOne({ name: BRAND.name }, to, inviteRequestEmail({ name, email, about }, `${siteOrigin(req)}/console/needs`)).catch((e) =>
+      await deliver(await noteMail(to, `Invite request: ${name}`, [`${name} (${email}) would like to run a tournament.`, about ? `About it: ${about}` : "They didn't say anything about it."], { label: "See requests", href: `${siteOrigin(req)}/console/needs` })).catch((e) =>
         console.error("[invites] couldn't email the console:", e instanceof Error ? e.message : e),
       );
   }

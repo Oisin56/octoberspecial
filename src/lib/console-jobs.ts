@@ -2,7 +2,8 @@ import "server-only";
 import { adminClient } from "./admin";
 import { raise } from "./queue";
 import { monthStartIso, SERVICES } from "./usage";
-import { brandEmail, sendOne } from "./email";
+import { deliver } from "./mail/send";
+import { dataCopyMail } from "./mail/emails";
 import { BRAND } from "./brand";
 import { consoleMail } from "./console-mail";
 import { getSetting, setSetting } from "./site";
@@ -109,7 +110,7 @@ export async function morningEmail(force = false): Promise<boolean> {
   if (bad.length) lines.push(`Health: ${bad.map((l) => `${l.name} ${l.light === "red" ? "is down" : "had failures"}`).join("; ")}.`);
   const text = lines;
   const subject = n.total ? `${n.total} ${n.total === 1 ? "thing needs" : "things need"} you` : "Nothing needs you today";
-  const sent = await consoleMail(`${BRAND.name}: ${subject}`, brandEmail(lines, { label: "Open the console", href: `${site}/console` }), `${text.join("\n")}\n\n${site}/console\n`);
+  const sent = await consoleMail(`${BRAND.name}: ${subject}`, text, { label: "Open the console", href: `${site}/console` });
   if (sent) await setSetting("cron", { ...(await getSetting<Record<string, unknown>>("cron", {})), morning: today });
   return sent;
 }
@@ -205,6 +206,7 @@ export async function personData(email: string) {
     posts: posts.data,
     comments: comments.data,
     requests: requests.data,
+    emailsSent: (await db.from("email_sends").select("at,kind,status,clicked_at").eq("email", e).order("at", { ascending: false }).limit(500)).data ?? [],
   };
 }
 
@@ -212,14 +214,7 @@ export async function personData(email: string) {
 export async function sendPersonData(email: string) {
   const data = await personData(email);
   const e = email.trim().toLowerCase();
-  const paras = ["Here's a copy of everything we hold about you, attached as a file you can open with any text editor.", "If anything in it is wrong, or you'd like it deleted, reply to this email."];
-  await sendOne({ name: BRAND.name }, e, {
-    subject: `Your data from ${BRAND.name}`,
-    html: brandEmail(paras, null),
-    text: paras.join("\n\n"),
-    kind: "data copy",
-    attachments: [{ filename: "my-data.json", content: JSON.stringify(data, null, 2), contentType: "application/json" }],
-  });
+  await deliver(await dataCopyMail(e, { filename: "my-data.json", content: JSON.stringify(data, null, 2) }));
 }
 
 export const SERVICE_NAMES = Object.fromEntries(SERVICES.map((s) => [s.id, s.name]));

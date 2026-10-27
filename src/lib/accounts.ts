@@ -2,8 +2,10 @@ import "server-only";
 import { createHash, createHmac, randomBytes, randomInt } from "node:crypto";
 import { adminClient } from "./admin";
 import { allSessions, getAccount, ownerPinPhone, hashCode, safeEqual, setAccount, type Account, type Session } from "./auth";
-import { BRAND } from "./brand";
-import { EMAIL_RE, mailConfigured, sendOne, signInEmail } from "./email";
+import { EMAIL_RE } from "./email-re";
+import { deliver, mailConfigured } from "./mail/send";
+import { signInMail } from "./mail/emails";
+import { recordMarketing } from "./mail/prefs";
 
 /**
  * One sign-in per person: their email, a one-tap link or a 6-digit code (no password). What they can do depends on
@@ -69,7 +71,7 @@ export async function sendSignIn(origin: string, email: string, opts: { next?: s
   if (error) throw new SignInError(/column|account_tokens/.test(error.message) ? "Sign-in needs the latest database update (schema.sql)" : "Couldn't send just now. Try again.", 500);
   const link = purpose === "owner" ? `${origin}/console?check=${token}` : `${origin}/account/in?token=${token}`;
   try {
-    await sendOne({ name: BRAND.name }, email, signInEmail(link, code, opts.intro));
+    await deliver(await signInMail(email, link, code, opts.intro));
   } catch {
     throw new SignInError("Couldn't send the email just now. Check the address and try again.", 502);
   }
@@ -245,7 +247,7 @@ export async function signIn(email: string): Promise<Account> {
   for (const [tid, s] of Object.entries(await allSessions())) {
     if (s.role !== "organiser" || s.via !== "create") continue;
     const { data: offer } = await db.from("account_offers").select("id").eq("tournament_id", tid).eq("role", "organiser").eq("email", a.email.toLowerCase()).is("answered_at", null).maybeSingle();
-    if (offer) await answerOffer(a, offer.id, true).catch(() => {});
+    if (offer) await answerOffer(a, offer.id, true, true).catch(() => {});
   }
   // A follower who gave this email on this phone: it's confirmed now (works on any phone, and lets a request to follow
   // a private tournament reach the players)
@@ -305,7 +307,15 @@ export async function claim(a: Account, tid: string) {
   if (s.role === "organiser") {
     await linkRole(a.id, tid, "organiser", s.playerId ?? null);
     await db.from("tournaments").update({ organiser_pin_hash: null }).eq("id", tid);
-    await db.from("account_offers").update({ answered_at: new Date().toISOString(), accepted: true }).eq("tournament_id", tid).eq("role", "organiser").eq("email", a.email.toLowerCase()).is("answered_at", null);
+    const { data: took } = await db
+      .from("account_offers")
+      .update({ answered_at: new Date().toISOString(), accepted: true })
+      .eq("tournament_id", tid)
+      .eq("role", "organiser")
+      .eq("email", a.email.toLowerCase())
+      .is("answered_at", null)
+      .select("marketing_at,marketing_wording");
+    for (const o of took ?? []) if (o.marketing_at) await recordMarketing(a.email, tid, o.marketing_wording ?? "", o.marketing_at, { onlyIfNewer: true }).catch(() => null);
   } else await linkRole(a.id, tid, "player", s.playerId);
   await setAccount(a, await sessionsFor(a));
 }
@@ -350,13 +360,16 @@ export async function makeOffer(tournamentId: string, email: string, role: "orga
   if (error) throw new SignInError(/account_offers/.test(error.message) ? "This needs the latest database update (schema.sql)" : "Couldn't save that just now. Try again.", 500);
 }
 
-export async function answerOffer(a: Account, offerId: string, yes: boolean) {
+/** `tick`: their own marketing tick from setup counts (only when it's the phone that set it up, which saw the words) */
+export async function answerOffer(a: Account, offerId: string, yes: boolean, tick = false) {
   const db = adminClient();
-  const { data: o } = await db.from("account_offers").select("id,tournament_id,role,player_id,email,answered_at").eq("id", offerId).maybeSingle();
+  const { data: o } = await db.from("account_offers").select("id,tournament_id,role,player_id,email,answered_at,marketing_at,marketing_wording").eq("id", offerId).maybeSingle();
   if (!o || o.answered_at || cleanEmail(o.email) !== cleanEmail(a.email)) throw new SignInError("That's already been answered", 410);
   await db.from("account_offers").update({ answered_at: new Date().toISOString(), accepted: yes }).eq("id", o.id);
   if (!yes) return null;
   await linkRole(a.id, o.tournament_id, o.role, o.player_id);
+  // The marketing box they ticked when they set it up: it counts now their email is confirmed
+  if (tick && o.marketing_at) await recordMarketing(a.email, o.tournament_id, o.marketing_wording ?? "", o.marketing_at, { onlyIfNewer: true }).catch(() => null);
   return o.tournament_id as string;
 }
 

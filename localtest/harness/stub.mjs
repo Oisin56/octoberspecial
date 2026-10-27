@@ -51,10 +51,57 @@ function serveFile(req, res, f) {
   return res.end(req.method === "HEAD" ? undefined : buf);
 }
 
+// ---- fake Postmark: the API the site sends through. Each email is saved like the test mailbox saves one
+const PM_STATE = "/var/tmp/ospg/postmark.json";
+const pmState = () => (fs.existsSync(PM_STATE) ? JSON.parse(fs.readFileSync(PM_STATE, "utf8")) : { streams: [{ ID: "outbound", Name: "Default Transactional Stream", MessageStreamType: "Transactional" }, { ID: "broadcast", Name: "Default Broadcast Stream", MessageStreamType: "Broadcasts", SubscriptionManagementConfiguration: { UnsubscribeHandlingType: "Postmark" } }], webhooks: [], fail: {}, n: 0 });
+const pmSave = (st) => fs.writeFileSync(PM_STATE, JSON.stringify(st));
+async function postmark(req, res, u) {
+  const send = (code, o) => { res.writeHead(code, { "content-type": "application/json" }); res.end(JSON.stringify(o)); };
+  const st = pmState();
+  // test controls
+  if (u.pathname === "/__pmreset") { fs.rmSync(PM_STATE, { force: true }); return send(200, { ok: true }); }
+  if (u.pathname === "/__pmfail") { st.fail[u.searchParams.get("to")] = Number(u.searchParams.get("code") ?? 406); pmSave(st); return send(200, { ok: true }); }
+  if (u.pathname === "/__pmnocustom") { st.noCustom = true; pmSave(st); return send(200, { ok: true }); }
+  if (u.pathname === "/__pmstate") return send(200, st);
+  if (req.headers["x-postmark-server-token"] !== "local-postmark-token") return send(401, { ErrorCode: 10, Message: "The Server Token you provided in the X-Postmark-Server-Token request header was invalid." });
+  const p = u.pathname.replace(/^\/postmark/, "");
+  const raw = req.method === "GET" ? null : JSON.parse((await body(req)).toString() || "null");
+  if (p === "/server") return send(200, { ID: 1, Name: "Local stand-in" });
+  if (p === "/message-streams" && req.method === "GET") return send(200, { MessageStreams: st.streams, TotalCount: st.streams.length });
+  if (p === "/message-streams" && req.method === "POST") { st.streams.push({ ...raw }); pmSave(st); return send(200, raw); }
+  let m = p.match(/^\/message-streams\/([^/]+)$/);
+  if (m && req.method === "PATCH") {
+    const s = st.streams.find((x) => x.ID === decodeURIComponent(m[1]));
+    if (!s) return send(404, { ErrorCode: 1226, Message: "The message stream was not found." });
+    if (raw.SubscriptionManagementConfiguration?.UnsubscribeHandlingType === "Custom" && st.noCustom) return send(422, { ErrorCode: 1235, Message: "Custom unsubscribe handling isn't enabled for this account." });
+    Object.assign(s, raw); pmSave(st); return send(200, s);
+  }
+  if (p.match(/^\/message-streams\/[^/]+\/suppressions\/delete$/)) { st.reactivated = [...(st.reactivated ?? []), ...raw.Suppressions.map((x) => x.EmailAddress)]; pmSave(st); return send(200, { Suppressions: raw.Suppressions.map((x) => ({ EmailAddress: x.EmailAddress, Status: "Deleted", Message: null })) }); }
+  if (p === "/webhooks" && req.method === "GET") return send(200, { Webhooks: st.webhooks.filter((w) => !u.searchParams.get("MessageStream") || w.MessageStream === u.searchParams.get("MessageStream")) });
+  if (p === "/webhooks" && req.method === "POST") { const w = { ID: st.webhooks.length + 1, ...raw }; st.webhooks.push(w); pmSave(st); return send(200, w); }
+  m = p.match(/^\/webhooks\/(\d+)$/);
+  if (m && req.method === "PUT") { const w = st.webhooks.find((x) => x.ID === Number(m[1])); Object.assign(w, raw); pmSave(st); return send(200, w); }
+  const one = (msg) => {
+    const to = String(msg.To).toLowerCase();
+    if (st.fail[to]) { const code = st.fail[to]; delete st.fail[to]; return { ErrorCode: code, Message: code === 406 ? `You tried to send to recipient(s) that have been marked as inactive. Found inactive addresses: ${to}.` : "Failed", To: msg.To }; }
+    if (!st.streams.some((s) => s.ID === msg.MessageStream)) return { ErrorCode: 1235, Message: `The message stream for the provided 'ID' was not found: ${msg.MessageStream}`, To: msg.To };
+    const id = `pm-${Date.now()}-${++st.n}`;
+    const headers = Object.fromEntries((msg.Headers ?? []).map((h) => [h.Name.toLowerCase(), h.Value]));
+    if (msg.ReplyTo) headers["reply-to"] = msg.ReplyTo;
+    fs.mkdirSync("/var/tmp/ospg/mail", { recursive: true });
+    fs.writeFileSync(`/var/tmp/ospg/mail/${Date.now()}-pm${st.n}.json`, JSON.stringify({ to: [to], from: msg.From, subject: msg.Subject, html: msg.HtmlBody, text: msg.TextBody, headers, stream: msg.MessageStream, tag: msg.Tag, metadata: msg.Metadata, messageId: id, attachments: (msg.Attachments ?? []).map((a) => ({ filename: a.Name, contentType: a.ContentType, size: Buffer.from(a.Content, "base64").length, content: Buffer.from(a.Content, "base64").toString("utf8").slice(0, 20000) })) }));
+    return { ErrorCode: 0, Message: "OK", MessageID: id, To: msg.To, SubmittedAt: new Date().toISOString() };
+  };
+  if (p === "/email" && req.method === "POST") { const r = one(raw); pmSave(st); return send(r.ErrorCode ? 422 : 200, r); }
+  if (p === "/email/batch" && req.method === "POST") { const r = raw.map(one); pmSave(st); return send(200, r); }
+  return send(404, { ErrorCode: 404, Message: "stub: not found " + p });
+}
+
 http
   .createServer(async (req, res) => {
     const u = new URL(req.url, "http://x");
     if (u.pathname.startsWith("/rest/v1/")) return proxy(req, res, req.url.replace("/rest/v1", ""));
+    if (u.pathname.startsWith("/postmark/") || u.pathname.startsWith("/__pm")) return postmark(req, res, u);
 
     // storage: two buckets, "media" (public) and "media-private" (locked: read with signed links only)
     const fileOf = (bucket, key) => path.join(FILES, bucket === "media-private" ? "__private__" : "", decodeURIComponent(key));
@@ -438,6 +485,11 @@ http
         const guide = { overview: "A test course on the cliffs.", signature: "The 6th over the sea.", holes: { "6": "Drive over the cliffs.", "19": "bogus hole", "7": "" }, sources: ["https://example.com/course-guide", "not a url"], warnings: "Card numbering matches." };
         res.writeHead(200, { "content-type": "application/json" });
         return res.end(JSON.stringify({ id: "msg", type: "message", role: "assistant", model: b.model, content: [{ type: "text", text: "Here it is: " + JSON.stringify(guide) }], stop_reason: "end_turn", usage: { input_tokens: 1, output_tokens: 1 } }));
+      }
+      if (/short marketing emails for MyGolfBroadcast/.test(String(b.system))) {
+        res.writeHead(200, { "content-type": "application/json" });
+        return res.end(JSON.stringify({ id: "msg_" + promptN, type: "message", role: "assistant", model: b.model, stop_reason: "end_turn", usage: { input_tokens: 10, output_tokens: 10 },
+          content: [{ type: "text", text: JSON.stringify({ subject: "A spring offer on your film", headline: "Your trip, as a film", paragraphs: ["Hi {first name}, this spring a highlights film of your trip costs less.", "The offer runs to the end of April."], button: "See the offer" }) }] }));
       }
       if (/You correct speech-to-text/.test(String(b.system))) {
         const t = String(b.messages[0].content).split("Transcript: ")[1] ?? "";

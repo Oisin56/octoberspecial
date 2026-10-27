@@ -28,5 +28,5 @@ fs.rmSync("/var/tmp/ospg/mail", { recursive: true, force: true }); fs.mkdirSync(
 await post("/api/admin", { action: "emailPiece", id, test: true });
 await new Promise((r) => setTimeout(r, 400));
 const m = fs.readdirSync("/var/tmp/ospg/mail").map((f) => JSON.parse(fs.readFileSync(`/var/tmp/ospg/mail/${f}`, "utf8")))[0];
-ok(m && !/\\n|"body"|\*\*|##/.test(m.html) && m.subject.startsWith("Old one"), "the email is clean too");
+ok(m && !/\\n|"body"|\*\*|##/.test(m.html) && /^(Test: )?Old one/.test(m.subject), "the email is clean too");
 console.log(fails ? `\n${fails} FAILED` : "\nALL PASSED"); process.exit(fails ? 1 : 0);

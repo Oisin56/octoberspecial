@@ -7,7 +7,7 @@ import { adminClient } from "./admin";
  */
 export interface Actor {
   email: string;
-  role: "owner" | "support" | "system";
+  role: "owner" | "support" | "system" | "person";
 }
 
 export const SYSTEM: Actor = { email: "system", role: "system" };

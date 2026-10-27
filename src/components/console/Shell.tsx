@@ -25,6 +25,7 @@ const NAV: { href: string; label: string; owner?: boolean }[] = [
   { href: "/console/needs", label: "Needs you" },
   { href: "/console/tournaments", label: "Tournaments" },
   { href: "/console/people", label: "People" },
+  { href: "/console/email", label: "Email" },
   { href: "/console/money", label: "Money", owner: true },
   { href: "/console/health", label: "Health" },
   { href: "/console/activity", label: "Activity" },

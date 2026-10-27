@@ -23,7 +23,7 @@ export default function ActivityPage() {
   const { data, err } = useView<{ rows: Row[]; total: number; size: number }>("activity", { ...values, page });
   const cols: Col<Row>[] = [
     { key: "at", label: "When", render: (r) => new Date(r.at).toLocaleString("en-IE", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "Europe/Dublin" }) },
-    { key: "actor", label: "Who", render: (r) => (r.actor_role === "system" ? "The site" : `${r.actor} (${r.actor_role === "owner" ? "owner" : "support"})`) },
+    { key: "actor", label: "Who", render: (r) => (r.actor_role === "system" ? "The site" : r.actor_role === "person" ? `${r.actor} (themselves)` : `${r.actor} (${r.actor_role === "owner" ? "owner" : "support"})`) },
     { key: "action", label: "What", render: (r) => ACTION_WORDS[r.action] ?? r.action },
     { key: "t", label: "Tournament", render: (r) => (r.tournament_id && r.tournament_name ? <Link href={`/console/tournaments/${r.tournament_id}`}>{r.tournament_name}</Link> : (r.tournament_name ?? "")) },
     { key: "p", label: "Person", render: (r) => (r.person ? <PersonLink email={r.person} /> : "") },
@@ -44,6 +44,7 @@ export default function ActivityPage() {
             ["owner", "The owner"],
             ["support", "Support"],
             ["system", "The site"],
+            ["person", "People themselves"],
           ]}
         />
         <Select

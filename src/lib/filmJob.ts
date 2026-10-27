@@ -7,7 +7,9 @@ import { buildTimeline, clipBugs, fitCommentary, publishReel, shotstackRender, s
 import { LINE_PARTS, lineRecorded, lineSeconds, lineText, planSeconds, recordingOf, type Plan, type ReelRow } from "./director-types";
 import { COST, estimateCents, type Shape } from "./film";
 import { brandPack, filmLimits, filmSpend, musicTracks, tournamentFilms } from "./site";
-import { filmReadyEmail, mailConfigured, sendOne } from "./email";
+import { mailConfigured } from "./email";
+import { deliver } from "./mail/send";
+import { filmReadyMail } from "./mail/emails";
 import type { TournamentRow } from "./types";
 import { canSpend, inTournament } from "./usage";
 import { raise, settle } from "./queue";
@@ -231,8 +233,7 @@ export async function finishFilm(reel: FilmReel, origin: string): Promise<FilmRe
     const ids = (links ?? []).map((l) => l.account_id);
     if (ids.length) {
       const { data: accts } = await db.from("accounts").select("email").in("id", ids);
-      const msg = filmReadyEmail(t, `${origin}/t/${t.slug}/film?reel=${reel.id}`);
-      for (const a of accts ?? []) await sendOne(t, a.email, msg).catch(() => null);
+      for (const a of accts ?? []) await deliver(await filmReadyMail(t, `${origin}/t/${t.slug}/film?reel=${reel.id}`, a.email)).catch(() => null);
     }
   }
   return data as FilmReel;

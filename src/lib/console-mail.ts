@@ -1,8 +1,8 @@
 import "server-only";
 import { ownerEmail } from "./auth";
-import { brandEmail, mailConfigured, sendOne } from "./email";
+import { deliver, mailConfigured } from "./mail/send";
+import { noteMail } from "./mail/emails";
 import { getSetting } from "./site";
-import { BRAND } from "./brand";
 
 /**
  * The console's own email: the morning summary and red alerts go to an address set in Settings (so they stay out of
@@ -21,14 +21,14 @@ function site() {
 export async function alert(subject: string, lines: string[], link = "/console/health") {
   const to = await consoleAddress();
   if (!to || !mailConfigured()) return;
-  await sendOne({ name: `${BRAND.name} console` }, to, { subject: `Alert: ${subject}`, html: brandEmail(lines, { label: "Open the console", href: `${site()}${link}` }), text: `${lines.join("\n\n")}\n\n${site()}${link}\n`, kind: "console" }).catch((e) =>
+  await deliver(await noteMail(to, `Alert: ${subject}`, lines, { label: "Open the console", href: `${site()}${link}` })).catch((e) =>
     console.warn("[console] alert not sent", e instanceof Error ? e.message : e),
   );
 }
 
-export async function consoleMail(subject: string, html: string, text: string) {
+export async function consoleMail(subject: string, lines: string[], button: { label: string; href: string } | null) {
   const to = await consoleAddress();
   if (!to || !mailConfigured()) return false;
-  await sendOne({ name: `${BRAND.name} console` }, to, { subject, html, text, kind: "console" });
+  await deliver(await noteMail(to, subject, lines, button));
   return true;
 }

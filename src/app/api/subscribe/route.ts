@@ -1,6 +1,8 @@
 import { adminClient } from "@/lib/admin";
 import { bad, context, json, siteOrigin, DEMO_READONLY } from "@/lib/server-data";
-import { EMAIL_RE, ipHash, mailConfigured, sendOne, welcomeEmail } from "@/lib/email";
+import { EMAIL_RE, ipHash } from "@/lib/email";
+import { deliver, mailConfigured } from "@/lib/mail/send";
+import { signedUpMail, stoppedBeforeMail } from "@/lib/mail/emails";
 
 /** Follower signs up for previews and reports by email. */
 export async function POST(req: Request) {
@@ -18,22 +20,21 @@ export async function POST(req: Request) {
   const { count } = await db.from("subscribers").select("id", { count: "exact", head: true }).eq("ip_hash", ip).gte("created_at", since);
   if ((count ?? 0) >= 5) return bad("Too many sign-ups from here. Try again later.", 429);
 
-  const { data: existing } = await db.from("subscribers").select("id,token,unsubscribed_at").eq("tournament_id", t.id).eq("email", String(email).toLowerCase()).maybeSingle();
-  let token: string;
+  const { data: existing } = await db.from("subscribers").select("id,unsubscribed_at").eq("tournament_id", t.id).eq("email", String(email).toLowerCase()).maybeSingle();
   if (existing) {
     if (!existing.unsubscribed_at) return json({ ok: true, already: true });
     await db.from("subscribers").update({ unsubscribed_at: null, name }).eq("id", existing.id);
-    token = existing.token;
   } else {
-    const { data, error } = await db.from("subscribers").insert({ tournament_id: t.id, email, name, ip_hash: ip }).select("token").single();
+    const { error } = await db.from("subscribers").insert({ tournament_id: t.id, email, name, ip_hash: ip });
     if (error) return bad("Couldn't sign you up just now", 500);
-    token = data.token;
   }
   if (mailConfigured()) {
-    const site = siteOrigin(req);
-    const unsubscribe = `${site}/api/unsubscribe?token=${token}`;
     try {
-      await sendOne(t, email, welcomeEmail(t, name, { link: `${site}/t/${t.slug}`, unsubscribe }), unsubscribe);
+      const { data: p } = await db.from("people").select("updates_stopped_at").eq("email", email).maybeSingle();
+      // They'd stopped every email: nothing comes unless they turn updates back on themselves (this form doesn't
+      // prove the address is theirs), so tell them how
+      if (p?.updates_stopped_at) await deliver(await stoppedBeforeMail(siteOrigin(req), t, email));
+      else await deliver(await signedUpMail(siteOrigin(req), t, name, email));
     } catch {
       // still signed up; the welcome email is a courtesy
     }

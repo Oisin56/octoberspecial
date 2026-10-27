@@ -25,12 +25,14 @@ export const PALETTES: Record<Exclude<ThemeId, "custom">, Palette> = {
 export function paletteFor(theme: ThemeId, custom?: { primary?: string; accent?: string; background?: string } | null): Palette {
   if (theme === "custom") {
     const base = PALETTES.clubhouse;
+    // Colours only: anything else typed in is ignored (they go into emails and styles)
+    const hex = (c: unknown, d: string) => (typeof c === "string" && /^#[0-9a-f]{3,8}$/i.test(c.trim()) ? c.trim() : d);
     return {
       ...base,
-      board: custom?.primary ?? base.board,
-      boardDeep: custom?.primary ?? base.boardDeep,
-      red: custom?.accent ?? base.red,
-      mist: custom?.background ?? base.mist,
+      board: hex(custom?.primary, base.board),
+      boardDeep: hex(custom?.primary, base.boardDeep),
+      red: hex(custom?.accent, base.red),
+      mist: hex(custom?.background, base.mist),
     };
   }
   // Clubhouse is retired as a choice: those tournaments are shown in Spring Classic

@@ -4,7 +4,10 @@ import { getAccount, isOrganiser } from "@/lib/auth";
 import { BRAND } from "@/lib/brand";
 import { SignInError, cleanEmail, emailProof, makeOffer, sendSignIn } from "@/lib/accounts";
 import { bad, context, json, loadServerState, siteOrigin, slugify, DEMO_READONLY, crossSite, CROSS_SITE } from "@/lib/server-data";
-import { EMAIL_RE, emailPiece, mailConfigured, playerLinkEmail, sendOne } from "@/lib/email";
+import { EMAIL_RE, emailPiece, mailConfigured } from "@/lib/email";
+import { NotSent, deliver } from "@/lib/mail/send";
+import { playerLinkMail } from "@/lib/mail/emails";
+import { datesSignature } from "@/lib/mail/ics";
 import { draftGuide, generatePiece, type PieceKind } from "@/lib/ai";
 import { cleanGuide, normalizeRound, type CourseGuide, type RoundRow, type Tone } from "@/lib/types";
 import { guideFrom, guideStep, newGuideWork, type GuideWork } from "@/lib/guide";
@@ -184,11 +187,15 @@ export async function POST(req: Request) {
         await db.from("players").update({ link_code: code }).eq("id", p.id).eq("tournament_id", t.id);
       }
       const url = `${siteOrigin(req)}/t/${t.slug}/in/${code}?e=${emailProof(code, p.email)}`;
+      const { data: rounds } = await db.from("rounds").select("id,number,course_name,play_date,tee_time").eq("tournament_id", t.id).order("number");
       try {
-        await sendOne(t, p.email, playerLinkEmail(t, p.name, url));
-      } catch {
+        await deliver(await playerLinkMail(t, { name: p.name, email: p.email }, url, rounds ?? [], session.name));
+      } catch (e) {
+        if (e instanceof NotSent) return bad("The site has stopped emailing that address (it bounced). Check it, or send the link by WhatsApp.", 409);
         return bad("Couldn't send the email just now. Check the address and try again.", 502);
       }
+      // They have the rounds in their calendar now: a change of date gets them a fresh file
+      await db.from("players").update({ link_emailed_at: new Date().toISOString(), dates_sent: datesSignature(rounds ?? []) }).eq("id", p.id).eq("tournament_id", t.id);
       return json({ ok: true, to: p.email });
     }
 
@@ -604,14 +611,18 @@ export async function POST(req: Request) {
     }
 
     case "emailPiece": {
-      if (!mailConfigured()) return bad("Email isn't set up yet: add SMTP_USER and SMTP_PASS in Vercel (see SETUP.md)", 500);
+      if (!mailConfigured()) return bad("Email isn't set up yet: add POSTMARK_TOKEN in Vercel", 500);
       const { data: pc } = await db.from("ai_pieces").select("status").eq("id", b.id).eq("tournament_id", t.id).maybeSingle();
       if (!pc) return bad("Not found", 404);
       try {
         if (b.test) {
-          const r = await emailPiece(t, String(b.id), siteOrigin(req), process.env.SMTP_USER!);
-          if (r.failed.length) return bad("The test email didn't send. Check SMTP_USER and SMTP_PASS (an app-specific password).", 500);
-          return json({ ok: true, sent: 1, test: true });
+          // To the organiser asking (their email), else the site's own mailbox
+          const me = await getAccount();
+          const to = me?.email ?? process.env.SMTP_USER ?? process.env.OWNER_EMAIL;
+          if (!to) return bad("Sign in with your email first, so the test has somewhere to go", 400);
+          const r = await emailPiece(t, String(b.id), siteOrigin(req), to);
+          if (r.failed.length) return bad("The test email didn't send. Try again in a minute.", 500);
+          return json({ ok: true, sent: 1, test: true, to });
         }
         if (pc.status !== "published") return bad("Publish it first");
         const r = await emailPiece(t, String(b.id), siteOrigin(req));

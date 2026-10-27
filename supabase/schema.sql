@@ -1258,3 +1258,219 @@ grant execute on function record_incident(text, text, text, uuid, text), bump(te
   usage_sum(text, timestamptz, uuid) to service_role;
 
 notify pgrst, 'reload schema';
+
+-- ------------------------------------------------------------ stage 5: email
+
+-- What each email says. Every save is a new version and the newest is used; with none saved, the words in the code.
+create table if not exists email_words (
+  key text not null,
+  version int not null,
+  subject text,
+  headline text,
+  lines text,
+  button text,
+  saved_by text not null,
+  saved_at timestamptz not null default now(),
+  restored_from int,
+  primary key (key, version)
+);
+
+-- Every email sent: the figures, the weekly limit on marketing, bounces, taps and stops are all read from here
+create table if not exists email_sends (
+  id uuid primary key default gen_random_uuid(),
+  at timestamptz not null default now(),
+  email text not null,
+  stream text not null,                    -- service | updates | marketing
+  kind text not null,                      -- what it was, in words (sign-in, player link, campaign…)
+  template text,                           -- the key of its words
+  ref text,                                -- a series step, campaign or evening email: sent once per person
+  tournament_id uuid,
+  status text not null default 'sent',     -- queued | sent | failed | bounced | complained
+  message_id text,
+  error text,
+  clicked_at timestamptz,
+  stopped_at timestamptz                   -- they stopped emails from this one's link
+);
+create index if not exists email_sends_at_idx on email_sends (at desc);
+create index if not exists email_sends_person_idx on email_sends (email, stream, at desc);
+create index if not exists email_sends_ref_idx on email_sends (ref, status) where ref is not null;
+create index if not exists email_sends_template_idx on email_sends (template, at desc);
+create index if not exists email_sends_msg_idx on email_sends (message_id) where message_id is not null;
+create unique index if not exists email_sends_once on email_sends (ref, email, coalesce(tournament_id, '00000000-0000-0000-0000-000000000000'::uuid))
+  where ref is not null and status <> 'failed';
+
+-- What each person has chosen to get
+alter table people add column if not exists trip_news boolean not null default true;     -- the series (with the marketing tick)
+alter table people add column if not exists offers boolean not null default true;        -- campaigns (with the marketing tick)
+alter table people add column if not exists tips boolean not null default true;          -- tips for organisers
+alter table people add column if not exists marketing_stopped_reason text;               -- unsubscribed | spam | stopped by the console
+alter table people add column if not exists updates_stopped_at timestamptz;              -- a spam complaint, or "stop everything"
+alter table subscribers add column if not exists evening boolean not null default false; -- one email each evening instead of every update
+
+-- An organiser's tick, kept until they confirm their email
+alter table account_offers add column if not exists marketing_at timestamptz;
+alter table account_offers add column if not exists marketing_wording text;
+
+-- Players whose link went by email (they have the calendar file), and the dates they were last sent
+alter table players add column if not exists link_emailed_at timestamptz;
+alter table players add column if not exists dates_sent text;
+
+-- A tick from the follower's form: newer than a stop, it starts marketing again (the person asked for it)
+create or replace function people_from_fans() returns trigger language plpgsql as $$
+begin
+  if new.email is null or new.verified_at is null then return null; end if;
+  perform touch_person(new.email, new.name, 'follower', new.verified_at, new.created_at);
+  if new.marketing_at is not null then
+    update people set marketing_at = new.marketing_at, marketing_wording = new.marketing_wording, marketing_tournament = new.tournament_id,
+      marketing_stopped_at = null, marketing_stopped_reason = null, trip_news = true, offers = true
+    where email = lower(trim(new.email))
+      and (marketing_at is null or marketing_at < new.marketing_at)
+      and (marketing_stopped_at is null or marketing_stopped_at < new.marketing_at);
+  end if;
+  return null;
+end $$;
+
+-- The series: switched on by the owner, steps and timings kept once changed from the code's
+create table if not exists email_series (
+  key text primary key,
+  enabled boolean not null default false,
+  steps jsonb,
+  updated_at timestamptz not null default now(),
+  updated_by text
+);
+
+-- Campaigns: one-off emails written in the console
+create table if not exists email_campaigns (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  subject text not null default '',
+  blocks jsonb not null default '[]'::jsonb,
+  audience jsonb not null default '{}'::jsonb,
+  status text not null default 'draft',    -- draft | scheduled | sending | paused | sent | stopped
+  send_on date,
+  created_by text not null,
+  created_at timestamptz not null default now(),
+  updated_by text,
+  updated_at timestamptz not null default now(),
+  started_at timestamptz,
+  finished_at timestamptz,
+  sent_by text,
+  planned int,
+  note text
+);
+create index if not exists email_campaigns_status_idx on email_campaigns (status, send_on);
+
+-- Photos uploaded for campaigns, kept to use again
+create table if not exists email_photos (
+  id uuid primary key default gen_random_uuid(),
+  path text not null,
+  name text,
+  added_by text not null,
+  added_at timestamptz not null default now()
+);
+
+-- Writing sends down before they go: anyone who has had this one already (same series step or campaign) is left out
+create or replace function email_queue(rows jsonb) returns setof uuid language plpgsql as $$
+begin
+  -- Marketing: one a week per person, whoever is sending (two campaigns at once can't both get through)
+  if exists (select 1 from jsonb_array_elements(rows) r where r->>'stream' = 'marketing') then
+    perform pg_advisory_xact_lock(hashtext('email-marketing-week'));
+  end if;
+  return query
+  insert into email_sends (id, email, stream, kind, template, ref, tournament_id, status)
+  select distinct on (case when x.stream = 'marketing' then x.email else x.id::text end)
+    x.id, x.email, x.stream, x.kind, x.template, x.ref, x.tid, 'queued'
+  from (
+    select (r->>'id')::uuid id, lower(r->>'email') email, r->>'stream' stream, r->>'kind' kind, r->>'template' template, r->>'ref' ref,
+      nullif(r->>'tournament_id', '')::uuid tid
+    from jsonb_array_elements(rows) r
+  ) x
+  where x.stream <> 'marketing'
+     or not exists (select 1 from email_sends s where s.email = x.email and s.stream = 'marketing' and s.status <> 'failed' and s.at > now() - interval '7 days')
+  on conflict do nothing
+  returning email_sends.id;
+end $$;
+
+-- What happened to each: sent (with Postmark's id for it) or failed
+create or replace function email_mark(rows jsonb) returns void language sql as $$
+  update email_sends s set status = r.status, message_id = coalesce(r.message_id, s.message_id), error = r.error
+  from jsonb_to_recordset(rows) as r(id uuid, status text, message_id text, error text)
+  where s.id = r.id
+$$;
+
+-- Who a campaign can go to: the marketing tick (and news and offers on), not stopped, with the console's filters.
+-- Each person's most recent tournament comes with them, for {tournament}
+create or replace function campaign_audience(want_roles text[], active_days int, idle_days int, min_trips int, max_trips int)
+returns table (email text, name text, tournament text) language sql stable as $$
+  with links as (
+    select lower(p.email) e, p.tournament_id t from players p where p.email is not null
+    union select lower(f.email), f.tournament_id from fans f where f.email is not null and f.verified_at is not null and f.status = 'approved' and not f.blocked
+    union select lower(s.email), s.tournament_id from subscribers s
+    union select lower(a.email), j.tournament_id from account_tournaments j join accounts a on a.id = j.account_id
+  ), trips as (
+    select l.e, count(distinct l.t) n, (array_agg(t.name order by t.created_at desc))[1] latest
+    from links l join tournaments t on t.id = l.t group by l.e
+  )
+  select p.email, p.name, tr.latest
+  from people p left join trips tr on tr.e = p.email
+  where p.marketing_at is not null and p.marketing_stopped_at is null and p.offers
+    and not exists (select 1 from email_blocks b where b.email = p.email)
+    and (want_roles is null or p.roles && want_roles)
+    and (active_days is null or p.last_at >= now() - make_interval(days => active_days))
+    and (idle_days is null or p.last_at is null or p.last_at < now() - make_interval(days => idle_days))
+    and (min_trips is null or coalesce(tr.n, 0) >= min_trips)
+    and (max_trips is null or coalesce(tr.n, 0) <= max_trips)
+  order by p.email
+$$;
+
+-- Everyone on a trip today (first round to last): no marketing reaches them
+create or replace function emails_on_trip(today date) returns table (email text) language sql stable as $$
+  with live as (select tournament_id from tournament_stats where first_day <= today and last_day >= today)
+  select distinct e from (
+    select lower(p.email) e from players p join live l on l.tournament_id = p.tournament_id where p.email is not null
+    union all select lower(f.email) from fans f join live l on l.tournament_id = f.tournament_id where f.email is not null
+    union all select lower(s.email) from subscribers s join live l on l.tournament_id = s.tournament_id where s.unsubscribed_at is null
+    union all select lower(a.email) from account_tournaments j join live l on l.tournament_id = j.tournament_id join accounts a on a.id = j.account_id
+  ) x order by e
+$$;
+
+-- Figures for a set of series steps or campaigns
+create or replace function email_ref_stats(refs text[]) returns table (ref text, sent bigint, clicked bigint, bounced bigint, complained bigint, stopped bigint)
+language sql stable as $$
+  select s.ref,
+    count(*) filter (where s.status in ('sent', 'bounced', 'complained')),
+    count(s.clicked_at),
+    count(*) filter (where s.status = 'bounced'),
+    count(*) filter (where s.status = 'complained'),
+    count(s.stopped_at)
+  from email_sends s where s.ref = any(refs) group by s.ref
+$$;
+
+-- Each email's count since a time (the Every email list)
+create or replace function email_template_counts(since timestamptz) returns table (template text, sent bigint)
+language sql stable as $$
+  select template, count(*) from email_sends where at >= since and template is not null and status <> 'failed' group by template
+$$;
+
+-- Health: sent, bounced and complained since a time, for updates and marketing (what Gmail and Yahoo judge us on)
+create or replace function email_health(since timestamptz) returns table (stream text, sent bigint, bounced bigint, complained bigint)
+language sql stable as $$
+  select stream, count(*) filter (where status in ('sent', 'bounced', 'complained')), count(*) filter (where status = 'bounced'),
+    count(*) filter (where status = 'complained')
+  from email_sends where at >= since group by stream
+$$;
+
+do $$
+declare t text;
+begin
+  foreach t in array array['email_words', 'email_sends', 'email_series', 'email_campaigns', 'email_photos'] loop
+    execute format('alter table %I enable row level security', t);
+    execute format('revoke all on %I from anon, authenticated', t);
+    execute format('grant all on %I to service_role', t);
+  end loop;
+end $$;
+revoke execute on function email_ref_stats(text[]), email_template_counts(timestamptz), email_health(timestamptz), email_queue(jsonb), email_mark(jsonb), campaign_audience(text[], int, int, int, int), emails_on_trip(date) from public, anon, authenticated;
+grant execute on function email_ref_stats(text[]), email_template_counts(timestamptz), email_health(timestamptz), email_queue(jsonb), email_mark(jsonb), campaign_audience(text[], int, int, int, int), emails_on_trip(date) to service_role;
+grant execute on function touch_person(text, text, text, timestamptz, timestamptz) to service_role;
+
+notify pgrst, 'reload schema';

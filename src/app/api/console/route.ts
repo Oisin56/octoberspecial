@@ -11,7 +11,9 @@ import { bad, crossSite, CROSS_SITE, json, siteOrigin } from "@/lib/server-data"
 import { budgets, forgetSpent, DEFAULT_BUDGETS, type Budgets } from "@/lib/usage";
 import { getSetting, setSetting } from "@/lib/site";
 import { approveInvite } from "@/lib/invites";
-import { EMAIL_RE, followWaitingEmail, inviteApprovedEmail, mailConfigured, sendOne, brandEmail } from "@/lib/email";
+import { EMAIL_RE, mailConfigured } from "@/lib/email";
+import { deliver } from "@/lib/mail/send";
+import { filmFailedMail, followWaitingMail, inviteApprovedMail } from "@/lib/mail/emails";
 import { forgetBlocked } from "@/lib/email-log";
 import { kick } from "@/lib/filmJob";
 import { kickResearch, startResearch } from "@/lib/research";
@@ -213,13 +215,7 @@ async function needs(user: ConsoleUser, b: Record<string, unknown>, req: Request
       if (!t || !mailConfigured()) return bad("Email isn't set up, or the tournament is gone");
       const emails = await organiserEmails(t.id);
       const link = `${siteOrigin(req)}/t/${t.slug}/admin`;
-      for (const e of emails)
-        await sendOne(t, e, {
-          subject: `Your film: ${t.name}`,
-          html: brandEmail([`Your film for ${t.name} didn't finish. We're looking at it.`, "You can try again from your organiser page."], { label: "Open my organiser page", href: link }),
-          text: `Your film for ${t.name} didn't finish. We're looking at it. You can try again from your organiser page: ${link}\n`,
-          kind: "film",
-        }).catch(() => null);
+      for (const e of emails) await deliver(await filmFailedMail(t, link, e)).catch(() => null);
       await logActivity(user, "film.tell", on);
       return json({ ok: true, told: emails.length });
     }
@@ -229,7 +225,7 @@ async function needs(user: ConsoleUser, b: Record<string, unknown>, req: Request
       if (!mailConfigured()) return bad("Email isn't set up, so the invite can't be sent", 500);
       const r = await approveInvite(item.subject);
       if (!r) return done("It had been answered already");
-      await sendOne({ name: BRAND.name }, r.invite.email, inviteApprovedEmail(r.invite.name, `${siteOrigin(req)}/new?invite=${r.token}`));
+      await deliver(await inviteApprovedMail(r.invite.name, r.invite.email, `${siteOrigin(req)}/new?invite=${r.token}`));
       return done("Approved", "invite.approve");
     }
     case "needs.decline": {
@@ -242,7 +238,7 @@ async function needs(user: ConsoleUser, b: Record<string, unknown>, req: Request
       if (!t || !mailConfigured()) return bad("Email isn't set up, or the tournament is gone");
       const { data: waiting } = await db.from("fans").select("name").eq("tournament_id", t.id).eq("status", "asking");
       const emails = await organiserEmails(t.id);
-      for (const e of emails) await sendOne(t, e, followWaitingEmail(t as TournamentRow, (waiting ?? []).map((w) => w.name), `${siteOrigin(req)}/t/${t.slug}/following`)).catch(() => null);
+      for (const e of emails) await deliver(await followWaitingMail(t, (waiting ?? []).map((w) => w.name), `${siteOrigin(req)}/t/${t.slug}/following`, e)).catch(() => null);
       await db.from("queue").update({ snoozed_until: new Date(Date.now() + 3 * 864e5).toISOString() }).eq("id", item.id);
       await logActivity(user, "queue.done", { ...on, detail: { item: item.title, resolution: "Reminded the organisers" } });
       return json({ ok: true, told: emails.length });

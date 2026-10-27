@@ -1,5 +1,7 @@
 import { adminClient } from "@/lib/admin";
-import { followWaitingEmail, mailConfigured, sendOne } from "@/lib/email";
+import { mailConfigured } from "@/lib/email";
+import { deliver } from "@/lib/mail/send";
+import { followWaitingMail } from "@/lib/mail/emails";
 import { json, siteOrigin } from "@/lib/server-data";
 import { moveFiles } from "@/lib/files";
 import { consoleDaily } from "@/lib/console-jobs";
@@ -43,8 +45,8 @@ export async function GET(req: Request) {
     const { data: rows } = await db.from("account_tournaments").select("account_id").eq("tournament_id", tid).eq("role", "organiser");
     const ids = (rows ?? []).map((r) => r.account_id);
     const { data: accts } = ids.length ? await db.from("accounts").select("email").in("id", ids) : { data: [] };
-    const msg = followWaitingEmail(t as TournamentRow, fans.map((f) => f.name), `${siteOrigin(req)}/t/${t.slug}/following`);
-    for (const a of accts ?? []) if (await sendOne(t, a.email, msg).then(() => true, () => false)) sent++;
+    for (const a of accts ?? [])
+      if (await deliver(await followWaitingMail(t as TournamentRow, fans.map((f) => f.name), `${siteOrigin(req)}/t/${t.slug}/following`, a.email)).then(() => true, () => false)) sent++;
     await db.from("fans").update({ reminded_at: new Date().toISOString() }).in("id", fans.map((f) => f.id));
   }
   return json({ ok: true, sent, moved, console: console_ });

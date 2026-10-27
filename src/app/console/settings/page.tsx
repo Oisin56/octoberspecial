@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useConsole } from "@/components/console/Shell";
 import { FilmSettings, Library, MailCheck, type Films, type LibraryRow, type Mail } from "@/components/console/OwnerTools";
 import { Loading, PageHead, Problem, act, api, day, useView } from "@/components/console/kit";
+import { eact, useEmailView } from "@/components/console/email";
 
 interface Settings {
   staff: { email: string; added_by: string; added_at: string; removed_at: string | null }[];
@@ -41,6 +42,7 @@ export default function SettingsPage() {
     <>
       <PageHead title="Settings" />
       <ConsoleEmail data={data} onSaved={reload} />
+      <EmailSettings />
       <Staff data={data} onSaved={reload} />
       <Example name={tools?.demoName ?? null} slug={tools?.demo ?? null} onSaved={loadTools} />
       {tools?.mail && <MailCheck mail={tools.mail} post={post} />}
@@ -193,3 +195,47 @@ function Example({ name, slug, onSaved }: { name: string | null; slug: string | 
     </section>
   );
 }
+
+/** The company's postal address (every update and marketing email shows it) and the mailbox replies go to */
+function EmailSettings() {
+  const { data } = useEmailView<{ settings: { address: string; support: string | null } }>("settings");
+  if (!data) return null;
+  return <EmailSettingsForm key={JSON.stringify(data.settings)} settings={data.settings} />;
+}
+
+function EmailSettingsForm({ settings }: { settings: { address: string; support: string | null } }) {
+  const placeholder = settings.address.startsWith("[");
+  const [address, setAddress] = useState(placeholder ? "" : settings.address);
+  const [support, setSupport] = useState(settings.support ?? "");
+  const [msg, setMsg] = useState<{ text: string; bad?: boolean } | null>(null);
+  return (
+    <form
+      className="con-panel con-form"
+      aria-labelledby="h-es"
+      onSubmit={async (e) => {
+        e.preventDefault();
+        const r = await eact({ action: "settings.save", address, support });
+        setMsg(r.ok ? { text: "Saved. Emails use them from now on." } : { text: String(r.j.error ?? "Didn't save"), bad: true });
+      }}
+    >
+      <h2 id="h-es">Email</h2>
+      <p className="small">The company&apos;s postal address goes in the footer of every update and marketing email (the law asks for it). Until it&apos;s set they show {settings.address.startsWith("[") ? settings.address : "[Company address, to be added]"}.</p>
+      <div className="con-form-row">
+        <div className="field">
+          <label htmlFor="es-address">Postal address, on one line</label>
+          <input id="es-address" value={address} onChange={(e) => setAddress(e.target.value)} placeholder="MyGolfBroadcast Ltd, 1 Main Street, Clonmel, Co. Tipperary" />
+        </div>
+      </div>
+      <div className="con-form-row">
+        <div className="field">
+          <label htmlFor="es-support">Where replies go</label>
+          <input id="es-support" type="email" value={support} onChange={(e) => setSupport(e.target.value)} placeholder="help@mygolfbroadcast.com" />
+          <small>Replies to the site&apos;s own emails (sign-in, offers, tips). Replies to a tournament&apos;s emails go to its organiser.</small>
+        </div>
+        <button className="btn">Save</button>
+      </div>
+      {msg && <p className={msg.bad ? "error" : "con-ok"}>{msg.text}</p>}
+    </form>
+  );
+}
+

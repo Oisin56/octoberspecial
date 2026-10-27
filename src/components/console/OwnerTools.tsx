@@ -17,6 +17,8 @@ export interface Films {
 
 
 export interface Mail {
+  via: "postmark" | "smtp" | "none";
+  postmark: { at: string; server: string | null; customUnsub: boolean } | null;
   host: string;
   port: number;
   from: string | null;
@@ -59,9 +61,14 @@ export function MailCheck({ mail, post }: { mail: Mail; post: Post }) {
     <section className="owner-mail" aria-label="Email">
       <h2>Email</h2>
       <ul className="owner-mail-list">
-        {row("Sending through", `${mail.host}, port ${mail.port}`, true)}
-        {row("From", mail.from ?? "not set (MAIL_FROM)", !!mail.from)}
-        {row("Login and password", mail.login && mail.password ? "set" : "missing (SMTP_USER, SMTP_PASS)", mail.login && mail.password)}
+        {mail.via === "postmark" ? (
+          row("Sending through", mail.postmark ? `Postmark${mail.postmark.server ? ` (${mail.postmark.server})` : ""}` : "Postmark, not set up yet (see Health)", !!mail.postmark)
+        ) : (
+          <>
+            {row("Sending through", mail.via === "smtp" ? `the old mailbox, ${mail.host}, port ${mail.port}` : "nothing yet: add POSTMARK_TOKEN in Vercel", mail.via === "smtp")}
+            {mail.via === "smtp" && row("From", mail.from ?? "not set (MAIL_FROM)", !!mail.from)}
+          </>
+        )}
         {row("Invite requests go to", mail.ownerEmail ?? "not set (OWNER_EMAIL)", !!mail.ownerEmail)}
       </ul>
       <div className="row" style={{ gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
