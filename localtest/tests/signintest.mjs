@@ -328,6 +328,11 @@ await ph.getByRole("button", { name: "I'm Dara" }).waitFor();
 ok(/privacy policy/.test(await ph.locator(".link-in").innerText()), "I'm Dara, with the privacy line");
 await shot(ph, "8-im-dara");
 await ph.getByRole("button", { name: "I'm Dara" }).click();
+// The first time in: the player bio, Complete player bio or Later
+await ph.getByRole("heading", { name: "Give the commentators something to work with" }).waitFor();
+ok((await ph.getByRole("button", { name: "Complete player bio" }).count()) === 1, "straight after I'm Dara: Complete player bio or Later");
+await shot(ph, "8b-bio");
+await ph.getByRole("button", { name: "Later" }).click();
 await ph.getByRole("heading", { name: "Welcome, Dara" }).waitFor();
 await shot(ph, "9-welcome");
 await ph.getByRole("link", { name: "Let's go" }).click();
