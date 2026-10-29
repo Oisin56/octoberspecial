@@ -15,8 +15,8 @@ await p.goto(`${BASE}/try`, { waitUntil: "networkidle" });
 await p.locator(".score-step").first().waitFor({ timeout: 15000 });
 for (let h = 1; h <= 3; h++) {
   await p.locator(".pscore.entry", { hasText: "You" }).locator(".ss-val").click();
-  await p.locator(".next-hole").click(); await p.locator(".shotcard").waitFor();
-  await p.locator(".shotcard").getByText(h < 3 ? `On to hole ${h + 1}` : "See what everyone at home saw").click();
+  await p.locator(".after-hole").waitFor();
+  await p.locator(".after-hole .btn").nth(1).click();
   if (h < 3) await p.locator(".score-step").first().waitFor();
 }
 await p.locator(".fm-film").waitFor();

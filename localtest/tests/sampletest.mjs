@@ -65,43 +65,51 @@ async function playRound(p, shot, label) {
   await tab.click(); await p.locator(".gps-panel").waitFor(); await sleep(350);
   ok(true, `${label}: a tap opens it too`);
   await p.locator(".gps-close").click(); await sleep(400);
-  await p.locator(".next-hole").click();
-  await p.locator(".shotcard").waitFor({ timeout: 8000 });
-  ok(true, `${label}: the hole done, the "what happened" card`);
-  await p.locator(".sc-player", { hasText: "Declan" }).click();
-  ok(/Tee shot: right/.test(await p.locator(".sc-rows").innerText()), `${label}: Declan's shots are already logged`);
-  await p.locator(".sc-player", { hasText: "You" }).click();
-  // The voice note: a sample note, no microphone
-  await p.getByRole("button", { name: "Hold to talk" }).click();
+  await p.locator(".after-hole").waitFor({ timeout: 8000 });
+  ok(true, `${label}: the hole done, the two buttons (nothing pops up)`);
+  await p.locator(".after-hole .btn", { hasText: "Add detail" }).click();
+  await p.locator(".dtl").waitFor({ timeout: 8000 });
+  await p.locator(".dtl-tab", { hasText: "Declan" }).click();
+  ok(/Tee shot[^\n]*right/i.test(await p.locator(".dtl-shots").innerText()), `${label}: Declan's shots are already told`);
+  await p.locator(".dtl-tab", { hasText: "You" }).click();
+  ok(/Wind: a little hurt/.test(await p.locator(".dtl-wind").innerText()), `${label}: the wind on the hole, from the weather`);
+  // The voice note for the commentators: a sample note, no microphone
+  await p.getByRole("button", { name: "Hold to tell the commentators" }).click();
   await p.getByText(/greens are quick/).first().waitFor({ timeout: 8000 });
-  ok(true, `${label}: the voice note writes down a sample note`);
+  ok(true, `${label}: the voice note writes down a sample note, for the commentators`);
+  await p.locator(".dtl-shot").first().locator(".dtl-card-main").click();
+  await p.locator(".dtl-shot.open .dtl-tile").first().waitFor();
   await shot("3-shotcard");
-  // Clip: where the camera would open, and who filmed what
-  await p.locator(".shotcard a", { hasText: "Clip" }).click();
+  // Film this shot: where the camera would open, and who filmed what
+  await p.locator(".dtl-shot.open a", { hasText: "Film this shot" }).click();
   await p.locator(".sr-cam").waitFor({ timeout: 8000 });
-  ok(/Marcus filmed Declan's putt/.test(await p.locator(".sr-cam").innerText()), `${label}: Clip shows where the camera opens, and that Marcus filmed Declan`);
+  ok(/Marcus filmed Declan's putt/.test(await p.locator(".sr-cam").innerText()), `${label}: Film this shot shows where the camera opens, and that Marcus filmed Declan`);
   await shot("4-camera");
-  await p.getByRole("button", { name: "Back to the scorecard" }).click();
-  await p.locator(".shotcard").getByText(/On to hole 2/).click();
+  await p.locator(".sr-cam").getByRole("button", { name: "Back to the scorecard" }).click();
+  await p.locator(".dtl .dtl-next, .after-hole .btn:not(.secondary)").first().waitFor({ timeout: 8000 });
+  await p.locator(".dtl .dtl-next, .after-hole .btn:not(.secondary)").first().click();
   await p.locator(".score-step").first().waitFor();
   ok((await p.locator(".hole-pick .n").innerText()).trim() === "2", `${label}: on to hole 2`);
-  // Your score missing: it asks
-  await p.locator(".next-hole").click();
+  // Your score missing: a swipe on asks first
+  ok((await p.locator(".after-hole").count()) === 0, `${label}: your score not in, no buttons to move on`);
+  // (along the top line, clear of the GPS tab on the right edge)
+  const sb = await p.locator(".score-top").boundingBox();
+  const sy = sb.y + sb.height / 2;
+  await p.mouse.move(sb.x + sb.width * 0.7, sy); await p.mouse.down(); await p.mouse.move(sb.x + sb.width * 0.4, sy + 2, { steps: 4 }); await p.mouse.move(sb.x + 10, sy + 3, { steps: 4 }); await p.mouse.up();
   await p.getByText("Your score isn't in.").waitFor({ timeout: 5000 });
-  ok(true, `${label}: Next without your score asks first ("Your score isn't in.")`);
+  ok(true, `${label}: moving on without your score asks first ("Your score isn't in.")`);
   await p.getByRole("button", { name: /^Enter it$/ }).click();
   await setScore(p, "You", 4);
-  await p.locator(".next-hole").click();
-  await p.locator(".shotcard").waitFor();
-  await p.locator(".shotcard").getByText(/On to hole 3/).click();
+  await p.locator(".after-hole .btn", { hasText: "On to hole 3" }).click();
   await p.locator(".score-step").first().waitFor();
   // Hole 3: par 3. You make 3; Declan's 2 is in
   await setScore(p, "You", 3);
-  await p.locator(".next-hole").click();
-  await p.locator(".shotcard").waitFor();
-  await p.locator(".sc-player", { hasText: "Declan" }).click();
-  ok(/Birdie/.test(await p.locator(".sc-player", { hasText: "Declan" }).innerText()) && /holed from 30 ft/.test(await p.locator(".sc-rows").innerText()), `${label}: Declan's birdie, and how`);
-  await p.locator(".shotcard").getByText(/See what everyone at home saw/).click();
+  await p.locator(".after-hole").waitFor();
+  ok(/Declan birdie/.test(await p.locator(".after-hole .btn").first().innerText()), `${label}: Declan's birdie names itself on the button`);
+  await p.locator(".after-hole .btn", { hasText: "Add detail" }).click();
+  await p.locator(".dtl").waitFor();
+  ok((await p.locator('.dtl-tab[aria-selected="true"]').innerText()).includes("Declan") && /holed from 30 ft/i.test(await p.locator(".dtl-shots").innerText()), `${label}: Declan's birdie, and how`);
+  await p.locator(".dtl").getByText(/See what everyone at home saw/).click();
   // The highlight, as it looks in the film
   await p.locator(".fm-film video").waitFor({ timeout: 10000 });
   const t0 = Date.now();

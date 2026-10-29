@@ -67,6 +67,8 @@ export interface TournamentRow {
   players_need_email?: boolean;
   /** A round (or a trip) on your own: one player, who set it up */
   solo?: boolean;
+  /** Only each group's named scorer enters scores (otherwise anyone in the group can) */
+  one_scorer?: boolean;
   /** When it finished (the organiser's button, or by itself after the last round); none = still going */
   finished_at?: string | null;
   /** Photos, videos and comments can be posted until then (set when it finishes) */
@@ -172,6 +174,8 @@ export interface RoundRow {
   /** The whole card (set when the round is loaded; holes is then just the holes played) */
   all_holes?: HoleRowData[];
   scorer_id: string | null;
+  /** Being played when open scoring went live: its one scorer keeps the card until it's finished */
+  keep_scorer?: boolean;
   status: "upcoming" | "live" | "complete";
   games: Game[] | null;
   points_rule: PointsRule | null;
@@ -328,6 +332,8 @@ export interface TournamentState {
   /** Submitted and final cards, and who signed them (absent until the database has the tables) */
   cards?: CardRow[];
   signatures?: CardSignatureRow[];
+  /** The wind on each hole, as the groups corrected it */
+  holeNotes?: HoleNoteRow[];
 }
 
 export interface CardRow {
@@ -382,10 +388,25 @@ export interface ShotRow {
   kind: string;
   outcome: string;
   club: string | null;
+  /** Approaches: a yardage band (older shots). Putts: the length (Tap-in, 3 to 10 ft…) */
   distance: string | null;
+  /** How it was struck, its shape and its flight (all optional) */
+  contact?: string | null;
+  shape?: string | null;
+  flight?: string | null;
   author_name: string;
   client_id: string;
   logged_at: string;
+}
+
+/** The wind on a hole as a group corrected it (otherwise it comes from the weather) */
+export interface HoleNoteRow {
+  round_id: string;
+  game: string;
+  hole: number;
+  wind: string | null;
+  by_name: string | null;
+  updated_at: string;
 }
 
 // ------------------------------------------------------------ conversion to engine

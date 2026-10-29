@@ -7,7 +7,6 @@ import { useT } from "@/components/Providers";
 import { Loading } from "@/components/ui";
 import { ClipDetail } from "@/components/ClipDetail";
 import { setPendingClip, takePendingClip } from "@/lib/pendingClip";
-import { mergeShots } from "@/lib/shotQueue";
 import { getCamera, isHomeScreenApp, isIPhone, nativeZoom, releaseCamera, setNativeZoom } from "@/lib/camera";
 import { CLIP_TYPES, cameraChoices } from "@/lib/film";
 import type { ClipType } from "@/lib/types";
@@ -39,7 +38,7 @@ function pickType() {
  * camera or the camera roll work instead.
  */
 function RecordInner() {
-  const { state, href, slug } = useT();
+  const { state, href } = useT();
   const sp = useSearchParams();
   const router = useRouter();
   const round = useMemo(() => {
@@ -48,14 +47,13 @@ function RecordInner() {
     return (n && state.rounds.find((r) => r.number === Number(n))) || state.rounds.find((r) => r.status === "live") || null;
   }, [state, sp]);
   const hole = sp.get("hole") ? Number(sp.get("hole")) : null;
-  // Filmed from the shot card: the player (and their last shot) are already known
+  // Filmed from a shot card: the player and the stroke are already known
   const prefill = useMemo(() => {
     const player = sp.get("player");
     if (!player || !state || !round || !hole) return null;
-    const shots = mergeShots(state.shots, slug, state.tournament.id).filter((s) => s.round_id === round.id && s.hole === hole && s.player_id === player);
-    const s = shots.find((x) => x.client_id === sp.get("shot")) ?? shots[shots.length - 1];
-    return { playerId: player, kind: s?.kind, outcome: s?.outcome, club: s?.club, shotClientId: s?.client_id };
-  }, [sp, state, round, hole, slug]);
+    const seq = Number(sp.get("seq"));
+    return { playerId: player, seq: seq >= 1 && seq <= 15 ? seq : null };
+  }, [sp, state, round, hole]);
   const holeInfo = useMemo(() => {
     const hh = round && hole ? round.holes.find((x) => x.number === hole) : null;
     return hh ? { par: hh.par, yards: hh.yards, note: round?.course_guide?.holes?.[String(hole)] ?? "" } : undefined;

@@ -97,7 +97,7 @@ export const SERIES: SeriesDef[] = [
         words: {
           subject: "Three days to go",
           headline: "Three days to go",
-          lines: "A short checklist: everyone has their link, tee times are in, and someone in each group knows they're keeping score.",
+          lines: "A short checklist: everyone has their link, tee times are in, and each group knows anyone in it can enter the scores on their own phone.",
           button: "Check everything",
         },
       },

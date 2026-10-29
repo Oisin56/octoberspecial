@@ -15,7 +15,7 @@ function audioType() {
  * One big button: hold it and talk, let go, and the words appear (golf terms and names spelled right).
  * A quick tap starts it instead, and a second tap stops it, for anyone who taps rather than holds.
  */
-export function HoldToTalk({ onText, compact }: { onText: (text: string) => void; compact?: boolean }) {
+export function HoldToTalk({ onText, compact, label = "Hold to talk" }: { onText: (text: string) => void; compact?: boolean; label?: string }) {
   const { slug, sample } = useT();
   const [state, setState] = useState<"idle" | "listening" | "writing">("idle");
   const [err, setErr] = useState<string | null>(null);
@@ -111,7 +111,7 @@ export function HoldToTalk({ onText, compact }: { onText: (text: string) => void
         type="button"
         className={`talk-btn ${state}`}
         disabled={state === "writing"}
-        aria-label={state === "listening" ? "Listening. Let go (or tap) to finish" : "Hold to talk"}
+        aria-label={state === "listening" ? "Listening. Let go (or tap) to finish" : label}
         onPointerDown={(e) => {
           e.preventDefault();
           if (state === "listening") {
@@ -138,7 +138,7 @@ export function HoldToTalk({ onText, compact }: { onText: (text: string) => void
           <rect x="9" y="3" width="6" height="11" rx="3" fill="currentColor" />
           <path d="M6 11a6 6 0 0 0 12 0M12 17v4" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" />
         </svg>
-        <span>{state === "listening" ? `Listening… ${Math.floor(secs)}s` : state === "writing" ? "Writing it down…" : "Hold to talk"}</span>
+        <span>{state === "listening" ? `Listening… ${Math.floor(secs)}s` : state === "writing" ? "Writing it down…" : label}</span>
       </button>
       {state === "listening" && <p className="talk-tip">Let go (or tap again) when you&apos;re done. Phone close to your mouth, back to the wind.</p>}
       {err && <p className="talk-err">{err}</p>}

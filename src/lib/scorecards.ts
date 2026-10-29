@@ -75,8 +75,8 @@ export function cardLabel(i: CardInfo, names: Record<string, string>): string {
   const who = (ids: string[]) => ids.map((id) => names[id] ?? id).join(" and ");
   if (i.stage === "final") {
     const byOrg = !!i.card?.finalised_by?.endsWith("(organiser)") && i.signed.length < i.players.length;
-    const sig = byOrg ? ", made final by the organiser" : i.signed.length ? `, signed by ${who(i.signed)}` : "";
-    return `Final${sig}${i.amended ? ". Amended by the organiser" : ""}`;
+    const sig = byOrg ? ", made final by the organiser" : i.signed.length ? `, ${i.needsSignatures ? "signed" : "checked"} by ${who(i.signed)}` : "";
+    return `Final${sig}${i.amended ? ". Amended by the organiser" : ""}${i.flag ? `. ${i.flag.by} says something's not right` : ""}`;
   }
   if (i.stage === "submitted") {
     const waiting = i.players.filter((p) => !i.signed.includes(p));

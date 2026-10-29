@@ -100,7 +100,7 @@ setLive(2);
 await op.goto(`${BASE}/t/${T}/go`);
 await op.waitForURL(/\/score$/, { timeout: 15000 });
 ok(true, "the organiser who's scoring the live round lands on the scorecard");
-ok((await barLabels(op)).join(",") === "Score,Record,Note,Live,More", `on the course: ${(await barLabels(op)).join(", ")}`);
+ok((await barLabels(op)).join(",") === "Score,Record,Detail,Live,More", `on the course: ${(await barLabels(op)).join(", ")}`);
 const neil = agent();
 {
   const u = (await org("/api/admin", { action: "playerLink", playerId: "neil", reset: true })).j.url;
@@ -109,9 +109,9 @@ const neil = agent();
 const np = await phone(neil.cookie());
 await np.goto(`${BASE}/t/${T}/go`);
 await np.waitForURL(/\/score$/, { timeout: 15000 });
-ok((await barLabels(np)).join(",") === "Card,Record,Note,Live,More", `Neil isn't scoring: Card instead of Score (${(await barLabels(np)).join(", ")})`);
+ok((await barLabels(np)).join(",") === "Score,Record,Detail,Live,More", `Neil's in the group, so he scores too: Score on his bar (${(await barLabels(np)).join(", ")})`);
 // On the scorecard (full screen) who you are is under More
-await np.getByRole("button", { name: "More" }).click();
+await np.locator("nav.oncourse").getByRole("button", { name: "More", exact: true }).click();
 await np.locator(".who-card").waitFor();
 ok(/Neil/.test(await np.locator(".who-name").innerText()) && /^You're playing/.test(await np.locator(".who-role").innerText()), "More shows who you are on the course too");
 await np.screenshot({ path: "/var/tmp/ospg/shots/phaseb-more-live.png" });
@@ -122,7 +122,7 @@ const vp = await phone();
 await vp.goto(`${BASE}/t/${T}/go`);
 await vp.waitForURL(/\/live$/, { timeout: 15000 });
 ok(true, "a follower lands on the live page during a round");
-ok((await barLabels(vp)).join(",") === "Home,Live,Feed,Leaderboard,More", "followers get no Score, Record or Note");
+ok((await barLabels(vp)).join(",") === "Home,Live,Feed,Leaderboard,More", "followers get no Score, Record or Detail");
 ok((await vp.getByRole("link", { name: "See the clips" }).count()) === 1, "the live page links to the clips");
 await vp.goto(`${BASE}/t/${T}/feed`, { waitUntil: "networkidle" });
 await vp.locator(".sf-live").waitFor();
@@ -142,7 +142,7 @@ ok((await fpage.locator(".sf-compose textarea").count()) === 0, "a fan's feed: S
 ok((await fpage.locator(".role-badge.fan").innerText()).includes("You're following as"), "the follower's line: You're following as Aisling");
 await fpage.screenshot({ path: "/var/tmp/ospg/shots/phaseb-fan-feed.png" });
 await fpage.goto(`${BASE}/t/${T}/shots?round=2&hole=1`, { waitUntil: "networkidle" });
-ok((await fpage.locator(".shotcard").count()) === 0, "a fan can't open the shot log");
+ok((await fpage.locator(".dtl").count()) === 0, "a fan can't open Add detail");
 ok((await fan("/api/shots", { clientId: "y".repeat(20), roundId: "x", hole: 1 })).status === 401, "and the server agrees");
 
 // ---- Player links

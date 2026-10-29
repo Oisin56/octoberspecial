@@ -24,7 +24,7 @@ const ON_COURSE = [
   { title: "No signal, no problem", body: "Scores wait on the phone and send when there's signal.", img: "/home/offline.jpg", alt: "The scorecard: saved on this phone, sends when there's signal" },
   { title: "GPS yardages on demand", body: "Front, middle and back, from where you stand. Over 40,000 courses.", img: "/home/gps.jpg", alt: "Distances to the front, middle and back of the green" },
   { title: "Film the moment", body: "Anyone in the group can film. Trim it on the spot and it's straight on the feed.", img: "/home/record.jpg", alt: "Filming a putt on the course, recording" },
-  { title: "One tap tells the story", body: "Say what happened with a tap or a voice note. Or skip it. The score is enough.", img: "/home/shotcard.jpg", alt: "What happened: the tee shot, with one-tap answers" },
+  { title: "One tap tells the story", body: "Add detail with a tap, the likeliest answer first. Or skip it. The score is enough.", img: "/home/shotcard.jpg", alt: "Add detail: the tee shot, with the likeliest clubs first" },
   { title: "See where you stand", body: "The leaderboard moves as every group scores.", img: "/home/follow.jpg", alt: "The live leaderboard on the phone" },
 ];
 

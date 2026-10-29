@@ -1,3 +1,5 @@
+import { mayTellShots } from "@/lib/scoring-access";
+import type { Game } from "@/lib/engine";
 import { adminClient } from "@/lib/admin";
 import { isCrew, isOrganiser } from "@/lib/auth";
 import { GolfApiError } from "@/lib/golfapi";
@@ -94,11 +96,11 @@ export async function POST(req: Request) {
   return json({ ok: true, ...d });
 }
 
-/** Is this player keeping score for the other's group in the round? */
-async function scoresFor(roundId: string, scorerId: string | undefined, playerId: string) {
-  if (!scorerId) return false;
+/** Is this player in the other's group in the round (anyone in the group can place his readings)? */
+async function scoresFor(roundId: string, me: string | undefined, playerId: string) {
+  if (!me) return false;
   const { data } = await adminClient().from("rounds").select("games,scorer_id").eq("id", roundId).maybeSingle();
-  const games = (data?.games ?? []) as { scorerId?: string | null; sides: { playerIds: string[] }[] }[];
-  if (!games.length) return data?.scorer_id === scorerId;
-  return games.some((g) => g.scorerId === scorerId && g.sides.some((s) => s.playerIds.includes(playerId)));
+  const games = (data?.games ?? []) as Game[];
+  if (!games.length) return true;
+  return mayTellShots(games, { playerId: me, role: "player" }, playerId);
 }

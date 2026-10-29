@@ -485,7 +485,7 @@ function Moderate({ data, onSaved }: { data: AdminData; onSaved: () => void }) {
                 {p.author_name}
                 {p.fan_id ? " (fan)" : ""}, {p.hole ? `hole ${p.hole}, ` : ""}
                 {timeAgo(p.created_at)}
-                {p.visibility === "report" && <span className="report-only">, film only</span>}
+                {p.visibility === "report" && <span className="report-only">{p.tags.includes("voice") ? ", for the commentators only" : ", film only"}</span>}
                 {p.hidden && <span className="error">, hidden</span>}
               </div>
               {p.body && <p style={{ margin: "4px 0" }}>{p.body}</p>}

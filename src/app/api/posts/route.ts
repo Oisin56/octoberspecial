@@ -12,6 +12,8 @@ export const maxDuration = 60;
 const TAGS = new Set([
   "birdie", "eagle", "chip-in", "long putt", "3-putt", "water", "bunker", "OB", "lip-out",
   "shank", "great drive", "near miss", "banter", "weather", "rules", "lost ball", "great recovery", "gimme",
+  // a voice note for the commentators (never in the feed)
+  "voice",
 ]);
 const DETAIL = /^[\w '&-]{1,30}$/;
 
@@ -86,11 +88,13 @@ export async function POST(req: Request) {
   const trimIn = num(b.trimIn);
   const trimOut = num(b.trimOut);
   const d = (b.details ?? {}) as Record<string, unknown>;
-  const details: Record<string, string> = Object.fromEntries(
+  const details: Record<string, string | number> = Object.fromEntries(
     (["shot", "result", "club"] as const).filter((k) => typeof d[k] === "string" && DETAIL.test(String(d[k]))).map((k) => [k, String(d[k])]),
   );
   // the logged shot this clip shows
   if (typeof d.shotId === "string" && /^[\w-]{8,64}$/.test(d.shotId)) details.shotId = d.shotId;
+  // the stroke it shows, when it was filmed before the stroke was told
+  if (typeof d.seq === "number" && Number.isInteger(d.seq) && d.seq >= 1 && d.seq <= 15) details.seq = d.seq;
   // the recording's shape and length (for the broadcast version)
   if (d.shape === "portrait" || d.shape === "landscape") details.shape = d.shape;
   if (d.dur != null && Number(d.dur) > 0 && Number(d.dur) < 600) details.dur = String(Math.round(Number(d.dur) * 10) / 10);
@@ -107,7 +111,7 @@ export async function POST(req: Request) {
     body: body || null,
     tags,
     media_path: mediaPath,
-    visibility: b.visibility === "report" ? "report" : "public",
+    visibility: b.visibility === "report" || tags.includes("voice") ? "report" : "public",
     player_ids: playerIds,
     clip_start: num(b.clipStart),
     clip_end: num(b.clipEnd),

@@ -1,5 +1,6 @@
 "use client";
 
+import { mayScore } from "@/lib/scoring-access";
 import Link from "next/link";
 import { useState } from "react";
 import { useT } from "@/components/Providers";
@@ -25,7 +26,7 @@ export default function Live() {
   const isLive = round.status === "live";
   const game = cfg.games[Math.min(gi, cfg.games.length - 1)];
   const board = roundBoard(state, summary, round);
-  const canScoreAny = session && (session.role === "organiser" || cfg.games.some((g) => g.scorerId === session.playerId));
+  const canScoreAny = session && (session.role === "organiser" || cfg.games.some((g) => mayScore(state.tournament, round, g, session)));
 
   return (
     <>

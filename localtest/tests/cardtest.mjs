@@ -61,7 +61,7 @@ p.on("pageerror", (e) => console.log("pageerror:", e.message));
 await p.goto(`${BASE}/t/${T}/score?round=5`, { waitUntil: "networkidle" });
 await p.locator(".hole-pick .n").waitFor();
 ok((await p.locator(".hole-pick .n").innerText()).trim() === "15", "opens at the first hole not entered (15)");
-const neilConcede = p.locator(".pscore", { hasText: "Neil" }).getByRole("button", { name: "Concedes" });
+const neilConcede = p.locator(".pscore", { hasText: "Neil" }).getByRole("button", { name: "Neil concedes the hole" });
 await neilConcede.tap();
 await p.getByText("Neil concedes. Oisin wins the hole").waitFor();
 ok((await neilConcede.getAttribute("aria-pressed")) === "true", "Neil concedes hole 15 with one tap");
@@ -71,22 +71,22 @@ ok((await p.getByText("Neil concedes").count()) === 0, "tap again to undo the co
 // halve 15: Oisin 4 up with 3 to play (one tap each on par)
 for (const who of ["Oisin", "Neil"]) await setScore(p, who, pars[14]);
 await p.getByText("Hole halved").waitFor();
-await p.locator(".next-hole").tap();
-await p.getByRole("button", { name: "The match is over: check the card" }).waitFor({ timeout: 8000 });
+await p.locator(".after-hole .btn", { hasText: "Hand in the card" }).waitFor({ timeout: 8000 });
+ok(true, "the match is over: the right-hand button says Hand in the card");
 await p.screenshot({ path: "/var/tmp/ospg/shots/card-2-over.png" });
-await p.getByRole("button", { name: "The match is over: check the card" }).tap();
+await p.locator(".after-hole .btn", { hasText: "Hand in the card" }).tap();
 await p.locator(".cp").waitFor();
 ok(/won 4&3/.test(await p.locator(".cp-result").innerText()), `card shows the result (${await p.locator(".cp-result").innerText()})`);
 ok(/Provisional/.test(await p.locator(".cp-stage").innerText()), "provisional until submitted");
 ok((await p.locator(".cp-card .sc", { hasText: "C" }).count()) === 1, "conceded hole marked C on the card");
 await p.waitForTimeout(300);
 await p.screenshot({ path: "/var/tmp/ospg/shots/card-3-review.png", fullPage: true });
-await p.getByRole("button", { name: "Submit the card" }).tap();
+await p.locator(".cp-foot").getByRole("button", { name: "Hand in the card" }).tap();
 await p.waitForTimeout(400);
 await p.screenshot({ path: "/var/tmp/ospg/shots/card-4-confirm.png" });
-await p.locator(".sf-sheet").getByRole("button", { name: "Submit the card" }).tap();
+await p.locator(".sf-sheet").getByRole("button", { name: "Hand in the card" }).tap();
 await p.locator(".cp-signer").first().waitFor();
-ok((await p.locator(".cp-signer.done", { hasText: "Oisin" }).count()) === 1, "submitting signs it for the scorer");
+ok((await p.locator(".cp-signer.done", { hasText: "Oisin" }).count()) === 1, "handing it in signs it for whoever handed it in");
 await p.screenshot({ path: "/var/tmp/ospg/shots/card-5-signing.png" });
 
 // Neil's phone shows the prompt

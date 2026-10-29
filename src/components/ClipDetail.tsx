@@ -5,33 +5,35 @@ import { flushGps, saveReading } from "@/lib/gpsQueue";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useT } from "./Providers";
 import { groupPlayers } from "@/lib/courseCards";
-import { CLUB_GROUPS, KIND_LABEL, kindsFor, outcomesFor, tagsFor, type HoleInfo, type ShotKind } from "@/lib/shots";
-import { flushShots, saveShot } from "@/lib/shotQueue";
+import { KIND_LABEL, tagsFor, type HoleInfo, type ShotKind } from "@/lib/shots";
+import { shotWords } from "@/lib/detail";
 import { flushClips, queueClip } from "@/lib/trimmer";
+import { StrokeTeller, nth, useHoleTelling } from "./AddDetail";
 import { readScorePos } from "@/lib/scorePos";
 import { HoldToTalk } from "./HoldToTalk";
 import { CLIP_TYPES } from "@/lib/film";
 import type { ClipType } from "@/lib/types";
 
-type Step = "trim" | "type" | "people" | "who" | "shot" | "result" | "club" | "done" | "another";
+type Step = "trim" | "type" | "people" | "confirm" | "change" | "detail" | "done" | "another";
 type Aside = Exclude<ClipType, "shot">;
 /** Recordings longer than this can have more than one shot cut from them */
 const MULTI_SECONDS = 25;
-const ORDER: Step[] = ["trim", "who", "shot", "result", "club", "done"];
+/** A shot: trim it, confirm the guess, post (Change and Add detail open from the confirm screen) */
+const ORDER: Step[] = ["trim", "confirm"];
+const LAST_PLAYER = (slug: string) => `mgs_shot_player_${slug}`;
 /** An interview, a prediction, scene-setting: just who's in it */
 const ASIDE_ORDER: Step[] = ["trim", "type", "people", "done"];
 const t1 = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, "0")}`;
 
 /**
- * A clip just filmed: trim it with two big handles (nothing is cut on the phone, the film just plays the
- * chosen part), then say who, what shot, how it finished and the club, one tap each. Saved on the phone
- * and sent in the background, so it's straight back to the scorecard.
+ * A clip just filmed: trim it with two big handles (nothing is cut on the phone, the film just plays the chosen
+ * part), then confirm the guess ("Neil's shot 3 on the 7th?") and post. Change opens the same player tabs and shot
+ * list as Add detail; Add detail opens the same shot card. Saved on the phone and sent in the background.
  */
 export function ClipDetail({
   blob,
   roundId,
   hole,
-  holeInfo,
   prefill,
   onDone,
   onCancel,
@@ -51,8 +53,8 @@ export function ClipDetail({
   roundId: string | null;
   hole: number | null;
   holeInfo?: HoleInfo;
-  /** From the shot just logged for this player: who, what and how it finished are already known */
-  prefill?: { playerId: string; kind?: string; outcome?: string; club?: string | null; shotClientId?: string } | null;
+  /** Filmed from a shot card: the player, and the stroke */
+  prefill?: { playerId: string; seq?: number | null } | null;
   onDone: (msg: string) => void;
   onCancel: () => void;
 }) {
@@ -64,15 +66,15 @@ export function ClipDetail({
   const [shape, setShape] = useState<"portrait" | "landscape" | null>(null);
   const [range, setRange] = useState<[number, number]>([0, 0]);
   const [step, setStep] = useState<Step>("trim");
-  const info: HoleInfo = holeInfo ?? { par: 4 };
+  const T = useHoleTelling(roundId ?? "", hole ?? 0);
   const [who, setWho] = useState<string[]>(prefill?.playerId ? [prefill.playerId] : []);
-  const [shot, setShot] = useState<ShotKind | null>((prefill?.kind as ShotKind) ?? null);
-  const [result, setResult] = useState<string | null>(prefill?.outcome ?? null);
-  const [club, setClub] = useState<string | null>(prefill?.club ?? null);
+  /** The stroke it shows (null = the next one, worked out when asked) */
+  const [seq, setSeq] = useState<number | null>(prefill?.seq ?? null);
+  /** The player tab open on Change */
+  const [tab, setTab] = useState<string | null>(null);
   /** Shots already cut from this recording (shaded on the trim bar) */
   const [used, setUsed] = useState<[number, number][]>([]);
   const shared = useRef<string | null>(null);
-  const complete = used.length === 0 && !!(prefill?.playerId && prefill.kind && prefill.outcome);
   const [caption, setCaption] = useState("");
   /** For the highlights film only: kept out of the feed */
   const [filmOnly, setFilmOnly] = useState(false);
@@ -89,6 +91,26 @@ export function ClipDetail({
     return g.length ? g : state.players;
   }, [state, roundId, slug, session?.playerId]);
 
+  /** Who's playing it: the player last picked on this phone, else whoever's phone it is, else the first in the group */
+  const guessWho = (): string | null => {
+    try {
+      const last = localStorage.getItem(LAST_PLAYER(slug));
+      if (last && players.some((p) => p.id === last)) return last;
+    } catch {}
+    if (session?.playerId && players.some((p) => p.id === session.playerId)) return session.playerId;
+    return players[0]?.id ?? null;
+  };
+  /** The next stroke for this player: the one after the last told (or filmed), never past the score */
+  const nextSeq = (pid: string) => {
+    const rows = T.rowsFor(pid);
+    const lastTold = Math.max(0, ...rows.filter((r) => r.shot || r.clip).map((r) => r.seq));
+    return Math.max(1, Math.min(lastTold + 1, rows.length || 1));
+  };
+  const one = who.length === 1 ? who[0] : null;
+  const strokeNo = one ? (seq ?? nextSeq(one)) : null;
+  const nameOf = (id: string) => state?.players.find((p) => p.id === id)?.name ?? id;
+  const told = one && strokeNo ? (T.rowsFor(one).find((r) => r.seq === strokeNo)?.shot ?? null) : null;
+
   // Play the chosen part on a loop
   useEffect(() => {
     const v = video.current;
@@ -103,31 +125,37 @@ export function ClipDetail({
   const go = (s: Step) => setStep(s);
   const back = () => {
     if (aside && !asking && step === "people" && !clipType) {
-      // "Not a shot?" during play: back to the shot questions
+      // "Not a shot?" during play: back to the confirm screen
       setAside(null);
-      return setStep("shot");
+      return setStep("confirm");
     }
+    if (step === "change" || step === "detail") return setStep("confirm");
     const i = order.indexOf(step);
-    if (i === 0) return used.length ? setStep("another") : onCancel();
-    let prev = order[i - 1];
-    if (prev === "club" && shot === "putt") prev = "result";
-    setStep(prev);
+    if (i <= 0) return used.length ? setStep("another") : onCancel();
+    setStep(order[i - 1]);
   };
+  /** After the trim: the guess, ready to confirm */
+  function toConfirm() {
+    if (!who.length) {
+      const g = guessWho();
+      if (g) setWho([g]);
+    }
+    go("confirm");
+  }
 
   async function post() {
     setBusy(true);
     const names = who.map((id) => state?.players.find((p) => p.id === id)?.name ?? id);
-    const summary = aside ? [names.join(" & "), CLIP_TYPES[aside].name.toLowerCase()].filter(Boolean).join(" · ") : [names.join(" & "), shot ? KIND_LABEL[shot].toLowerCase() : null, result?.toLowerCase()].filter(Boolean).join(" · ");
+    // What's told of the stroke (nothing is filled in: only what someone tapped)
+    const shot = !aside && told ? (told.kind as ShotKind) : null;
+    const result = !aside && told?.outcome ? told.outcome : null;
+    const club = !aside && told?.club && told.kind !== "putt" ? told.club : null;
+    const summary = aside
+      ? [names.join(" & "), CLIP_TYPES[aside].name.toLowerCase()].filter(Boolean).join(" · ")
+      : [names.join(" & "), told ? shotWords(told).toLowerCase() : strokeNo ? `shot ${strokeNo}` : null].filter(Boolean).join(" · ");
     const when = aside ? clipWhen ?? typeChoices?.when ?? "post" : undefined;
     const postRound = aside && asking ? (when === "post" ? typeChoices!.roundId : null) : roundId;
-    // The clip is a shot: link it to the one logged, or log it now (one player, a shot and how it finished)
-    const unchanged = complete && who[0] === prefill!.playerId && shot === prefill!.kind && result === prefill!.outcome;
-    let shotId = unchanged && !aside ? prefill!.shotClientId : undefined;
-    if (!aside && !shotId && roundId && hole && who.length === 1 && shot && result) {
-      shotId = crypto.randomUUID();
-      saveShot(slug, shotId, { roundId, hole, playerId: who[0], kind: shot, outcome: result, club, distance: null, loggedAt: new Date().toISOString(), author: session?.name ?? "" });
-      flushShots(slug);
-    }
+    const shotId = !aside && told ? told.client_id : undefined;
     // Where it was filmed: the distance for the shot, if nobody measured it
     const at = takeClipFix();
     if (at && !aside && roundId && hole && who.length === 1) {
@@ -143,7 +171,7 @@ export function ClipDetail({
         to_back: null,
         from_tee: null,
         source: "clip",
-        seq: null,
+        seq: strokeNo,
         ignored: false,
         author_name: session?.name ?? "",
         taken_at: new Date(at.at).toISOString(),
@@ -169,15 +197,16 @@ export function ClipDetail({
         roundId: postRound,
         hole: aside ? null : hole,
         body: caption.trim() || summary,
-        tags: !aside && shot && result ? tagsFor(shot, result) : [],
+        tags: shot && result ? tagsFor(shot, result) : [],
         playerIds: who,
         trimIn: whole ? null : Math.round(range[0] * 10) / 10,
         trimOut: whole ? null : Math.round(range[1] * 10) / 10,
         details: {
-          ...(!aside && shot ? { shot: KIND_LABEL[shot] } : {}),
-          ...(!aside && result ? { result } : {}),
-          ...(!aside && club ? { club } : {}),
+          ...(shot ? { shot: KIND_LABEL[shot] } : {}),
+          ...(result ? { result } : {}),
+          ...(club ? { club } : {}),
           ...(shotId ? { shotId } : {}),
+          ...(!aside && strokeNo ? { seq: strokeNo } : {}),
           ...(aside ? { clipType: aside, when } : {}),
           ...(shape ? { shape } : {}),
           ...(dur ? { dur: Math.round(dur * 10) / 10 } : {}),
@@ -205,27 +234,25 @@ export function ClipDetail({
     setRange([start, dur]);
     if (video.current) video.current.currentTime = start;
     setWho([]);
-    setShot(null);
-    setResult(null);
-    setClub(null);
+    setSeq(null);
     setCaption("");
     setFilmOnly(false);
     if (!clipType) setAside(null);
     setStep("trim");
   }
 
+  const guessLine = one && strokeNo && hole ? `${nameOf(one)}'s shot ${strokeNo} on the ${nth(hole)}?` : who.length > 1 && hole ? `The whole group on the ${nth(hole)}?` : "Ready to post";
   const title: Record<Step, string> = {
     trim: "Trim the clip",
     type: "What's this?",
     people: "Who's in it?",
-    who: "Who's playing the shot?",
-    shot: "What shot?",
-    result: "How did it finish?",
-    club: "Which club?",
+    confirm: guessLine,
+    change: "Which shot is it?",
+    detail: one && strokeNo ? `${nameOf(one)}'s shot ${strokeNo}` : "Add detail",
     done: "Ready to post",
     another: "Saved. Another shot in this clip?",
   };
-  const n = order.indexOf(step);
+  const n = step === "change" || step === "detail" ? 1 : order.indexOf(step);
 
   return (
     <div className="cd" role="dialog" aria-label={title[step]}>
@@ -318,95 +345,81 @@ export function ClipDetail({
         </div>
       )}
 
-      {step === "who" && (
-        <div className="cd-body">
-          <div className="cd-grid two">
-            {players.map((p) => (
-              <button key={p.id} className="cd-tile" onClick={() => (setWho([p.id]), go("shot"))}>
-                {p.name}
-              </button>
-            ))}
-            {players.length > 1 && (
-              <button className="cd-tile soft" onClick={() => (setWho(players.map((p) => p.id)), go("shot"))}>
-                The whole group
-              </button>
-            )}
+      {step === "confirm" && (
+        <div className="cd-body cd-done">
+          <div className="cd-confirm">
+            <button className="btn block cd-primary" disabled={busy} onClick={post}>
+              {busy ? "Saving…" : filmOnly ? "Yes, save it for the film" : "Yes, post it"}
+            </button>
+            <button className="btn secondary block cd-primary" onClick={() => (setTab(one ?? players[0]?.id ?? null), go("change"))}>
+              Change
+            </button>
           </div>
+          {one && strokeNo && roundId && hole && (
+            <button className="cd-add-detail" onClick={() => go("detail")}>
+              {told ? `Add detail: ${shotWords(told).toLowerCase()}` : "Add detail"}
+            </button>
+          )}
+          <CaptionAndFilm caption={caption} setCaption={setCaption} filmOnly={filmOnly} setFilmOnly={setFilmOnly} />
         </div>
       )}
 
-      {step === "shot" && (
+      {step === "change" && (
         <div className="cd-body">
-          <div className="cd-grid two">
-            {kindsFor(info).map((k) => (
-              <button key={k} className="cd-tile" onClick={() => (setShot(k), setResult(null), go("result"))}>
-                {KIND_LABEL[k]}
+          <div className="dtl-tabs" style={{ gridTemplateColumns: `repeat(${Math.max(1, Math.min(4, players.length))}, 1fr)` }} role="tablist">
+            {players.map((p) => (
+              <button key={p.id} role="tab" className="dtl-tab" aria-selected={tab === p.id} onClick={() => setTab(p.id)}>
+                <span className="nm">{p.name}</span>
               </button>
             ))}
           </div>
-          <button type="button" className="linklike cd-notshot" onClick={() => (setAside("interview"), setShot(null), setResult(null), setClub(null), go("people"))}>
+          {tab && (
+            <ol className="dtl-shots">
+              {T.rowsFor(tab).map((r) => (
+                <li key={r.seq} className={`dtl-shot${r.shot ? " told" : ""}${tab === one && r.seq === strokeNo ? " open" : ""}`}>
+                  <button
+                    className="dtl-card-main"
+                    onClick={() => {
+                      setWho([tab]);
+                      setSeq(r.seq);
+                      try {
+                        localStorage.setItem(LAST_PLAYER(slug), tab);
+                      } catch {}
+                      go("confirm");
+                    }}
+                  >
+                    <span className="dtl-seq">{r.seq}</span>
+                    <span className="dtl-what">
+                      {r.shot ? shotWords(r.shot) : r.auto?.outcome ? "Holed" : r.seq === 1 ? "Tee shot" : `Shot ${r.seq}`}
+                      {r.from != null && <small className="dtl-sub">from {T.dist(r.from)}</small>}
+                    </span>
+                    {r.clip && <span className="dtl-cam" aria-label="Filmed">🎥</span>}
+                  </button>
+                </li>
+              ))}
+            </ol>
+          )}
+          {players.length > 1 && (
+            <button className="cd-tile soft cd-group" onClick={() => (setWho(players.map((p) => p.id)), setSeq(null), go("confirm"))}>
+              The whole group
+            </button>
+          )}
+          <button type="button" className="linklike cd-notshot" onClick={() => (setAside("interview"), setSeq(null), go("people"))}>
             Not a shot? An interview or a chat
           </button>
         </div>
       )}
 
-      {step === "result" && shot && (
+      {step === "detail" && one && strokeNo && roundId && hole && (
         <div className="cd-body">
-          <div className="cd-grid two">
-            {outcomesFor(shot, info).map((r) => (
-              <button
-                key={r}
-                className="cd-tile"
-                onClick={() => {
-                  setResult(r);
-                  if (shot === "putt") {
-                    setClub("Putter");
-                    go("done");
-                  } else go("club");
-                }}
-              >
-                {r}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {step === "club" && (
-        <div className="cd-body">
-          <div className="cd-grid three">
-            {CLUB_GROUPS.map((c) => (
-              <button key={c} className="cd-tile small" onClick={() => (setClub(c), go("done"))}>
-                {c}
-              </button>
-            ))}
-            <button className="cd-tile small soft" onClick={() => (setClub(null), go("done"))}>
-              Skip
-            </button>
-          </div>
+          <StrokeTeller roundId={roundId} hole={hole} playerId={one} seq={strokeNo} onDone={() => go("confirm")} />
         </div>
       )}
 
       {step === "done" && (
         <div className="cd-body cd-done">
-          <p className="cd-summary">
-            {aside
-              ? [who.map((id) => state?.players.find((p) => p.id === id)?.name).join(" & "), CLIP_TYPES[aside].name].filter(Boolean).join(" · ")
-              : [who.map((id) => state?.players.find((p) => p.id === id)?.name).join(" & "), shot ? KIND_LABEL[shot] : null, result, club].filter(Boolean).join(" · ")}
-            {hole && !aside ? ` · hole ${hole}` : ""}
-          </p>
-          <HoldToTalk onText={(t) => setCaption((c) => (c ? `${c} ${t}` : t))} />
-          <label className="cd-cap">
-            <span>Caption (optional): say it, or type it</span>
-            <textarea value={caption} maxLength={200} onChange={(e) => setCaption(e.target.value)} placeholder="Say what happened, if you like" />
-          </label>
-          <button type="button" className="cd-film-only" role="switch" aria-checked={filmOnly} onClick={() => setFilmOnly((v) => !v)}>
-            <span className="box" aria-hidden="true">{filmOnly ? "✓" : ""}</span>
-            <span>
-              <strong>Highlights film only</strong>
-              <small>{filmOnly ? "Kept out of the feed. The film can still use it." : "Leave unticked to post it to the feed too"}</small>
-            </span>
-          </button>
+          <p className="cd-summary">{[who.map((id) => state?.players.find((p) => p.id === id)?.name).join(" & "), aside ? CLIP_TYPES[aside].name : null].filter(Boolean).join(" · ")}</p>
+          <CaptionAndFilm caption={caption} setCaption={setCaption} filmOnly={filmOnly} setFilmOnly={setFilmOnly} />
         </div>
       )}
 
@@ -424,9 +437,9 @@ export function ClipDetail({
         </div>
       )}
 
-      <div className="cd-foot" hidden={step === "another"}>
+      <div className="cd-foot" hidden={step === "another" || step === "confirm" || step === "change" || step === "detail"}>
         {step === "trim" && (
-          <button className="btn block cd-primary" disabled={!dur} onClick={() => go(asking && !aside ? "type" : aside ? "people" : complete ? "done" : "who")}>
+          <button className="btn block cd-primary" disabled={!dur} onClick={() => (asking && !aside ? go("type") : aside ? go("people") : toConfirm())}>
             Next
           </button>
         )}
@@ -440,13 +453,31 @@ export function ClipDetail({
             {busy ? "Saving…" : filmOnly ? "Save for the film" : "Post the clip"}
           </button>
         )}
-        {step !== "trim" && step !== "done" && step !== "people" && step !== "type" && (
-          <button className="btn secondary block cd-primary" onClick={() => go("done")}>
-            Skip the rest and post
-          </button>
-        )}
+
       </div>
     </div>
+  );
+}
+
+/** A caption, said or typed, and Highlights film only */
+function CaptionAndFilm({ caption, setCaption, filmOnly, setFilmOnly }: { caption: string; setCaption: (f: (c: string) => string) => void; filmOnly: boolean; setFilmOnly: (f: (v: boolean) => boolean) => void }) {
+  return (
+    <>
+      <div className="cd-caption-voice">
+        <HoldToTalk onText={(t) => setCaption((c) => (c ? `${c} ${t}` : t))} label="Hold to say a caption" />
+      </div>
+      <label className="cd-cap">
+        <span>Caption (optional): say it, or type it</span>
+        <textarea value={caption} maxLength={200} onChange={(e) => setCaption(() => e.target.value)} placeholder="Say what happened, if you like" />
+      </label>
+      <button type="button" className="cd-film-only" role="switch" aria-checked={filmOnly} onClick={() => setFilmOnly((v) => !v)}>
+        <span className="box" aria-hidden="true">{filmOnly ? "✓" : ""}</span>
+        <span>
+          <strong>Highlights film only</strong>
+          <small>{filmOnly ? "Kept out of the feed. The film can still use it." : "Leave unticked to post it to the feed too"}</small>
+        </span>
+      </button>
+    </>
   );
 }
 

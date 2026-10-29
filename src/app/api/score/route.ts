@@ -7,10 +7,15 @@ import { toRoundCfg, type PlayerRow, type RoundRow } from "@/lib/types";
 import { maybeBulletin } from "@/lib/ai";
 import { syncKnockout } from "@/lib/knockout-server";
 import { FINISHED_PLAYER, finishedAsk, maybeFinishSolo } from "@/lib/finish";
+import { mayScore, oneScorer } from "@/lib/scoring-access";
 
 export const maxDuration = 120;
 
-/** The scorer saves one hole for one game. Re-sending a hole overwrites it. `final: false` = still being entered (no bulletin yet). */
+/**
+ * Save one hole for one game. Anyone in the group can (or only its scorer, with One scorer per group). Only the
+ * scores sent are changed: they're laid over what's there, so two phones never wipe each other's. Closest to the
+ * pin, long drive and a concession change only when they're sent. `final: false` = still being entered.
+ */
 export async function POST(req: Request) {
   const body = await req.json().catch(() => null);
   if (!body) return bad("Bad request");
@@ -38,13 +43,13 @@ export async function POST(req: Request) {
   const game = cfg.games.find((g) => g.id === gameId);
   if (!game) return bad("Match not found in this round", 404);
 
-  // Only the match's scorer enters scores (the organiser too when nobody's been chosen); the organiser corrects any match from Admin
-  const isScorer = (!!session.playerId && session.playerId === game.scorerId) || (session.role === "organiser" && !game.scorerId) || correcting;
-  if (!isScorer)
-    return bad(
-      session.role === "organiser" ? "Only this match's scorer enters its scores. To correct one, use Organiser, Scorecards, Correct a score." : "Only this match's scorer can enter scores",
-      403,
-    );
+  // Anyone in the group (or the organiser); with One scorer per group, only its scorer. The organiser corrects any match from Admin
+  const allowed = correcting || mayScore(t, round as RoundRow, game, session);
+  if (!allowed) {
+    if (oneScorer(t, round as RoundRow))
+      return bad(session.role === "organiser" ? "Only this group's scorer enters its scores. To correct one, use Organiser, Scorecards, Correct a score." : "Only this group's scorer can enter scores", 403);
+    return bad("Only players in this group can enter its scores", 403);
+  }
 
   // Extra holes are played as the card again from the 1st (cardHole)
   const h = hole > 18 ? cardHole(cfg.holes, hole) : cfg.holes.find((x) => x.number === hole);
@@ -58,7 +63,7 @@ export async function POST(req: Request) {
     if (pickedUp && cfg.scoring === "stroke" && cfg.play !== "fourball") return bad("You can't pick up in stroke play. Enter the score.");
     const gross = pickedUp || v?.gross == null ? null : Math.round(Number(v.gross));
     if (gross != null && !(gross >= 1 && gross <= 15)) return bad("That score looks wrong (1–15 allowed)");
-    scores[ball] = { gross, pickedUp, gir: !!v?.gir };
+    scores[ball] = { gross, pickedUp, gir: !!v?.gir, by: session.name };
   }
   const pick = (w: unknown) => (typeof w === "string" && balls.includes(w) ? w : null);
   const ctp = h.par === 3 ? pick(body.ctpWinner) : null;
@@ -66,6 +71,12 @@ export async function POST(req: Request) {
   // Match play: one side concedes the hole
   const conceded =
     cfg.scoring === "match" && game.sides.length === 2 && typeof body.conceded === "string" && game.sides.some((sd) => sd.id === body.conceded) ? (body.conceded as string) : null;
+  // Only what this phone sent changes (another phone may have set the rest)
+  const sent = (k: string) => Object.prototype.hasOwnProperty.call(body, k);
+  const fields: Record<string, string | null> = {};
+  if (sent("ctpWinner")) fields.ctp_winner = ctp;
+  if (sent("ldWinner")) fields.ld_winner = ld;
+  if (sent("conceded")) fields.conceded = conceded;
 
   // Finished: players can't change scores; the organiser can, once they've said yes (and it's logged). On your own,
   // you can always fix your own card.
@@ -80,28 +91,42 @@ export async function POST(req: Request) {
   if (final && session.role !== "organiser") return bad("This card is final. Only the organiser can change it now.", 409);
   const { data: before } = await db.from("hole_entries").select("scores,ctp_winner,ld_winner,conceded").match({ ...cardKey, hole }).maybeSingle();
 
-  const row = {
-    round_id: roundId,
-    game: gameId,
-    hole,
-    scores,
-    ctp_winner: ctp,
-    ld_winner: ld,
-    conceded,
-    updated_by: session.name,
-    updated_at: new Date().toISOString(),
-  };
-  let { error } = await db.from("hole_entries").upsert(row, { onConflict: "round_id,game,hole" });
-  // Database not updated yet (schema.sql not re-run): save the scores without the concession
-  if (error && /conceded/.test(error.message)) {
-    const { conceded: _c, ...rest } = row;
-    void _c;
-    ({ error } = await db.from("hole_entries").upsert(rest, { onConflict: "round_id,game,hole" }));
-  }
-  if (error) return bad(error.message, 500);
+  // Nothing sent: nothing to save (a phone that only looked)
+  if (!Object.keys(scores).length && !Object.keys(fields).length && body.final === false) return json({ ok: true });
+  if (!Object.keys(scores).length && !Object.keys(fields).length && !before) return json({ ok: true });
 
-  const after_ = { scores, ctp_winner: ctp, ld_winner: ld, conceded };
-  const changed = JSON.stringify(before ?? null) !== JSON.stringify(after_);
+  // Laid over what's there, in one step on the database
+  let saved: { scores: Record<string, BallHole>; ctp_winner: string | null; ld_winner: string | null; conceded: string | null } | null = null;
+  const rpc = await db.rpc("save_hole_scores", { p_round: roundId, p_game: gameId, p_hole: hole, p_scores: scores, p_fields: fields, p_by: session.name });
+  if (!rpc.error) saved = rpc.data as typeof saved;
+  else {
+    // Database not updated yet (schema.sql not re-run): merge here instead
+    const merged = { ...((before?.scores as Record<string, BallHole>) ?? {}), ...scores };
+    const row: Record<string, unknown> = {
+      round_id: roundId,
+      game: gameId,
+      hole,
+      scores: merged,
+      ctp_winner: sent("ctpWinner") ? ctp : (before?.ctp_winner ?? null),
+      ld_winner: sent("ldWinner") ? ld : (before?.ld_winner ?? null),
+      conceded: sent("conceded") ? conceded : (before?.conceded ?? null),
+      updated_by: session.name,
+      updated_at: new Date().toISOString(),
+    };
+    let { error } = await db.from("hole_entries").upsert(row, { onConflict: "round_id,game,hole" });
+    if (error && /conceded/.test(error.message)) {
+      delete row.conceded;
+      ({ error } = await db.from("hole_entries").upsert(row, { onConflict: "round_id,game,hole" }));
+    }
+    if (error) return bad(error.message, 500);
+    saved = { scores: merged, ctp_winner: row.ctp_winner as string | null, ld_winner: row.ld_winner as string | null, conceded: (row.conceded as string | null) ?? null };
+  }
+
+  // What changed, for the log (who entered a score isn't a change to it)
+  const plain = (x: { scores?: Record<string, BallHole> | null } & Record<string, unknown> | null | undefined) =>
+    x ? { scores: Object.fromEntries(Object.entries(x.scores ?? {}).map(([k, v]) => [k, { gross: v?.gross ?? null, pickedUp: !!v?.pickedUp, gir: !!v?.gir }])), ctp_winner: x.ctp_winner ?? null, ld_winner: x.ld_winner ?? null, conceded: x.conceded ?? null } : null;
+  const after_ = plain(saved);
+  const changed = JSON.stringify(plain(before)) !== JSON.stringify(after_);
   if (correcting && changed && !final) {
     await db.from("score_changes").insert({ tournament_id: t.id, ...cardKey, hole, action: "score corrected by the organiser", before: before ?? null, after: after_, by_name: session.name });
   }

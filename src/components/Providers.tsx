@@ -22,6 +22,8 @@ export interface SampleKit {
   note: string;
   /** Players whose scores are already in: shown, not changed */
   locked?: string[];
+  /** The wind on every hole of the sample round */
+  wind?: string;
 }
 
 interface Ctx extends LiveTournament {

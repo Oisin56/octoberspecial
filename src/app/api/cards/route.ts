@@ -6,14 +6,16 @@ import { cardInfo, roundStage } from "@/lib/scorecards";
 import { roundFinal } from "@/lib/ai";
 import { toRoundCfg } from "@/lib/types";
 import { FINISHED_PLAYER, finishedAsk } from "@/lib/finish";
+import { mayScore } from "@/lib/scoring-access";
 
 export const maxDuration = 60;
 
 /**
  * A match's card at the end of the round.
- *   submit   the scorer hands the card in (final straight away, or once every player signs)
- *   sign     a player agrees with it: on their own phone, or with a tap on the scorer's
- *   flag     "something's not right": the scorer is told who and why
+ *   submit   anyone in the group hands the card in (final straight away, or once every player signs)
+ *   sign     a player agrees with it: on their own phone, or with a tap on a phone in the group
+ *   check    a player's own one-tap check of a card that's already final ("Your round: 82. Right?")
+ *   flag     "something's not right": the group and the organiser are told who and why
  *   reopen   take the card back to change it (signatures are cleared)
  *   finalise the organiser makes it final without every signature
  */
@@ -34,7 +36,8 @@ export async function POST(req: Request) {
   if (!game) return bad("Match not found", 404);
   const info = cardInfo(s, roundId, gameId);
   const org = isOrganiser(session);
-  const scorer = org || (!!session.playerId && session.playerId === game.scorerId);
+  // Anyone in the group (or only its scorer, with One scorer per group); the organiser always
+  const scorer = org || mayScore(t, round, game, session);
   const key = { round_id: roundId, game: gameId };
   const now = () => new Date().toISOString();
 
@@ -63,7 +66,7 @@ export async function POST(req: Request) {
 
   switch (b.action) {
     case "submit": {
-      if (!scorer) return bad("Only this match's scorer can submit the card", 403);
+      if (!scorer) return bad("Only players in this group can hand in its card", 403);
       if (info.stage === "final") return bad("This card is already final");
       if (info.stage === "open") return bad("There are still holes to enter before the card can be submitted");
       if (!t.require_attestation) {
@@ -82,9 +85,26 @@ export async function POST(req: Request) {
       return json({ ok: true, stage: "submitted" });
     }
 
+    case "check": {
+      // One tap on your own phone: your card is right. Nothing waits on it.
+      if (info.stage !== "final" && info.stage !== "submitted") return bad("The card hasn't been handed in yet");
+      if (!session.playerId || !info.players.includes(session.playerId)) return bad("Only a player on this card can check it", 403);
+      await db.from("card_signatures").upsert({ ...key, player_id: session.playerId }, { onConflict: "round_id,game,player_id" });
+      if (info.stage === "submitted") {
+        const signed = new Set([...info.signed, session.playerId]);
+        if (info.players.every((p) => signed.has(p))) {
+          await makeFinal("Signed by every player");
+          return json({ ok: true, stage: "final" });
+        }
+      }
+      return json({ ok: true, stage: info.stage });
+    }
+
     case "sign":
     case "flag": {
-      if (info.stage !== "submitted") return bad(info.stage === "final" ? "This card is already final" : "The card hasn't been submitted yet");
+      // A final card can still be flagged (the organiser corrects it); only a handed-in one is signed
+      if (b.action === "sign" && info.stage !== "submitted") return bad(info.stage === "final" ? "This card is already final" : "The card hasn't been submitted yet");
+      if (b.action === "flag" && info.stage !== "submitted" && info.stage !== "final") return bad("The card hasn't been handed in yet");
       const playerId = String(b.playerId ?? "");
       if (!info.players.includes(playerId)) return bad("That player isn't in this match", 400);
       const who = await mayActFor(t, session, playerId, scorer);
@@ -94,7 +114,7 @@ export async function POST(req: Request) {
         const note = String(b.note ?? "").trim().slice(0, 300);
         await db.from("cards").update({ flag_by: name, flag_note: note || null, flag_at: now() }).match(key);
         await db.from("card_signatures").delete().match({ ...key, player_id: playerId });
-        return json({ ok: true, stage: "submitted" });
+        return json({ ok: true, stage: info.stage });
       }
       await db.from("card_signatures").upsert({ ...key, player_id: playerId }, { onConflict: "round_id,game,player_id" });
       // Signing settles a flag that player raised
@@ -109,7 +129,7 @@ export async function POST(req: Request) {
 
     case "reopen": {
       if (info.stage === "final" && !org) return bad("Only the organiser can reopen a final card", 403);
-      if (!scorer) return bad("Only this match's scorer can take the card back", 403);
+      if (!scorer) return bad("Only players in this group can take the card back", 403);
       if (info.stage === "final") {
         await log("reopened", { status: "final" }, null);
         if (round.status === "complete" && !t.finished_at) await db.from("rounds").update({ status: "live" }).eq("id", roundId);
@@ -138,10 +158,10 @@ function allFinal(s: Parameters<typeof roundStage>[0], roundId: string) {
   return toRoundCfg(round, s.players).games.every((g) => cardInfo(s, roundId, g.id).stage === "final");
 }
 
-/** Signing or flagging for a player: that player on their own phone, or with a tap on the scorer's phone. */
+/** Signing or flagging for a player: that player on their own phone, or with a tap on a phone in the group. */
 async function mayActFor(t: TournamentPrivate, session: Session, playerId: string, scorer: boolean): Promise<true | Response> {
   if (session.playerId === playerId) return true;
   const { data: p } = await adminClient().from("players").select("id").eq("id", playerId).eq("tournament_id", t.id).maybeSingle();
   if (!p) return bad("Player not found", 404);
-  return scorer ? true : bad("Sign on the scorer's phone", 403);
+  return scorer ? true : bad("Sign on a phone in the group", 403);
 }

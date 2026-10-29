@@ -171,7 +171,7 @@ export function yourRoundDone(state: TournamentState): boolean {
 }
 
 /** A post the sample "posted" (a note from the voice button, or the clip) */
-export function samplePost(state: TournamentState, body: { roundId?: string | null; hole?: number | null; kind: "note" | "video"; body?: string; playerIds?: string[]; mediaPath?: string }): PostRow {
+export function samplePost(state: TournamentState, body: { roundId?: string | null; hole?: number | null; kind: "note" | "video"; body?: string; playerIds?: string[]; mediaPath?: string; tags?: string[]; visibility?: string }): PostRow {
   return {
     id: `sample-${Math.random().toString(36).slice(2)}`,
     tournament_id: state.tournament.id,
@@ -181,9 +181,10 @@ export function samplePost(state: TournamentState, body: { roundId?: string | nu
     author_player_id: YOU,
     kind: body.kind,
     body: body.body ?? null,
-    tags: [],
+    tags: body.tags ?? [],
     media_path: body.mediaPath ?? null,
-    visibility: "public",
+    // A voice note is for the commentators only, in the sample too
+    visibility: body.visibility === "report" ? "report" : "public",
     hidden: false,
     created_at: new Date().toISOString(),
     player_ids: body.playerIds ?? [YOU],

@@ -156,7 +156,7 @@ const atlantic = (p) => p.evaluate(() => {
   await p.locator(".linklike", { hasText: "Got it" }).click().catch(() => {});
   await sleep(500);
   await shot(p, "gps");
-  // The hole finished: the "what happened" card, with Record and the voice note
+  // The hole finished: Add detail, the tee shot open with the likeliest clubs first
   await p.getByRole("button", { name: /^Close/ }).first().click().catch(() => {});
   await sleep(500);
   sql(`delete from gps_readings where tournament_id='${tid}'`);
@@ -164,12 +164,13 @@ const atlantic = (p) => p.evaluate(() => {
   await tap("Ronan", 4);
   await tap("Shane", 3);
   await sleep(600);
-  await p.locator(".next-hole").click();
-  await p.locator(".shotcard").waitFor({ timeout: 10000 });
-  await p.locator(".sc-player", { hasText: "Marcus" }).click();
+  await p.locator(".after-hole").waitFor({ timeout: 10000 });
+  await p.locator(".after-hole .btn", { hasText: "Add detail" }).click();
+  await p.locator(".dtl").waitFor({ timeout: 10000 });
+  await p.locator(".dtl-tab", { hasText: "Marcus" }).click();
   await sleep(400);
-  // A shot opened: what happened, one tap
-  await p.locator(".sc-row-main").first().click();
+  // A shot opened: the same four rows, one tap each
+  await p.locator(".dtl-card-main").first().click();
   await sleep(700);
   await shot(p, "shotcard");
   // No signal: the score is kept on the phone and sent later

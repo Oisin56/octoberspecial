@@ -25,6 +25,7 @@ export function CardsAdmin({ data, onSaved }: { data: AdminData; onSaved: () => 
   const { api, names, href } = useT();
   const st = data.state;
   const [need, setNeed] = useState(!!st.tournament.require_attestation);
+  const [one, setOne] = useState(!!st.tournament.one_scorer);
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [changes, setChanges] = useState<Change[] | null>(null);
@@ -37,6 +38,12 @@ export function CardsAdmin({ data, onSaved }: { data: AdminData; onSaved: () => 
     setNeed(v);
     const r = await api("/api/admin", { action: "updateTournament", patch: { require_attestation: v } });
     setMsg(r.ok ? (v ? "Saved: players sign before a card is final" : "Saved: a card is final when it's submitted") : String(r.j.error ?? "Didn't save"));
+    onSaved();
+  }
+  async function setOneScorer(v: boolean) {
+    setOne(v);
+    const r = await api("/api/admin", { action: "updateTournament", patch: { one_scorer: v } });
+    setMsg(r.ok ? (v ? "Saved: only each group's scorer enters its scores. Choose them in Rounds" : "Saved: anyone in a group can enter its scores") : String(r.j.error ?? "Didn't save"));
     onSaved();
   }
   async function act(action: string, roundId: string, game: string, label: string) {
@@ -54,14 +61,23 @@ export function CardsAdmin({ data, onSaved }: { data: AdminData; onSaved: () => 
   return (
     <div className="stack">
       <section className="panel stack">
-        <h2 style={{ margin: 0 }}>Signing the cards</h2>
+        <h2 style={{ margin: 0 }}>Scoring and the cards</h2>
+        <button type="button" className="cd-film-only" role="switch" aria-checked={one} onClick={() => setOneScorer(!one)}>
+          <span className="box" aria-hidden="true">
+            {one ? "✓" : ""}
+          </span>
+          <span>
+            <strong>One scorer per group</strong>
+            <small>{one ? "Only the scorer you choose for each group (in Rounds) can enter its scores. Good for a competitive trip." : "Off: anyone in a group can enter its scores, so a flat battery on the 9th never stops the card."}</small>
+          </span>
+        </button>
         <button type="button" className="cd-film-only" role="switch" aria-checked={need} onClick={() => setRule(!need)}>
           <span className="box" aria-hidden="true">
             {need ? "✓" : ""}
           </span>
           <span>
             <strong>Every player signs the card before it&apos;s final</strong>
-            <small>{need ? "The scorer submits the card, then each player in the match signs it (with a tap on the scorer's phone, or on their own)." : "Off: a card is final as soon as the scorer submits it."}</small>
+            <small>{need ? "The card is handed in, then each player in the match signs it (with a tap on a phone in the group, or on their own)." : "Off: a card is final as soon as it's handed in. Each player still gets a quick check of their own card."}</small>
           </span>
         </button>
         <p className="small muted" style={{ margin: 0 }}>

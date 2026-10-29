@@ -7,9 +7,9 @@ import { useT } from "@/components/Providers";
 import { Loading, Scorecard, gameLine } from "@/components/ui";
 import { enqueue, flush, pendingHole, queued } from "@/lib/offlineQueue";
 import { readScorePos, writeScorePos } from "@/lib/scorePos";
-import { ShotCard } from "@/components/ShotCard";
-import { matchMoment, scorePrompt, type HoleInfo, type Prompt } from "@/lib/shots";
+import { AddDetail } from "@/components/AddDetail";
 import { groupPlayers } from "@/lib/courseCards";
+import { oneScorer, scoringGames } from "@/lib/scoring-access";
 import { useSwipe } from "@/lib/useSwipe";
 import { ballsOfGame, ballsOfSide, gameHole, gameShots, holeShots, ONE_BALL, sideGameHoles, type BallHole, type Game } from "@/lib/engine";
 import { CardPanel } from "@/components/CardPanel";
@@ -26,9 +26,11 @@ type Draft = Record<string, BallHole>;
 
 /**
  * The scorecard on the course.
- *   The match's scorer enters the scores: every hole starts blank, one tap per player on a number.
+ *   Anyone in the group enters the scores (one scorer, everyone their own, or markers all work): every hole starts
+ *   blank, one tap per player. Each phone saves only the scores it changed, and shows the others' as they land.
+ *   With "One scorer per group" on, only the named scorer enters them and everyone else sees the live card.
+ *   When the hole's last score is in, two buttons appear: Add detail and On to hole 8. Nothing pops up.
  *   A hole you leave is locked; going back shows it with an Edit score button.
- *   Everyone else sees the live card ("Neil is keeping score"); Record and Note stay in the bar below.
  *   The organiser corrects other matches' scores from Admin (?correct=1), and every correction is logged.
  */
 function ScoreInner() {
@@ -64,8 +66,13 @@ function ScoreInner() {
   const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [saved, setSaved] = useState<"saving" | "saved" | "phone" | null>(null);
   const [picking, setPicking] = useState(false);
-  /** The hole just finished, while the "anything the card won't show?" card is up */
-  const [moments, setMoments] = useState<number | null>(null);
+  /** Add detail is open: for this hole, starting on this player */
+  const [detail, setDetail] = useState<{ hole: number; player: string | null } | null>(null);
+  /** The two buttons have just appeared (one gentle pulse) */
+  const [arrive, setArrive] = useState(false);
+  /** What this phone has changed on the hole it's on: only these are sent (the rest may be another phone's) */
+  const touched = useRef<{ hole: number | null; balls: Set<string>; fields: Set<string> }>({ hole: null, balls: new Set(), fields: new Set() });
+  const wasComplete = useRef<{ hole: number | null; done: boolean }>({ hole: null, done: false });
   /** Which way the last move went, for the slide-in */
   const [slide, setSlide] = useState<"fwd" | "back" | null>(null);
   /** A finished tournament: the organiser said yes to changing a score */
@@ -90,12 +97,12 @@ function ScoreInner() {
   const after = (n: number) => holeNums.find((x) => x > n) ?? null;
   const before = (n: number) => [...holeNums].reverse().find((x) => x < n) ?? null;
 
-  /** Matches this person enters the scores for */
+  /** Groups this person enters the scores for: their own (anyone in the group can), or the scorer's with One scorer per group */
   const myGames = useMemo(() => {
     if (!rcfg || !session) return [];
     if (correcting) return rcfg.games;
-    return rcfg.games.filter((g) => (session.playerId && g.scorerId === session.playerId) || (session.role === "organiser" && !g.scorerId));
-  }, [rcfg, session, correcting]);
+    return scoringGames(state?.tournament, round, rcfg.games, session);
+  }, [rcfg, session, correcting, state?.tournament, round]);
   const game = myGames.find((g) => g.id === gameId) ?? (myGames.length === 1 && !gameId ? myGames[0] : null);
   const balls = useMemo(() => (game && rcfg ? ballsOfGame(game, rcfg.play) : []), [game, rcfg]);
   const entries = useMemo(
@@ -115,8 +122,8 @@ function ScoreInner() {
 
   // Swipe left = Next, right = the previous hole
   const swipe = useSwipe({
-    onLeft: () => moments == null && more == null && hole != null && next(),
-    onRight: () => moments == null && more == null && hole != null && before(hole) != null && (setSlide("back"), goTo(before(hole)!)),
+    onLeft: () => detail == null && more == null && hole != null && next(),
+    onRight: () => detail == null && more == null && hole != null && before(hole) != null && (setSlide("back"), goTo(before(hole)!)),
   });
 
   // Back from the camera: say the clip is saved
@@ -167,7 +174,16 @@ function ScoreInner() {
     const l = pend ? (pend.ldWinner ?? null) : (e?.ld_winner ?? null);
     const k = pend ? (pend.conceded ?? null) : (e?.conceded ?? null);
     latest.current = { draft: d, ctp: c, ld: l, conceded: k };
-    const done = !openedHole.current && (rcfg ? gameHole(rcfg, game, shots, { game: game.id, hole, scores: d, conceded: k }).complete : false);
+    // Anything still waiting to send from this phone counts as changed here
+    const pp = (pend ?? {}) as Record<string, unknown>;
+    touched.current = {
+      hole,
+      balls: new Set(Object.keys(pend?.scores ?? {})),
+      fields: new Set(["ctpWinner", "ldWinner", "conceded"].filter((f) => f in pp)),
+    };
+    const complete = rcfg ? gameHole(rcfg, game, shots, { game: game.id, hole, scores: d, conceded: k }).complete : false;
+    wasComplete.current = { hole, done: complete };
+    const done = !openedHole.current && complete;
     openedHole.current = false;
     setTimeout(() => {
       setDraft(d);
@@ -177,11 +193,59 @@ function ScoreInner() {
       setLocked(done);
       setMore(null);
       setErr(null);
+      setArrive(false);
     }, 0);
     // a hole that already has scores is finished again when the scorer leaves it (news is only sent once)
     unfinished.current = pend || e ? hole : null;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [round?.id, game?.id, hole]);
+
+  // Another phone in the group entered a score: show it, unless this phone has changed that one itself
+  useEffect(() => {
+    if (!round || hole == null || !game || touched.current.hole !== hole) return;
+    const e = entries.find((x) => x.hole === hole);
+    if (!e) return;
+    const t = touched.current;
+    const d: Draft = { ...latest.current.draft };
+    let changed = false;
+    for (const b of balls) {
+      if (t.balls.has(b)) continue;
+      const sv = e.scores[b] ?? { gross: null, gir: false, pickedUp: false };
+      if (JSON.stringify(sv) !== JSON.stringify(d[b])) {
+        d[b] = sv;
+        changed = true;
+      }
+    }
+    const next = { ...latest.current, draft: d };
+    if (!t.fields.has("ctpWinner") && (e.ctp_winner ?? null) !== next.ctp) {
+      next.ctp = e.ctp_winner ?? null;
+      changed = true;
+    }
+    if (!t.fields.has("ldWinner") && (e.ld_winner ?? null) !== next.ld) {
+      next.ld = e.ld_winner ?? null;
+      changed = true;
+    }
+    if (!t.fields.has("conceded") && (e.conceded ?? null) !== next.conceded) {
+      next.conceded = e.conceded ?? null;
+      changed = true;
+    }
+    if (!changed) return;
+    latest.current = next;
+    // The last score came from another phone: the two buttons appear here too
+    if (rcfg) {
+      const done = gameHole(rcfg, game, shots, { game: game.id, hole, scores: next.draft, conceded: next.conceded }).complete;
+      if (done && !wasComplete.current.done && wasComplete.current.hole === hole) setTimeout(() => setArrive(true), 0);
+      wasComplete.current = { hole, done };
+    }
+    const tm = setTimeout(() => {
+      setDraft(next.draft);
+      setCtp(next.ctp);
+      setLd(next.ld);
+      setConceded(next.conceded);
+    }, 0);
+    return () => clearTimeout(tm);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entries]);
 
   const syncQueue = useCallback(async () => {
     const r = await flush();
@@ -288,12 +352,22 @@ function ScoreInner() {
   const oneBall = ONE_BALL.includes(rcfg.play);
   const nextNo = after(hole);
 
-  /** Save a hole: on this phone straight away, to everyone as soon as there's signal. */
+  /** Save a hole: on this phone straight away, to everyone as soon as there's signal. Only what this phone changed is sent. */
   function commit(holeNo: number, final: boolean) {
     if (!round || !game) return;
     const hh = round.holes.find((x) => x.number === holeNo)!;
     const { draft: d, ctp: c, ld: l, conceded: k } = latest.current;
-    const payload = { scores: d, ctpWinner: hh.par === 3 ? c : null, ldWinner: hh.par === 5 ? l : null, conceded: k, final, ...(correcting ? { correct: true } : {}), ...(finishedOk ? { confirmFinished: true } : {}) };
+    const t = touched.current.hole === holeNo ? touched.current : { balls: new Set<string>(), fields: new Set<string>() };
+    const pend = (pendingHole(slug, round.id, game.id, holeNo)?.payload ?? {}) as Record<string, unknown>;
+    const payload: Record<string, unknown> = {
+      scores: { ...((pend.scores as Draft) ?? {}), ...Object.fromEntries([...t.balls].filter((b) => d[b]).map((b) => [b, d[b]])) },
+      final,
+      ...(correcting ? { correct: true } : {}),
+      ...(finishedOk ? { confirmFinished: true } : {}),
+    };
+    if (t.fields.has("ctpWinner")) payload.ctpWinner = hh.par === 3 ? c : null;
+    if (t.fields.has("ldWinner")) payload.ldWinner = hh.par === 5 ? l : null;
+    if (t.fields.has("conceded")) payload.conceded = k;
     patch((st) => ({
       ...st,
       entries: [
@@ -304,8 +378,8 @@ function ScoreInner() {
           game: game.id,
           hole: holeNo,
           scores: d,
-          ctp_winner: payload.ctpWinner,
-          ld_winner: payload.ldWinner,
+          ctp_winner: c,
+          ld_winner: l,
           conceded: k,
           updated_by: session?.name ?? null,
           updated_at: new Date().toISOString(),
@@ -327,6 +401,7 @@ function ScoreInner() {
   /** A change on this hole: saved now, sent a moment later, finished after two quiet minutes. */
   function changed() {
     const holeNo = hole!;
+    noteComplete(holeNo);
     setTimeout(() => {
       commit(holeNo, false);
       unfinished.current = holeNo;
@@ -352,20 +427,36 @@ function ScoreInner() {
     setHole(n);
   }
 
+  /** The hole's last score just went in: the two buttons slide up with one pulse */
+  function noteComplete(holeNo: number) {
+    if (!rcfg || !game) return;
+    const done = gameHole(rcfg, game, shots, { game: game.id, hole: holeNo, scores: latest.current.draft, conceded: latest.current.conceded }).complete;
+    if (done && !wasComplete.current.done && wasComplete.current.hole === holeNo) setArrive(true);
+    wasComplete.current = { hole: holeNo, done };
+  }
+
+  function touch(balls: string[], fields: string[] = []) {
+    if (touched.current.hole !== hole) touched.current = { hole, balls: new Set(), fields: new Set() };
+    for (const b of balls) touched.current.balls.add(b);
+    for (const f of fields) touched.current.fields.add(f);
+  }
   function setB(b: string, p: Partial<BallHole>) {
-    const n = { ...latest.current.draft, [b]: { ...latest.current.draft[b], ...p } };
+    const n = { ...latest.current.draft, [b]: { ...latest.current.draft[b], ...p, by: session?.name } };
     latest.current = { ...latest.current, draft: n };
+    touch([b]);
     setDraft(n);
     changed();
   }
   function pickCtp(v: string | null) {
     setCtp(v);
     latest.current = { ...latest.current, ctp: v };
+    touch([], ["ctpWinner"]);
     changed();
   }
   function pickLd(v: string | null) {
     setLd(v);
     latest.current = { ...latest.current, ld: v };
+    touch([], ["ldWinner"]);
     changed();
   }
   /** One side concedes the hole (tap again to undo): their ball is marked as not holed out. */
@@ -379,6 +470,7 @@ function ScoreInner() {
       }
     }
     latest.current = { ...latest.current, draft: d, conceded: next };
+    touch(balls, ["conceded"]);
     setDraft(d);
     setConceded(next);
     changed();
@@ -404,15 +496,15 @@ function ScoreInner() {
   function moveOn() {
     if (!round || !game) return;
     setMissingAsk(null);
-    const touched = Object.values(latest.current.draft).some((x) => x.gross != null || x.pickedUp) || !!latest.current.conceded;
-    if (touched) {
+    const any = Object.values(latest.current.draft).some((x) => x.gross != null || x.pickedUp) || !!latest.current.conceded;
+    const mine = touched.current.hole === hole && (touched.current.balls.size > 0 || touched.current.fields.size > 0);
+    if (mine) {
       commit(hole!, true);
       send();
     }
     if (idleTimer.current) clearTimeout(idleTimer.current);
     unfinished.current = null;
-    if (preview.complete) return setMoments(hole!);
-    if (touched) flash(`Hole ${hole} isn't finished: a score is missing. Come back to it.`);
+    if (!preview.complete && any) flash(`Hole ${hole} isn't finished: a score is missing. Come back to it.`);
     onward(hole!);
   }
 
@@ -421,45 +513,9 @@ function ScoreInner() {
     setTimeout(() => setMsg(null), 4000);
   }
 
-  /** The hole as the shot card needs it, and the questions its scores raise. */
-  function holeQuestions(n: number): { info: HoleInfo; prompts: Prompt[]; headline: { text: string; playerId: string } | null } {
-    const hh = round!.holes.find((x) => x.number === n)!;
-    const info: HoleInfo = { par: hh.par, yards: hh.yards, note: round!.course_guide?.holes?.[String(n)] ?? "" };
-    const e = entries.find((x) => x.hole === n);
-    const prompts: Prompt[] = [];
-    for (const b of balls) {
-      const p = state!.players.find((x) => x.id === b);
-      if (!p) continue; // team balls: no single player to ask about
-      const pr = scorePrompt(p.name, p.id, e?.scores[b]?.pickedUp ? null : e?.scores[b]?.gross, info);
-      if (pr) prompts.push(pr);
-    }
-    // birdies first, then the disasters
-    prompts.sort((a, b) => Number(/went wrong/.test(a.question)) - Number(/went wrong/.test(b.question)));
-    let headline: { text: string; playerId: string } | null = null;
-    if (rcfg!.scoring === "match" && game!.sides.length === 2) {
-      const [A, B] = game!.sides;
-      const played = entries.filter((x) => x.hole <= n).sort((a, b) => a.hole - b.hole);
-      let d = 0;
-      const diffs: number[] = [];
-      let lastWinner: string | null = null;
-      for (const x of played) {
-        const gh = gameHole(rcfg!, game!, shots, { game: game!.id, hole: x.hole, scores: x.scores, conceded: x.conceded });
-        if (gh.winner === A.id) d++;
-        else if (gh.winner === B.id) d--;
-        if (x.hole === n) lastWinner = gh.winner === A.id || gh.winner === B.id ? gh.winner : null;
-        diffs.push(d);
-      }
-      const nameOf = (sideId: string) => sideLabel(sideId, game!, state!.players);
-      const text = matchMoment(diffs, holeNums.indexOf(n) + 1, round!.holes.length, lastWinner ? nameOf(lastWinner) : null, nameOf(A.id), nameOf(B.id));
-      const side = game!.sides.find((x) => x.id === lastWinner);
-      if (text && side?.playerIds[0]) headline = { text, playerId: side.playerIds[0] };
-    }
-    return { info, prompts, headline };
-  }
-
   /** On to the next hole (or check the card when the match is over or the last hole is done). */
   function onward(was: number) {
-    setMoments(null);
+    setDetail(null);
     setSlide("fwd");
     // The match is over (all in, or decided early): check and submit the card
     // (The sample round has no card to sign: it goes straight on to what everyone at home saw)
@@ -483,6 +539,36 @@ function ScoreInner() {
         ? "Hole halved"
         : `${conceded ? `${sideLabel(conceded, game, state.players)} ${game.sides.find((s) => s.id === conceded)!.playerIds.length > 1 ? "concede" : "concedes"}. ` : ""}${sideLabel(preview.winner, game, state.players)} win${game.sides.find((s) => s.id === preview.winner)!.playerIds.length > 1 ? "" : "s"} the hole`
       : null;
+
+  /** The words on the right-hand button after a hole */
+  function onwardLabel(n: number) {
+    const nx = after(n);
+    if (sample && nx == null) return "See what everyone at home saw";
+    if (!t.solo && card.stage === "finished") return "Hand in the card";
+    if (nx != null) return `On to hole ${nx}`;
+    return t.solo ? "Finish the round" : "Hand in the card";
+  }
+
+  /** A good hole changes only the words on Add detail: "Neil birdie", "Neil and Paddy birdie" */
+  const goodHole = (() => {
+    const words: { id: string; name: string; word: string }[] = [];
+    for (const b of balls) {
+      const sc = draft[b];
+      if (!sc || sc.pickedUp || sc.gross == null || sc.gross >= h.par) continue;
+      const p = state.players.find((x) => x.id === b);
+      if (!p) continue;
+      words.push({ id: b, name: p.name.split(" ")[0], word: scoreWord(sc.gross, h.par).toLowerCase() });
+    }
+    if (!words.length) return null;
+    const same = words.every((w) => w.word === words[0].word);
+    const text =
+      words.length > 2
+        ? `${words.length} under par`
+        : same
+          ? `${words.map((w) => w.name).join(" and ")} ${words[0].word}`
+          : words.map((w) => `${w.name} ${w.word}`).join(", ");
+    return { text, first: words[0].id };
+  })();
 
   if (soloDone) return <SoloDone roundId={round.id} onBack={() => setSoloDone(false)} />;
 
@@ -556,25 +642,21 @@ function ScoreInner() {
         </button>
       </div>
 
-      {moments != null &&
+      {detail != null &&
         (() => {
-          const q = holeQuestions(moments);
-          const nx = after(moments);
           return (
-            <ShotCard
-              key={moments}
+            <AddDetail
+              key={detail.hole}
               roundId={round.id}
               roundNumber={round.number}
-              hole={moments}
-              holeInfo={q.info}
+              hole={detail.hole}
+              gameId={game.id}
               players={groupPlayers(state, round.id, game.id)}
-              prompts={q.prompts}
-              headline={q.headline}
-              nextLabel={sample && nx == null ? "See what everyone at home saw" : card.stage === "finished" ? (entries.length < round.holes.length ? "The match is over: check the card" : "Check the card") : nx != null ? `On to hole ${nx}` : "Finish the round"}
-              backLabel={`back to hole ${moments}`}
-              onContinue={() => onward(moments)}
-              onBack={() => (setMoments(null), setSlide("back"))}
-              onLeave={() => nx != null && writeScorePos(slug, round.id, { game: game.id, hole: nx })}
+              startPlayer={detail.player}
+              nextLabel={onwardLabel(detail.hole)}
+              onNext={next}
+              onBack={() => setDetail(null)}
+              onLeave={() => writeScorePos(slug, round.id, { game: game.id, hole: detail.hole })}
             />
           );
         })()}
@@ -645,6 +727,8 @@ function ScoreInner() {
                   </span>
                 </section>
               );
+            const by = sc.by && sc.by !== session.name && (sc.gross != null || sc.pickedUp) ? sc.by : null;
+            const pTile = concedes || canPickUp;
             return (
               <section className="pscore entry" key={b} aria-label={`${label} score`}>
                 <div className="ptop">
@@ -656,27 +740,29 @@ function ScoreInner() {
                       {st > 0 ? `${st} shot${st > 1 ? "s" : ""} here` : ""}
                       {ptsHere != null ? `${st > 0 ? " · " : ""}${ptsHere} pt${ptsHere === 1 ? "" : "s"}` : ""}
                     </span>
+                    {by && <span className="score-by">by {by}</span>}
                   </span>
                   <button className="chip big" aria-pressed={!!sc.gir} onClick={() => setB(b, { gir: !sc.gir })}>
                     Green in reg
                   </button>
-                  {concedes ? (
-                    <button className="chip big" aria-pressed={gaveUp} onClick={() => sideOfBall(b) && concede(sideOfBall(b)!)}>
-                      Concedes
-                    </button>
-                  ) : (
-                    canPickUp && (
-                      <button className="chip big" aria-pressed={!!sc.pickedUp} onClick={() => setB(b, sc.pickedUp ? { pickedUp: false, gross: null } : { pickedUp: true, gross: null })}>
-                        Picked up
-                      </button>
-                    )
-                  )}
                 </div>
-                {gaveUp || sc.pickedUp ? (
-                  <p className="gave-up">{gaveUp ? "Conceded the hole" : "Picked up"}</p>
-                ) : (
-                  <Stepper label={label} par={h.par} value={sc.gross ?? null} onSet={(n) => setB(b, { gross: n, pickedUp: false })} onOpen={() => setMore(b)} />
-                )}
+                <div className={pTile ? "score-row" : undefined}>
+                  {gaveUp || sc.pickedUp ? (
+                    <p className="gave-up-row">{gaveUp ? "Conceded the hole" : "Picked up"}</p>
+                  ) : (
+                    <Stepper label={label} par={h.par} value={sc.gross ?? null} onSet={(n) => setB(b, { gross: n, pickedUp: false })} onOpen={() => setMore(b)} />
+                  )}
+                  {pTile &&
+                    (concedes ? (
+                      <button className="pu-tile" aria-pressed={gaveUp} aria-label={`${label} concedes the hole`} onClick={() => sideOfBall(b) && concede(sideOfBall(b)!)}>
+                        C<small>concedes</small>
+                      </button>
+                    ) : (
+                      <button className="pu-tile" aria-pressed={!!sc.pickedUp} aria-label={`${label} picked up`} onClick={() => setB(b, sc.pickedUp ? { pickedUp: false, gross: null } : { pickedUp: true, gross: null })}>
+                        P<small>picked up</small>
+                      </button>
+                    ))}
+                </div>
               </section>
             );
           })}
@@ -763,12 +849,21 @@ function ScoreInner() {
       )}
 
       <div className="sticky-save">
-        <button className="btn block next-hole" onClick={next}>
-          {nextNo != null ? `Next: hole ${nextNo}` : sample ? "Finish the round" : "Finish: check the card"}
-          <small className={`saved-line${saved === "phone" ? " phone" : ""}`} aria-live="polite">
-            {msg ?? (sample ? "Sample round: nothing is saved" : saved === "saving" ? "Saving…" : saved === "saved" ? "✓ Saved for everyone" : saved === "phone" ? "Saved on this phone. Sends when there's signal" : "Every tap is saved as you go")}
-          </small>
-        </button>
+        {(preview.complete || locked) && (
+          <div className={`after-hole${arrive ? " arrive" : ""}`}>
+            <button className="btn secondary" onClick={() => setDetail({ hole: h.number, player: goodHole?.first ?? null })}>
+              Add detail
+              {goodHole && <small>{goodHole.text}</small>}
+            </button>
+            <button className="btn" onClick={next}>
+              {onwardLabel(h.number)}
+              {nextNo != null && <span aria-hidden="true"> ›</span>}
+            </button>
+          </div>
+        )}
+        <p className={`save-note${saved === "phone" ? " phone" : ""}`} aria-live="polite">
+          {msg ?? (sample ? "Sample round: nothing is saved" : saved === "saving" ? "Saving…" : saved === "saved" ? "✓ Saved for everyone" : saved === "phone" ? "Saved on this phone. Sends when there's signal" : "Every tap is saved as you go")}
+        </p>
 
         {err && <p className="queue error">{err}</p>}
         {waiting > 0 && !sample && (
@@ -858,12 +953,13 @@ function LiveCard({ roundNumber }: { roundNumber: number }) {
 
   const gi = cfg.games.indexOf(game);
   const scorer = state.players.find((p) => p.id === game.scorerId);
+  const named = oneScorer(state.tournament, round);
   return (
     <div className="scorer stack live-card">
       <div className="keeper">
-        <span className="who">{scorer ? `${scorer.name} is keeping score` : "No scorer set for this match yet"}</span>
+        <span className="who">{!named ? "The group keeps this card" : scorer ? `${scorer.name} is keeping score` : "No scorer set for this match yet"}</span>
         <span className="small">
-          {scorer ? "Scores appear here as they go in. Use Record and Note below for the moments." : "Ask the organiser to choose who keeps the score."}
+          {!named || scorer ? "Scores appear here as they go in. Use Record and Detail below for the moments." : "Ask the organiser to choose who keeps the score."}
         </span>
       </div>
       <p className="display live-line">{gameLine(round, game, summary.rounds[ri].games[gi], state.players)}</p>

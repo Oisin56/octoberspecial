@@ -60,7 +60,7 @@ const at = (p, acc = 5) => ctx.setGeolocation({ latitude: p[0], longitude: p[1],
 await page.goto(`${BASE}/t/${T}`);
 await page.request.post(`${BASE}/api/login`, { data: { t: T, mode: "organiser", pin: "1234" } });
 await page.goto(`${BASE}/t/${T}/score`, { waitUntil: "networkidle" });
-await page.getByText(/Next: hole 2/).waitFor();
+await page.getByRole("button", { name: /Hole 1\. Tap to choose/ }).waitFor();
 
 // ---- The tab
 const tab = page.locator(".gps-tab");
@@ -157,69 +157,68 @@ const tap = (who, n) => setScore(page, who, n);
 await tap("Oisin", h1par + 1);
 await tap("Neil", h1par);
 await page.getByText("Saved for everyone").waitFor({ timeout: 10000 });
-await page.getByRole("button", { name: /Next: hole 2/ }).click();
-const mo = page.locator(".shotcard");
+await page.locator(".after-hole").waitFor();
+await page.locator(".after-hole .btn", { hasText: "Add detail" }).click();
+const mo = page.locator(".dtl");
 await mo.waitFor();
-ok(!(await tab.isVisible()), "the tab steps aside while he says what happened");
-await mo.locator(".sc-player", { hasText: "Oisin" }).click();
-const rowsOf = async () => mo.locator(".sc-row").evaluateAll((els) => els.map((e) => [e.querySelector(".sc-what")?.textContent?.trim() ?? "", e.querySelector(".sc-dist")?.textContent?.trim() ?? ""]));
+ok(!(await tab.isVisible()), "the tab steps aside while he adds detail");
+await mo.locator(".dtl-tab", { hasText: "Oisin" }).click();
+const rowsOf = async () =>
+  mo.locator(".dtl-shot").evaluateAll((els) => els.map((e) => [e.querySelector(".dtl-what")?.firstChild?.textContent?.trim() ?? "", e.querySelector(".dtl-sub")?.textContent?.trim() ?? ""]));
 let rows = await rowsOf();
-ok(rows.length === h1par + 1, `a row for each of his ${h1par + 1} strokes`);
+ok(rows.length === h1par + 1, `a card for each of his ${h1par + 1} strokes`);
 const drive = yds(TEE, P2);
-ok(rows[0][0].startsWith("Tee shot") && /^about \d+/.test(rows[0][1]) && near(Number(rows[0][1].match(/\d+/)[0]), drive, 3), `stroke 1: the tee shot, went about ${rows[0][1]} (tee to the second)`);
+const dm = rows[0][1].match(/went about (\d+)/);
+ok(rows[0][0].startsWith("Tee shot") && !!dm && near(Number(dm[1]), drive, 3), `stroke 1: the tee shot, ${rows[0][1]} (tee to the second)`);
 ok(rows[1][1] === `from ${m2} yds`, `stroke 2: ${rows[1][1]}`);
 ok(rows[2][1] === `from ${m3} yds`, `stroke 3: ${rows[2][1]}`);
 ok(/^Holed/.test(rows[h1par][0]), `the last stroke: holed (${rows[h1par][0]})`);
 await page.screenshot({ path: "/var/tmp/ospg/shots/phased-strokes.png" });
 
 // That near-the-green number was for his fourth: move it
-await mo.locator(".sc-row").nth(2).locator(".sc-dist").click();
+await mo.locator(".dtl-shot").nth(2).locator(".dtl-card-main").click();
+await mo.getByRole("button", { name: "Measured for a different shot?" }).click();
 await mo.getByText("Measured for which shot?").waitFor();
 await page.screenshot({ path: "/var/tmp/ospg/shots/phased-move.png" });
-await mo.locator(".sc-move .pick-tile", { hasText: /^4$/ }).click();
+await mo.locator(".dtl-tiles.four .dtl-tile", { hasText: /^4$/ }).click();
+await mo.locator(".dtl-shot.open .dtl-card-main").click();
 rows = await rowsOf();
 ok(rows[2][1] === "" && rows[3][1] === `from ${m3} yds`, "moved to stroke 4 with one tap");
 ok(await until(() => q(`select seq from gps_readings where to_middle=${m3}`) === "4"), "and kept there for everyone");
 // Then off altogether
-await mo.locator(".sc-row").nth(3).locator(".sc-dist").click();
+await mo.locator(".dtl-shot").nth(3).locator(".dtl-card-main").click();
+await mo.getByRole("button", { name: "Measured for a different shot?" }).click();
 await mo.getByRole("button", { name: "Take it off" }).click();
+await mo.locator(".dtl-shot.open .dtl-card-main").click();
 rows = await rowsOf();
-ok(rows.filter((r) => r[1]).length === 2, "Take it off: gone from his strokes");
+ok(rows.filter((r) => /from \d/.test(r[1])).length === 2 && rows[3][1] === "", "Take it off: gone from his strokes");
 ok(await until(() => q(`select ignored from gps_readings where to_middle=${m3}`) === "t"), "kept aside, not deleted");
 
-// He says what his second was
-await mo.locator(".sc-row").nth(1).locator(".sc-row-main").click();
-const tiles = await mo.locator(".sc-edit .sc-tile").allInnerTexts();
-await mo.locator(".sc-edit .sc-tile").first().click();
-const shot2 = await until(() => q(`select seq||'|'||author_player_id||'|'||outcome from shots where player_id='oisin' and hole=1`));
-ok(shot2 && shot2.startsWith("2|oisin|") && shot2.endsWith(tiles[0]), `saved on stroke 2, logged by Oisin (${shot2})`);
+// He says what his second was: from the fairway distance, its likeliest kinds first
+await mo.locator(".dtl-shot").nth(1).locator(".dtl-card-main").click();
+const tiles = await mo.locator(".dtl-shot.open .dtl-tile").allInnerTexts();
+await mo.locator(".dtl-shot.open .dtl-tile").first().click();
+const shot2 = await until(() => q(`select seq||'|'||author_player_id||'|'||kind from shots where player_id='oisin' and hole=1`));
+ok(shot2 && shot2.startsWith("2|oisin|") && tiles.length === 4 && tiles.at(-1) === "Other", `saved on stroke 2, logged by Oisin (${shot2}; offered ${tiles.join(", ")})`);
 
-// ---- Neil's phone: he can add to Oisin's hole, but not change what Oisin logged
+// ---- Neil's phone: anyone in the group can tell and change Oisin's shots
 const nctx = await browser.newContext({ ...devices["iPhone 13"] });
 const np = await nctx.newPage();
 await np.goto(`${BASE}/t/${T}`);
 const lr = await np.request.post(`${BASE}/api/login`, { data: { t: T, mode: "link", code: "neil-phase-d-link-0001", step: "confirm" } });
 ok(lr.ok() && (await lr.json()).playerId === "neil", "Neil logged in on his own phone");
 await np.goto(`${BASE}/t/${T}/shots?round=2&hole=1`, { waitUntil: "networkidle" });
-const nmo = np.locator(".shotcard");
+const nmo = np.locator(".dtl");
 await nmo.waitFor();
-await nmo.locator(".sc-player", { hasText: "Oisin" }).click();
-const lockRow = nmo.locator(".sc-row").nth(1);
-ok((await lockRow.locator(".sc-lock").count()) === 1 && /by Oisin/.test(await lockRow.innerText()), "Oisin's own shot: locked for Neil, showing who logged it");
-ok(await lockRow.locator(".sc-row-main").isDisabled(), "Neil can't open it");
-ok((await nmo.locator(".sc-row").nth(2).locator(".sc-lock").count()) === 0, "an empty stroke is open to him");
-await nmo.locator(".sc-row").nth(2).locator(".sc-row-main").click();
-await nmo.locator(".sc-edit .sc-tile").first().click();
+await nmo.locator(".dtl-tab", { hasText: "Oisin" }).click();
+const told2 = nmo.locator(".dtl-shot").nth(1);
+ok(/by Oisin/.test(await told2.innerText()), "Oisin's own shot shows who told it");
+ok(!(await told2.locator(".dtl-card-main").isDisabled()), "and Neil can open it (anyone in the group)");
+await nmo.locator(".dtl-shot").nth(2).locator(".dtl-card-main").click();
+await nmo.locator(".dtl-shot.open .dtl-tile").first().click();
 const byNeil = await until(() => q(`select seq||'|'||author_player_id||'|'||author_name from shots where player_id='oisin' and hole=1 and seq=3`));
 ok(byNeil === "3|neil|Neil", `Neil adds stroke 3 for Oisin (${byNeil})`);
 await np.screenshot({ path: "/var/tmp/ospg/shots/phased-neil.png" });
-// And the server holds the line, whatever the phone does
-const cid = q(`select client_id from shots where player_id='oisin' and hole=1 and seq=2`);
-const del = await call(np, "/api/shots", { t: T, op: "delete", clientId: cid });
-ok(del.status === 403, `Neil can't remove Oisin's shot (${del.status})`);
-const rid = q(`select client_id from gps_readings where to_middle=${m2}`);
-const mv = await call(np, "/api/gps", { t: T, op: "place", clientId: rid, seq: 1, ignored: false });
-ok(mv.status === 403, `nor move Oisin's distances (${mv.status})`);
 // Oisin (his own shot, and the organiser) can change Neil's entry for him
 await page.reload({ waitUntil: "networkidle" });
 const neilShot = q(`select client_id from shots where player_id='oisin' and hole=1 and seq=3`);
@@ -229,6 +228,22 @@ ok(od.ok, "the player himself can clear a shot someone else logged for him");
 // A reading too far from the hole is refused by the server
 const far = await call(page, "/api/gps", { t: T, clientId: "far-away-reading-01", roundId: r2, hole: 1, playerId: "oisin", lat: 53.35, lon: -6.26, accuracy: 5, takenAt: new Date().toISOString(), source: "gps" });
 ok(far.status === 200 && q(`select count(*) from gps_readings where client_id='far-away-reading-01'`) === "0", "a reading miles from the hole isn't kept (the phone stops retrying it)");
+
+// ---- A phone that hasn't been asked about location: one line first, then the phone's own question
+const lctx = await browser.newContext({ ...devices["iPhone 13"] });
+const lp = await lctx.newPage();
+await lp.goto(`${BASE}/t/${T}`);
+await lp.request.post(`${BASE}/api/login`, { data: { t: T, mode: "organiser", pin: "1234" } });
+await lp.goto(`${BASE}/t/${T}/score`, { waitUntil: "networkidle" });
+await lp.locator(".gps-tab").click();
+await lp.getByText("Measure uses your location to work out the yardage.").waitFor({ timeout: 10000 });
+ok((await lp.locator(".gps-again").isVisible()) === false, "never asked yet: one line first, and a Measure button (the phone's own question comes after)");
+await lp.screenshot({ path: "/var/tmp/ospg/shots/phased-location-line.png" });
+await lp.locator(".gps-msg").getByRole("button", { name: "Measure" }).click();
+await lp.getByText(/hasn.t allowed location/).waitFor({ timeout: 10000 });
+ok(true, "said no: Measure says how to switch location on");
+ok((await lp.evaluate(() => localStorage.getItem("mgs-gps-loc"))) === "1", "the line is shown once on this phone");
+await lctx.close();
 
 // ---- The tournament's units: metres for a new phone
 q(`update tournaments set units='metres' where slug='${T}'`);

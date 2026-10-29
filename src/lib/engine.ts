@@ -235,6 +235,8 @@ export interface BallHole {
   gross: number | null;
   pickedUp?: boolean;
   gir?: boolean;
+  /** Who entered it (any phone in the group can) */
+  by?: string;
 }
 
 export interface HoleEntry {

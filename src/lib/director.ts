@@ -11,7 +11,7 @@ import { gameSummary, tournamentSummary } from "./engine";
 import { TONES, courseInfo, forecast } from "./ai";
 import { cleanBody, cleanTitle } from "./cleanText";
 import { readPlanJson } from "./planJson";
-import { shotLine } from "./shots";
+import { extrasWords, shotWords } from "./detail";
 import { clipTypeOf, filmClips, musicPieces, uprightCrop, type MusicSpan } from "./film";
 import { scoreBug, type ScoreBug } from "./scorebug";
 import { standings, totalsView } from "./live";
@@ -143,7 +143,12 @@ function clipFacts(s: TournamentState, clips: PostRow[]): ClipFact[] {
       // The player's whole hole, as logged on the course (tee shot right; approach stiff; ...)
       ...(() => {
         const log = round && c.hole ? (s.shots ?? []).filter((x) => x.round_id === round.id && x.hole === c.hole && (c.player_ids ?? []).includes(x.player_id)).sort((a, b) => a.logged_at.localeCompare(b.logged_at)) : [];
-        return log.length ? { holeLog: log.map((x) => `${s.players.find((p) => p.id === x.player_id)?.name ?? x.player_id}: ${shotLine(x)}`).join("; ") } : {};
+        return log.length ? { holeLog: log.map((x) => `${s.players.find((p) => p.id === x.player_id)?.name ?? x.player_id}: ${shotWords(x)}${extrasWords(x) ? ` (${extrasWords(x)})` : ""}`).join("; ") } : {};
+      })(),
+      // What the group told the commentators about this hole (paraphrase it, never quote it)
+      ...(() => {
+        const said = round && c.hole ? s.posts.filter((p) => p.round_id === round.id && p.hole === c.hole && p.tags.includes("voice") && (p.player_ids ?? []).some((id) => (c.player_ids ?? []).includes(id))) : [];
+        return said.length ? { toldUs: said.map((p) => p.body ?? "").join(" / ") } : {};
       })(),
       ...(c.details?.shot ? { shot: c.details.shot } : {}),
       ...(c.details?.result ? { result: c.details.result } : {}),
@@ -481,7 +486,7 @@ export async function writePlan(tournamentId: string, brief: Brief, probes: Clip
         .join("\n")}`,
       `OVERALL STANDINGS NOW: ${standingsRows(s).map(([n, v]) => `${n} ${v}`).join(", ")}`,
       stories ? `THE STORY SO FAR (published previews and reports; reuse their storylines, running jokes and nicknames, but facts come from the scores):\n${stories}` : "",
-      `AVAILABLE CLIPS (JSON). seconds = clip length; statusBefore/statusAfter = the match before and after that hole; holeNote = background on the hole; shot/result/club (when present) were entered by the person filming and are reliable; holeLog is how the player played the whole hole, as logged on the course (use it to set up and pay off the shot); shape = how it was filmed:\n${JSON.stringify(facts)}`,
+      `AVAILABLE CLIPS (JSON). seconds = clip length; statusBefore/statusAfter = the match before and after that hole; holeNote = background on the hole; shot/result/club (when present) were entered by the person filming and are reliable; holeLog is how the player played the whole hole, as logged on the course (use it to set up and pay off the shot); toldUs is what the group said privately to the commentators about the hole (use it, in your own words, never quoted); shape = how it was filmed:\n${JSON.stringify(facts)}`,
       asideFacts.length
         ? `OFF-COURSE CLIPS (JSON): interviews, predictions and scene-setting, filmed when no round was being played. "said" is what's said in it, with start times in seconds ([4.2] means 4.2 seconds in):\n${JSON.stringify(asideFacts)}`
         : "",

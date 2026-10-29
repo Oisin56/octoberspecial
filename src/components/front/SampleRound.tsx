@@ -45,7 +45,7 @@ export type SampleStep = "play" | "record" | "highlight" | "feed";
 export const STEP_HELP: Record<SampleStep, { title: string; body: string }> = {
   play: {
     title: "Score three holes",
-    body: "You're playing with Declan and Marcus, and their scores are already in. Enter yours with plus and minus. Tap GPS on the right for distances. After each hole, say what happened.",
+    body: "You're playing with Declan and Marcus, and their scores are already in. Enter yours with plus and minus. Tap GPS on the right for distances. When the scores are in, add detail if you like, or go on to the next hole.",
   },
   record: {
     title: "Film the shot",
@@ -235,6 +235,7 @@ function Inner({ onStep }: { onStep?: (s: SampleStep) => void }) {
         spot: sampleSpot,
         note: SAMPLE_NOTE,
         locked: SAMPLE_LOCKED,
+        wind: "A little hurt",
       },
     };
   }, [state, patch, href]);

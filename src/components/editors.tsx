@@ -913,7 +913,7 @@ function RoundCard({ round, data, onSaved, lite = false }: { round: RoundRow; da
       </div>
       {open && lite && (
         <>
-          <ScorerPicker games={games} setGames={setGames} players={players} />
+          {data.state.tournament.one_scorer && <ScorerPicker games={games} setGames={setGames} players={players} />}
           <RoundPhoto round={round} onSaved={onSaved} />
           <button type="button" className="chip" aria-pressed={showCard} onClick={() => setShowCard(!showCard)}>
             {showCard ? "Hide card" : "Check par and stroke index"}
@@ -1039,7 +1039,7 @@ function RoundCard({ round, data, onSaved, lite = false }: { round: RoundRow; da
           <h4 className="display" style={{ margin: "8px 0 0", fontSize: 18 }}>
             Matches and groups
           </h4>
-          <GamesBuilder play={f.play} games={games} setGames={setGames} players={players} teams={teams} />
+          <GamesBuilder play={f.play} games={games} setGames={setGames} players={players} teams={teams} withScorer={!!data.state.tournament.one_scorer} />
 
           <RoundPhoto round={round} onSaved={onSaved} />
 
@@ -1335,12 +1335,15 @@ function GamesBuilder({
   setGames,
   players,
   teams,
+  withScorer = false,
 }: {
   play: PlayType;
   games: Game[];
   setGames: (g: Game[]) => void;
   players: PlayerRow[];
   teams: Team[];
+  /** One scorer per group is on: choose each group's scorer */
+  withScorer?: boolean;
 }) {
   const pairs = play !== "singles";
   const perSide = play === "scramble" ? 4 : pairs ? 2 : 1;
@@ -1409,14 +1412,16 @@ function GamesBuilder({
         <div key={gi} className="post stack">
           <div className="row">
             <input value={g.name ?? ""} placeholder={`Match ${gi + 1}`} onChange={(e) => update(gi, { ...g, name: e.target.value })} style={{ flex: "1 1 160px" }} aria-label="Match name" />
-            <select value={g.scorerId ?? ""} onChange={(e) => update(gi, { ...g, scorerId: e.target.value || null })} style={{ flex: "1 1 160px" }} aria-label="Scorer">
-              <option value="">Scorer: organiser only</option>
-              {g.sides.flatMap((s) => s.playerIds).map((p) => (
-                <option key={p} value={p}>
-                  Scorer: {nm(p)}
-                </option>
-              ))}
-            </select>
+            {withScorer && (
+              <select value={g.scorerId ?? ""} onChange={(e) => update(gi, { ...g, scorerId: e.target.value || null })} style={{ flex: "1 1 160px" }} aria-label="Scorer">
+                <option value="">Scorer: organiser only</option>
+                {g.sides.flatMap((s) => s.playerIds).map((p) => (
+                  <option key={p} value={p}>
+                    Scorer: {nm(p)}
+                  </option>
+                ))}
+              </select>
+            )}
             <button type="button" className="chip" onClick={() => setGames(games.filter((_, i) => i !== gi))}>
               Remove match
             </button>

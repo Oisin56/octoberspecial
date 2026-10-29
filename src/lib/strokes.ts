@@ -5,6 +5,7 @@
  */
 import { driveYards, inUnits, placeReadings, unitWord, type Reading } from "./gps";
 import { toRoundCfg, type GpsRow, type PostRow, type ShotRow, type TournamentState } from "./types";
+import { extrasWords, shotWords } from "./detail";
 
 export interface StrokeRow {
   seq: number;
@@ -29,6 +30,10 @@ export interface StrokeInput {
   gross: number | null;
   holeYards: number | null;
   clips?: PostRow[];
+  /** The player picked up: the strokes told so far, and no holed last stroke */
+  pickedUp?: boolean;
+  /** Whose strokes (to find clips filmed of a stroke before it was told) */
+  playerId?: string;
 }
 
 /** Shots in stroke order: those placed on a stroke keep it; the rest fill the gaps in the order they were logged. */
@@ -45,12 +50,19 @@ export function orderShots(shots: ShotRow[]): Map<number, ShotRow> {
 
 const holed = (o?: string | null) => !!o && /^Holed/.test(o);
 
-export function strokeRows({ shots, readings, gross, holeYards, clips = [] }: StrokeInput): StrokeRow[] {
+/** A clip's stroke, when it was filmed before the stroke was told */
+const clipSeq = (c: PostRow) => {
+  const v = (c.details as Record<string, unknown> | null)?.seq;
+  return typeof v === "number" && v >= 1 ? v : null;
+};
+
+export function strokeRows({ shots, readings, gross, holeYards, clips = [], pickedUp = false, playerId }: StrokeInput): StrokeRow[] {
   const bySeq = orderShots(shots);
-  const maxSeq = Math.max(0, ...bySeq.keys());
+  const mineClips = playerId ? clips.filter((c) => clipSeq(c) != null && (c.player_ids ?? []).length === 1 && c.player_ids?.[0] === playerId) : [];
+  const maxSeq = Math.max(0, ...bySeq.keys(), ...mineClips.map((c) => clipSeq(c)!));
   const lastShot = bySeq.get(maxSeq);
-  // Unscored yet: the strokes logged so far, and one more to log (unless he's holed out)
-  const n = gross != null && gross > 0 ? Math.max(gross, maxSeq) : maxSeq + (holed(lastShot?.outcome) ? 0 : 1);
+  // Picked up: the strokes told so far. Unscored yet: those and one more to tell (unless he's holed out)
+  const n = pickedUp ? maxSeq : gross != null && gross > 0 ? Math.max(gross, maxSeq) : maxSeq + (holed(lastShot?.outcome) ? 0 : 1);
   // A clip's spot only counts when the player didn't measure that shot himself (within a few minutes of it)
   const near = (a: string, b: string) => Math.abs(Date.parse(a) - Date.parse(b)) < 4 * 60e3;
   readings = readings.filter((r) => r.source !== "clip" || !readings.some((x) => x.source !== "clip" && near(x.taken_at, r.taken_at)));
@@ -66,8 +78,10 @@ export function strokeRows({ shots, readings, gross, holeYards, clips = [] }: St
   for (let seq = 1; seq <= n; seq++) {
     const shot = bySeq.get(seq) ?? null;
     const reading = readings.find((r) => placed[r.client_id] === seq) ?? null;
-    const clip = (shot && clips.find((c) => c.details && (c.details as Record<string, unknown>).shotId === shot.client_id)) || null;
-    const auto = shot ? null : seq === 1 ? { kind: "tee" } : gross != null && seq === n ? { kind: "putt", outcome: "Holed" } : null;
+    const clip = (shot && clips.find((c) => c.details && (c.details as Record<string, unknown>).shotId === shot.client_id)) || mineClips.find((c) => clipSeq(c) === seq) || null;
+    // Known without anyone saying: stroke 1 is the tee shot; with the score in, the last stroke went in
+    const last = !pickedUp && gross != null && seq === n;
+    const auto = shot ? null : seq === 1 && !last ? { kind: "tee" } : last ? { kind: seq === 1 ? "tee" : "putt", outcome: "Holed" } : null;
     rows.push({ seq, shot, from: reading?.to_middle ?? null, reading, drive: seq === 1 ? drive : null, clip, auto });
   }
   return rows;
@@ -78,7 +92,8 @@ export function strokesLine(rows: StrokeRow[], label: (kind: string) => string, 
   const unit = unitWord(units, true);
   const bits: string[] = [];
   for (const r of rows) {
-    const what = r.shot ? `${label(r.shot.kind)}: ${r.shot.outcome.toLowerCase()}${r.shot.club ? ` (${r.shot.club.toLowerCase()})` : ""}` : r.auto ? (r.auto.outcome ? r.auto.outcome.toLowerCase() : label(r.auto.kind)) : "";
+    const extras = r.shot ? extrasWords(r.shot) : "";
+    const what = r.shot ? `${shotWords(r.shot).toLowerCase()}${extras ? ` (${extras})` : ""}` : r.auto ? (r.auto.outcome ? `${r.auto.outcome.toLowerCase()} (known from the score)` : label(r.auto.kind)) : "";
     const where = r.from != null ? `from ${inUnits(r.from, units)} ${unit}` : "";
     const drive = r.drive != null ? `went about ${inUnits(r.drive, units)} ${unit}` : "";
     const parts = [what, where, drive].filter(Boolean);
@@ -100,10 +115,12 @@ export function roundTimeline(s: TournamentState, roundId: string, label: (kind:
     const pids = new Set([...shots.filter((x) => x.hole === h.number).map((x) => x.player_id), ...readings.filter((x) => x.hole === h.number).map((x) => x.player_id)]);
     for (const pid of pids) {
       let gross: number | null = null;
+      let pickedUp = false;
       for (const e of s.entries.filter((x) => x.round_id === roundId && x.hole === h.number)) {
         const side = cfg.games.find((g) => g.id === (e.game ?? "main"))?.sides.find((sd) => sd.playerIds.includes(pid));
         const b = e.scores[pid] ?? (side ? e.scores[side.id] : undefined);
         if (b?.gross != null && !b.pickedUp) gross = b.gross;
+        if (b?.pickedUp) pickedUp = true;
       }
       const rows = strokeRows({
         shots: shots.filter((x) => x.hole === h.number && x.player_id === pid),
@@ -111,9 +128,11 @@ export function roundTimeline(s: TournamentState, roundId: string, label: (kind:
         gross,
         holeYards: h.yards ?? null,
         clips: clips.filter((c) => c.hole === h.number),
+        pickedUp,
+        playerId: pid,
       });
       const line = strokesLine(rows, label, s.tournament.units === "metres" ? "metres" : "yards");
-      if (line) lines.push(`- H${h.number} ${s.players.find((p) => p.id === pid)?.name ?? pid}${gross != null ? ` (${gross})` : ""}: ${line}`);
+      if (line) lines.push(`- H${h.number} ${s.players.find((p) => p.id === pid)?.name ?? pid}${gross != null ? ` (${gross})` : pickedUp ? " (picked up)" : ""}: ${line}`);
     }
   }
   return lines.join("\n");

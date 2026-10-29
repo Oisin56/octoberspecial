@@ -2,15 +2,14 @@
 
 import { Suspense, useMemo, useState } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useT } from "@/components/Providers";
 import { Loading } from "@/components/ui";
-import { ShotCard } from "@/components/ShotCard";
+import { AddDetail } from "@/components/AddDetail";
 import { groupPlayers } from "@/lib/courseCards";
 import { readScorePos, writeScorePos } from "@/lib/scorePos";
-import type { HoleInfo } from "@/lib/shots";
 
-/** The shot log for anyone in the group, on any hole (the Note button on the bar). Swipe between holes. */
+/** Add detail for anyone in the group, on the group's latest hole (the Detail button on the bar). */
 function ShotsInner() {
   const { state, session, slug, href } = useT();
   const sp = useSearchParams();
@@ -34,9 +33,11 @@ function ShotsInner() {
     return done.length ? Math.max(...done) : (nums[0] ?? 1);
   }, [sp, posHole, players, state, round]);
   const [hole, setHole] = useState<number | null>(null);
+  const router = useRouter();
   const h = hole ?? startHole;
 
   if (!state) return <Loading />;
+  const toCard = () => router.push(href("/score"));
   if (!session || session.role === "fan")
     return (
       <p>
@@ -44,26 +45,21 @@ function ShotsInner() {
       </p>
     );
   if (!round) return <p>No round is being played.</p>;
-  const hh = round.holes.find((x) => x.number === h)!;
-  const info: HoleInfo = { par: hh.par, yards: hh.yards, note: round.course_guide?.holes?.[String(h)] ?? "" };
   // The round's own holes (1 to 18, or a nine)
   const nums = round.holes.map((x) => x.number).sort((a, b) => a - b);
   const nextNo = nums.find((n) => n > h) ?? null;
-  const prevNo = [...nums].reverse().find((n) => n < h) ?? null;
-  const go = (n: number | null) => n != null && setHole(n);
 
   return (
-    <ShotCard
+    <AddDetail
       key={h}
       roundId={round.id}
       roundNumber={round.number}
       hole={h}
-      holeInfo={info}
+      gameId={posGame}
       players={players}
-      nextLabel={nextNo != null ? `Hole ${nextNo}` : "Done"}
-      backLabel={prevNo != null ? `back to ${prevNo}` : undefined}
-      onContinue={() => (nextNo != null ? go(nextNo) : history.back())}
-      onBack={() => go(prevNo)}
+      nextLabel={nextNo != null ? `On to hole ${nextNo}` : "Done"}
+      onNext={() => (nextNo != null ? setHole(nextNo) : toCard())}
+      onBack={toCard}
       onLeave={() => pos?.game && writeScorePos(slug, round.id, { game: pos.game, hole: pos.hole })}
     />
   );

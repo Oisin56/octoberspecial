@@ -6,10 +6,13 @@ import { Sheet } from "./Sheet";
 import { Scorecard, gameLine } from "./ui";
 import { cardInfo, cardLabel } from "@/lib/scorecards";
 import { sideLabel, toRoundCfg } from "@/lib/types";
+import { mayScore } from "@/lib/scoring-access";
+import { ballsOfGame, gameShots, holeShots } from "@/lib/engine";
 
 /**
- * The end of a match: check the card, submit it, and (when the tournament asks for it) every player signs it.
- * Used on the scorer's phone (pass it round to sign), on a player's own phone, and by the organiser.
+ * The end of a match: check the card, hand it in, and (when the tournament asks for it) every player signs it.
+ * Anyone in the group can hand it in. Each player then gets a one-tap check of their own card on their own phone
+ * ("Your round: 82. Right?"), which never holds anything up.
  */
 export function CardPanel({
   roundId,
@@ -25,7 +28,10 @@ export function CardPanel({
   backLabel?: string;
   onDone?: () => void;
 }) {
-  const { state, summary, session, api, refresh, names } = useT();
+  const { state, summary, session, api, refresh, names, cfg: tcfg } = useT();
+  const [checked, setChecked] = useState(false);
+  const [wrong, setWrong] = useState(false);
+  const [wrongNote, setWrongNote] = useState("");
   const [confirming, setConfirming] = useState(false);
   const [signer, setSigner] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -40,7 +46,32 @@ export function CardPanel({
   const ri = state.rounds.indexOf(round);
   const info = cardInfo(state, roundId, gameId);
   const org = session?.role === "organiser";
-  const scorer = org || (!!session?.playerId && session.playerId === game.scorerId);
+  // Anyone in the group (or only its scorer, with One scorer per group)
+  const scorer = org || mayScore(state.tournament, round, game, session);
+  const me = session?.playerId ?? null;
+  // Your own card, for the one-tap check
+  const mine = (() => {
+    if (!me || !info.players.includes(me) || !tcfg) return null;
+    const ball = ballsOfGame(game, cfg.play).includes(me) ? me : (game.sides.find((sd) => sd.playerIds.includes(me))?.id ?? me);
+    const shots = gameShots(cfg, game, tcfg.players);
+    let gross = 0;
+    let pts = 0;
+    let picked = 0;
+    for (const e of state.entries.filter((x) => x.round_id === roundId && (x.game ?? "main") === gameId)) {
+      const sc = e.scores[ball];
+      const h = round.holes.find((x) => x.number === e.hole);
+      if (!sc || !h) continue;
+      if (sc.pickedUp) picked++;
+      else if (sc.gross != null) {
+        gross += sc.gross;
+        pts += Math.max(0, 2 + h.par - (sc.gross - holeShots(cfg, shots[ball] ?? 0, h.number)));
+      }
+    }
+    const stableford = cfg.scoring === "stableford";
+    const main = stableford ? `${pts} point${pts === 1 ? "" : "s"}` : String(gross);
+    return `Your round: ${main}${picked ? `, with ${picked} picked up` : ""}. Right?`;
+  })();
+  const showCheck = !!mine && info.stage === "final" && !info.signed.includes(me!) && !(info.flag && info.flag.by === names[me!]);
   const result = gameLine(round, game, summary.rounds[ri].games[gi], state.players);
   const title = `${cfg.games.length > 1 ? `${game.name ?? `Match ${gi + 1}`}: ` : ""}${game.sides.map((s) => sideLabel(s.id, game, state.players)).join(" v ")}`;
 
@@ -75,11 +106,49 @@ export function CardPanel({
         <p className={`cp-stage ${info.stage}`}>{cardLabel(info, names)}</p>
       </div>
 
+      {showCheck && !checked && (
+        <div className="my-check" role="region" aria-label="Check your card">
+          {wrong ? (
+            <>
+              <label className="sf-field">
+                <span>What&apos;s wrong? The group and the organiser will see this</span>
+                <textarea value={wrongNote} onChange={(e) => setWrongNote(e.target.value)} maxLength={300} rows={3} placeholder="e.g. I had a 5 on the 7th" />
+              </label>
+              <div className="row2">
+                <button className="btn secondary" onClick={() => setWrong(false)}>
+                  Back
+                </button>
+                <button className="btn" disabled={busy} onClick={async () => (await act("flag", { playerId: me, note: wrongNote })) && setWrong(false)}>
+                  Send
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <p>{mine}</p>
+              <div className="row2">
+                <button className="btn" disabled={busy} onClick={async () => (await act("check")) && setChecked(true)}>
+                  That&apos;s right
+                </button>
+                <button className="btn secondary" onClick={() => setWrong(true)}>
+                  Something&apos;s wrong
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+      {checked && (
+        <div className="my-check done">
+          <p>✓ Thanks. Your card is checked.</p>
+        </div>
+      )}
+
       <div className="cp-card">
         <Scorecard round={round} gameIndex={gi} badge={false} compact />
       </div>
 
-      {info.flag && info.stage === "submitted" && (
+      {info.flag && (info.stage === "submitted" || info.stage === "final") && (
         <div className="cp-flag" role="alert">
           <strong>{info.flag.by} says something&apos;s not right</strong>
           {info.flag.note && <span>&ldquo;{info.flag.note}&rdquo;</span>}
@@ -111,7 +180,7 @@ export function CardPanel({
       <div className="cp-foot">
         {info.stage === "finished" && scorer && (
           <button className="btn block cp-main" disabled={busy} onClick={() => setConfirming(true)}>
-            Submit the card
+            Hand in the card
           </button>
         )}
         {info.stage === "submitted" && org && (
@@ -154,12 +223,12 @@ export function CardPanel({
       </div>
 
       {confirming && (
-        <Sheet label="Submit the card?" onClose={() => setConfirming(false)}>
+        <Sheet label="Hand in the card?" onClose={() => setConfirming(false)}>
           <div className="sf-menu">
             <p>
               {info.needsSignatures
                 ? "Every player then signs it. Once they have, the scores are final and only the organiser can change them."
-                : "The scores become final. After this, only the organiser can change them."}
+                : "The scores become final, and each player gets a quick check of their own card on their phone. After this, only the organiser can change them."}
             </p>
             <button
               className="btn block"
@@ -168,7 +237,7 @@ export function CardPanel({
                 if (await act("submit")) setConfirming(false);
               }}
             >
-              {busy ? "Submitting…" : "Submit the card"}
+              {busy ? "Handing in…" : "Hand in the card"}
             </button>
             <button className="btn secondary block" onClick={() => setConfirming(false)}>
               Not yet
@@ -229,12 +298,12 @@ function SignSheet({
         {wrong ? (
           <>
             <label className="sf-field">
-              <span>What&apos;s wrong? The scorer will see this</span>
+              <span>What&apos;s wrong? The group and the organiser will see this</span>
               <textarea value={note} onChange={(e) => setNote(e.target.value)} maxLength={300} rows={3} placeholder="e.g. I had a 5 on the 7th" />
             </label>
             {err && <p className="error">{err}</p>}
             <button className="btn block" disabled={busy} onClick={() => onFlag(note)}>
-              Tell the scorer
+              Send
             </button>
             <button className="btn secondary block" onClick={() => setWrong(false)}>
               Back

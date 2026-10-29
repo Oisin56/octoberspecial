@@ -18,6 +18,8 @@ import { isIPhone } from "@/lib/camera";
 type Units = "yards" | "metres";
 const UNITS_KEY = "mgs-units";
 const TIP_KEY = "mgs-gps-tip";
+/** The line about location has been shown on this phone */
+const LOC_KEY = "mgs-gps-loc";
 /** Where the tab was last left on the right edge (its middle, as a share of the screen's height) */
 const POS_KEY = "mgs-gps-y";
 /** Movement (px) before a touch counts as a drag rather than a tap */
@@ -50,6 +52,8 @@ export function GpsTab() {
   const [fix, setFix] = useState<Fix | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<"denied" | "unavailable" | "far" | null>(null);
+  /** The phone hasn't been asked about location yet: one line first, then the phone's own question */
+  const [askFirst, setAskFirst] = useState<{ h: number; keep: boolean } | null>(null);
   const [units, setUnits] = useState<Units>("yards");
   const [tip, setTip] = useState(false);
   // The tab's height on the edge (its middle, share of the screen), and how far the panel is pushed off (px; 0 = open)
@@ -143,8 +147,23 @@ export function GpsTab() {
   };
 
   /** Measure hole h. `keep`: file the reading against this player's next shot (not when just looking at another hole). */
-  const measure = (h: number, keep = true) => {
+  const measure = (h: number, keep = true, told = false) => {
     if (!geo?.[String(h)] || !round) return;
+    // The first time: say why before the phone asks (once; never when the page opens or while filming)
+    if (!sample && !told) {
+      let said = false;
+      try {
+        said = localStorage.getItem(LOC_KEY) === "1";
+      } catch {}
+      if (!said && navigator.permissions?.query) {
+        navigator.permissions
+          .query({ name: "geolocation" as PermissionName })
+          .then((p) => (p.state === "prompt" ? setAskFirst({ h, keep }) : measure(h, keep, true)))
+          .catch(() => measure(h, keep, true));
+        return;
+      }
+    }
+    setAskFirst(null);
     setBusy(true);
     setErr(null);
     // The sample round: a spot on the fairway, no location permission asked for
@@ -414,7 +433,25 @@ export function GpsTab() {
               </button>
             </div>
 
-            {err === "denied" ? (
+            {askFirst ? (
+              <div className="gps-msg">
+                <p>
+                  <strong>Measure uses your location to work out the yardage.</strong>
+                </p>
+                <p>Your phone will ask once. Only the spot of each measurement is kept.</p>
+                <button
+                  className="btn block"
+                  onClick={() => {
+                    try {
+                      localStorage.setItem(LOC_KEY, "1");
+                    } catch {}
+                    measure(askFirst.h, askFirst.keep, true);
+                  }}
+                >
+                  Measure
+                </button>
+              </div>
+            ) : err === "denied" ? (
               <div className="gps-msg">
                 <p>
                   <strong>
@@ -477,6 +514,7 @@ export function GpsTab() {
 
             <button
               className="btn block gps-again"
+              hidden={!!askFirst}
               onClick={() => hole != null && measure(hole)}
               disabled={busy}
             >

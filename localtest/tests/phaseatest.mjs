@@ -73,16 +73,26 @@ await p.getByRole("button", { name: /Hole 10\. Tap to choose/ }).click();
 const nums = await p.locator(".hole-sheet .grid button").evaluateAll((els) => els.map((e) => e.firstChild.textContent.trim()));
 ok(nums.join(",") === "10,11,12,13,14,15,16,17,18", `the hole list is the nine played (${nums.join(",")})`);
 await p.locator(".hole-sheet .grid button", { hasText: /^18/ }).click();
-await p.getByRole("button", { name: /Finish: check the card/ }).waitFor();
-ok(true, "the 18th is the last hole: Finish, check the card");
+await p.getByRole("button", { name: /Hole 18\. Tap to choose/ }).waitFor();
+ok(await p.getByRole("button", { name: "Next hole" }).isDisabled(), "the 18th is the last hole: nothing after it");
 
 // An unfinished hole: one score in, Next, the hole is marked not finished
 await p.getByRole("button", { name: /Hole 18\. Tap to choose/ }).click();
 await p.locator(".hole-sheet .grid button", { hasText: /^10/ }).click();
 await setScore(p, "Oisin", pars[9]);
-await p.getByRole("button", { name: /Next: hole 11/ }).tap();
+ok((await p.locator(".after-hole").count()) === 0, "one score in: no buttons to move on yet");
+{
+  // A swipe on, with Neil's score missing
+  const sb = await p.locator(".score-top").boundingBox();
+  const sy = sb.y + sb.height / 2;
+  await p.mouse.move(sb.x + sb.width * 0.7, sy);
+  await p.mouse.down();
+  await p.mouse.move(sb.x + sb.width * 0.4, sy + 2, { steps: 4 });
+  await p.mouse.move(sb.x + 10, sy + 3, { steps: 4 });
+  await p.mouse.up();
+}
 await p.getByText("Neil's score isn't in.").waitFor();
-ok(true, "Next with a score missing asks first: enter it, or skip");
+ok(true, "moving on with a score missing asks first: enter it, or skip");
 await p.getByRole("button", { name: "Skip for now and come back" }).tap();
 await p.getByText(/Hole 10 isn't finished: a score is missing/).waitFor();
 ok((await p.locator(".hole-pick .n").innerText()).trim() === "11", "Next with a score missing moves on, and says the hole isn't finished");
@@ -122,7 +132,8 @@ const rtext = await pr.locator("main").innerText();
 ok(/Oisin won 2&1/.test(rtext), `the result over nine: won 2&1 (${(rtext.match(/Oisin[^\n]*UP|[^\n]*won[^\n]*/) ?? [""])[0]})`);
 await pr.screenshot({ path: "/var/tmp/ospg/shots/phasea-round9.png", fullPage: true });
 
-// ---- A1: only the scorer enters scores; everyone else gets the live card
+// ---- A1: One scorer per group: only the scorer enters scores; everyone else gets the live card
+ok((await org("/api/admin", { action: "updateTournament", patch: { one_scorer: true } })).status === 200, "organiser turns on One scorer per group");
 sql(`delete from cards where round_id='${rid}'`);
 sql(`delete from card_signatures where round_id='${rid}'`);
 sql(`update rounds set status='live' where id='${rid}'`);
@@ -152,6 +163,11 @@ const ap = await phone(org.cookie());
 await ap.goto(`${BASE}/t/${T}/admin#cards`, { waitUntil: "networkidle" });
 await ap.getByText("Score corrections").waitFor();
 ok((await ap.getByRole("link", { name: "Correct a score" }).count()) >= 1, "Admin, Scorecards: Correct a score on every card");
+// Off again: anyone in the group, and Neil gets the scorecard itself
+ok((await org("/api/admin", { action: "updateTournament", patch: { one_scorer: false } })).status === 200, "One scorer per group off again");
+await np.goto(`${BASE}/t/${T}/score?round=${rn}`, { waitUntil: "networkidle" });
+await np.locator(".pscore.entry").first().waitFor({ timeout: 15000 });
+ok((await np.locator(".pscore.entry").count()) === 2 && (await np.locator("nav.oncourse .oc-btn").first().innerText()).includes("Score"), "with it off, Neil enters scores on his own phone (his bar says Score)");
 
 // ---- A4, A5, A7: the camera
 sql(`update rounds set status='upcoming' where id='${rid}'`);

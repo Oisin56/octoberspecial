@@ -6,6 +6,7 @@ nobc() { sleep 3; psql -h 127.0.0.1 -p 5433 -U postgres -qc "update tournaments 
 bash fresh.sh; run e2e.mjs
 fuser -k 54321/tcp >/dev/null 2>&1; (setsid nohup node stub.mjs > stub.log 2>&1 &); sleep 1
 fresh; run oncoursetest.mjs
+fresh; run groupscoretest.mjs
 fresh; run socialtest.mjs
 fresh; run cardtest.mjs
 fresh; run livetest.mjs

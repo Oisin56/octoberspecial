@@ -2,8 +2,15 @@ import { isCrew, isOrganiser, type Session } from "@/lib/auth";
 import { adminClient } from "@/lib/admin";
 import { bad, context, json, DEMO_READONLY } from "@/lib/server-data";
 import { CLUB_GROUPS, DISTANCES, KIND_LABEL } from "@/lib/shots";
+import { BAG, CONTACT, FLIGHT, PUTT_LENGTHS, SHAPE } from "@/lib/detail";
+import { mayTellShots } from "@/lib/scoring-access";
+import type { Game } from "@/lib/engine";
 
-const OUTCOME = /^[\w ,.+'&–-]{1,40}$/;
+/** How it finished: optional now (a shot can be told with only its club) */
+const OUTCOME = /^[\w ,.+'&–-]{0,40}$/;
+const CLUBS = new Set<string>([...BAG, ...CLUB_GROUPS, "Putter"]);
+const LENGTHS = new Set<string>([...DISTANCES, ...PUTT_LENGTHS]);
+const oneOf = (v: unknown, list: readonly string[]) => (v == null || v === "" ? null : list.includes(String(v)) ? String(v) : undefined);
 
 /** Log, change or remove one shot. Saves are idempotent by the phone's id for the shot. */
 export async function POST(req: Request) {
@@ -18,7 +25,7 @@ export async function POST(req: Request) {
 
   // Changing or removing a shot already logged: whoever logged it, the player, his scorer, or the organiser
   const { data: existing } = await db.from("shots").select("player_id,round_id,author_name,author_player_id").eq("client_id", clientId).eq("tournament_id", t.id).maybeSingle();
-  if (existing && !(await mayChange(existing, session))) return bad(`Only the player, his scorer or whoever logged it can change this shot`, 403);
+  if (existing && !(await mayChange(existing, session))) return bad(`Only players in this group can change this shot`, 403);
 
   if (b.op === "delete") {
     const { error } = await db.from("shots").delete().eq("client_id", clientId).eq("tournament_id", t.id);
@@ -34,15 +41,21 @@ export async function POST(req: Request) {
   const hole = Number(b.hole);
   if (!(hole >= 1 && hole <= 18)) return bad("Bad hole");
   const club = b.club == null || b.club === "" ? null : String(b.club);
-  if (club && !([...CLUB_GROUPS, "Putter"] as string[]).includes(club)) return bad("Bad club");
+  if (club && !CLUBS.has(club)) return bad("Bad club");
   const distance = b.distance == null || b.distance === "" ? null : String(b.distance);
-  if (distance && !(DISTANCES as readonly string[]).includes(distance)) return bad("Bad distance");
+  if (distance && !LENGTHS.has(distance)) return bad("Bad distance");
+  const contact = oneOf(b.contact, CONTACT);
+  const shape = oneOf(b.shape, SHAPE);
+  const flight = oneOf(b.flight, FLIGHT);
+  if (contact === undefined || shape === undefined || flight === undefined) return bad("Bad shot");
   const [{ data: round }, { data: player }] = await Promise.all([
     db.from("rounds").select("id").eq("id", String(b.roundId ?? "")).eq("tournament_id", t.id).maybeSingle(),
     db.from("players").select("id").eq("id", String(b.playerId ?? "")).eq("tournament_id", t.id).maybeSingle(),
   ]);
   if (!round) return bad("Round not found", 404);
   if (!player) return bad("Player not found", 404);
+  // A new shot: anyone in the player's group (or the organiser)
+  if (!existing && !(await mayChange({ player_id: player.id, round_id: round.id, author_name: "", author_player_id: null }, session))) return bad("Only players in this group can tell these shots", 403);
   const loggedAt = b.loggedAt && !Number.isNaN(Date.parse(b.loggedAt)) ? new Date(b.loggedAt).toISOString() : new Date().toISOString();
 
   const row: Record<string, unknown> = {
@@ -54,6 +67,9 @@ export async function POST(req: Request) {
         outcome,
         club,
         distance,
+        contact,
+        shape,
+        flight,
         seq,
         // A change keeps the original author (they still own it)
         author_name: existing?.author_name ?? session.name,
@@ -62,6 +78,13 @@ export async function POST(req: Request) {
         logged_at: loggedAt,
       };
   let { data, error } = await db.from("shots").upsert(row, { onConflict: "client_id" }).select().single();
+  if (error && /contact|shape|flight/.test(error.message)) {
+    // Database not updated yet: the shot still saves, without the extras
+    delete row.contact;
+    delete row.shape;
+    delete row.flight;
+    ({ data, error } = await db.from("shots").upsert(row, { onConflict: "client_id" }).select().single());
+  }
   if (error && /seq|author_player_id/.test(error.message)) {
     // Database not updated yet: the shot still saves, just without its stroke number
     delete row.seq;
@@ -74,14 +97,15 @@ export async function POST(req: Request) {
 
 const missing = (m: string) => (/relation .*shots|shots.*does not exist|schema cache|seq|author_player_id/i.test(m) ? "The shot log needs the latest database update: re-run supabase/schema.sql in Supabase." : m);
 
-/** Whoever logged a shot owns it; the player and his group's scorer can change any of his; the organiser can change anything. */
+/** Anyone in the player's group can tell (and change) his shots; whoever logged one can always change it; the organiser anything. */
 async function mayChange(shot: { player_id: string; round_id: string; author_name: string; author_player_id: string | null }, s: Session) {
   if (isOrganiser(s)) return true;
   if (s.playerId && (shot.player_id === s.playerId || shot.author_player_id === s.playerId)) return true;
-  if (!shot.author_player_id && shot.author_name === s.name) return true;
+  if (!shot.author_player_id && shot.author_name && shot.author_name === s.name) return true;
   if (!s.playerId) return false;
   const { data } = await adminClient().from("rounds").select("games,scorer_id").eq("id", shot.round_id).maybeSingle();
-  const games = (data?.games ?? []) as { scorerId?: string | null; sides: { playerIds: string[] }[] }[];
-  if (!games.length) return data?.scorer_id === s.playerId;
-  return games.some((g) => g.scorerId === s.playerId && g.sides.some((x) => x.playerIds.includes(shot.player_id)));
+  const games = (data?.games ?? []) as Game[];
+  // A round with no groups set: everyone's in one group
+  if (!games.length) return true;
+  return mayTellShots(games, { playerId: s.playerId, role: s.role }, shot.player_id);
 }

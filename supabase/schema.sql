@@ -363,11 +363,13 @@ alter table tournaments add column if not exists solo boolean not null default f
 alter table tournaments add column if not exists finished_at timestamptz;
 alter table tournaments add column if not exists feed_until timestamptz;
 alter table tournaments add column if not exists film_removed_at timestamptz;   -- its film reached 12 months and was removed
+-- On the course: only the named scorer in each group can enter scores (otherwise anyone in the group can)
+alter table tournaments add column if not exists one_scorer boolean not null default false;
 create view public_tournaments with (security_invoker = false) as
   select id, slug, name, subtitle, start_date, end_date, theme, custom_colors, logo_path, hero_path, tone,
          side_games, side_games_by, teams, auto_bulletins, video_enabled, organiser_player_id, published, created_at, reel_music_path,
          require_attestation, broadcast_on, broadcast_cap_cents, standings, feed_on, ai_on, setup_jobs, units, share_shape, win, prizes,
-         privacy, players_need_email, solo, finished_at, feed_until, film_removed_at
+         privacy, players_need_email, solo, finished_at, feed_until, film_removed_at, one_scorer
   from tournaments
   -- a browser never sees a private tournament here (the site's server sees them all)
   where privacy is distinct from 'private' or current_user not in ('anon', 'authenticated');
@@ -1541,5 +1543,60 @@ language sql stable as $$
 $$;
 revoke execute on function finish_candidates(date) from public, anon, authenticated;
 grant execute on function finish_candidates(date) to service_role;
+
+-- ------------------------------------------------------------ on the course: scores and detail
+-- A round being played when this went live keeps its one scorer until it's finished
+alter table rounds add column if not exists keep_scorer boolean not null default false;
+-- More about each shot, all optional: how it was struck, its shape and its flight (a putt's length goes in distance)
+alter table shots add column if not exists contact text;
+alter table shots add column if not exists shape text;
+alter table shots add column if not exists flight text;
+alter table shots alter column outcome set default '';
+-- The wind on a hole, as the group corrected it (otherwise it comes from the weather)
+create table if not exists hole_notes (
+  round_id uuid not null references rounds(id) on delete cascade,
+  game text not null default 'main',
+  hole int not null check (hole between 1 and 27),
+  wind text,
+  by_name text,
+  updated_at timestamptz not null default now(),
+  primary key (round_id, game, hole)
+);
+alter table hole_notes enable row level security;
+drop policy if exists read_all on hole_notes;
+create policy read_all on hole_notes for select using (not private_round(round_id));
+grant select on hole_notes to anon, authenticated;
+grant all on hole_notes to service_role;
+
+-- One phone saves only the scores it changed: they're laid over what's there, so two phones never wipe each
+-- other's. The hole's other fields (closest to the pin, long drive, a concession) change only when sent.
+create or replace function save_hole_scores(p_round uuid, p_game text, p_hole int, p_scores jsonb, p_fields jsonb, p_by text)
+returns hole_entries
+language plpgsql as $$
+declare
+  out_row hole_entries;
+begin
+  insert into hole_entries as h (round_id, game, hole, scores, ctp_winner, ld_winner, conceded, updated_by, updated_at)
+  values (p_round, p_game, p_hole, coalesce(p_scores, '{}'::jsonb), p_fields->>'ctp_winner', p_fields->>'ld_winner', p_fields->>'conceded', p_by, now())
+  on conflict (round_id, game, hole) do update set
+    scores = h.scores || coalesce(excluded.scores, '{}'::jsonb),
+    ctp_winner = case when p_fields ? 'ctp_winner' then excluded.ctp_winner else h.ctp_winner end,
+    ld_winner = case when p_fields ? 'ld_winner' then excluded.ld_winner else h.ld_winner end,
+    conceded = case when p_fields ? 'conceded' then excluded.conceded else h.conceded end,
+    updated_by = excluded.updated_by,
+    updated_at = now()
+  returning * into out_row;
+  return out_row;
+end $$;
+revoke execute on function save_hole_scores(uuid, text, int, jsonb, jsonb, text) from public, anon, authenticated;
+grant execute on function save_hole_scores(uuid, text, int, jsonb, jsonb, text) to service_role;
+
+do $$
+begin
+  if not exists (select 1 from site_settings where key = 'oncourse_backfill') then
+    update rounds set keep_scorer = true where status = 'live';
+    insert into site_settings (key, value) values ('oncourse_backfill', jsonb_build_object('at', now()));
+  end if;
+end $$;
 
 notify pgrst, 'reload schema';

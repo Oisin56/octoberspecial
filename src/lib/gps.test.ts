@@ -114,7 +114,7 @@ describe("the strokes of a hole", () => {
     expect(rows.map((x) => x.from)).toEqual([null, 320, 140, 41, null, null, null]);
     expect(rows[6].auto?.outcome).toBe("Holed");
     const line = strokesLine(rows, (k) => ({ tee: "Tee shot", putt: "Putt" })[k] ?? k);
-    expect(line).toBe("1 Tee shot, went about 212 yds; 2 from 320 yds; 3 from 140 yds; 4 from 41 yds; 7 holed");
+    expect(line).toBe("1 Tee shot, went about 212 yds; 2 from 320 yds; 3 from 140 yds; 4 from 41 yds; 7 holed (known from the score)");
   });
 
   it("puts logged shots on their strokes, old ones in the order they were logged", () => {
@@ -126,7 +126,26 @@ describe("the strokes of a hole", () => {
 
   it("the shot logged tells what was tried; the reading only says where from", () => {
     const rows = strokeRows({ shots: [shot(2, "second", "Laid up", 3, { club: "Long iron" })], readings: [gps("a", 240, 2, 290)], gross: 6, holeYards: 530 });
-    expect(strokesLine(rows, (k) => ({ tee: "Tee shot", second: "Second shot" })[k] ?? k)).toContain("2 Second shot: laid up (long iron), from 240 yds");
+    expect(strokesLine(rows, (k) => ({ tee: "Tee shot", second: "Second shot" })[k] ?? k)).toContain("2 second, long iron: laid up, from 240 yds");
+  });
+
+  it("picked up: the strokes told so far, and nothing holed", () => {
+    const rows = strokeRows({ shots: [shot(1, "tee", "Out of bounds", 1), shot(2, "penalty", "Penalty", 2)], readings: [], gross: null, holeYards: 400, pickedUp: true });
+    expect(rows).toHaveLength(2);
+    expect(rows.some((r) => r.auto?.outcome)).toBe(false);
+  });
+
+  it("a clip filmed before its stroke was told sits on that stroke", () => {
+    const clip = { id: "c1", kind: "video", hole: 4, player_ids: ["neil"], details: { seq: 3 } } as unknown as Parameters<typeof strokeRows>[0]["clips"] extends (infer T)[] | undefined ? T : never;
+    const rows = strokeRows({ shots: [shot(1, "tee", "Fairway", 1)], readings: [], gross: 5, holeYards: 400, clips: [clip], playerId: "neil" });
+    expect(rows.find((r) => r.seq === 3)?.clip?.id).toBe("c1");
+    expect(rows.find((r) => r.seq === 2)?.clip).toBeNull();
+  });
+
+  it("a hole in one: the tee shot went in", () => {
+    const rows = strokeRows({ shots: [], readings: [], gross: 1, holeYards: 160 });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].auto).toEqual({ kind: "tee", outcome: "Holed" });
   });
 
   it("before the hole is scored: the strokes so far and one more to log", () => {

@@ -9,7 +9,7 @@ import { landingPath, liveRound, scoresToday } from "@/lib/landing";
 
 /**
  * The bar at the foot of every tournament page on a phone: five big buttons, set by who you are.
- *   during a live round, players and the organiser   Score (Card if someone else keeps it) · Record · Note · Live · More
+ *   during a live round, players and the organiser   Score (Card if someone else keeps it) · Record · Detail · Live · More
  *   the organiser                                     Home · Live · Feed · Organiser · More
  *   everyone else                                     Home · Live · Feed · Leaderboard · More
  * More has every other page and who you're logged in as. On a computer the top tabs do this job
@@ -75,7 +75,7 @@ export function TabBar() {
     items = [
       { k: "score", label: scoresToday(state, session) ? "Score" : "Card", to: "/score" },
       { k: "record", label: video ? "Record" : "Photo", to: video ? `/record?${where}` : `/post?${where}&from=course`, cls: "oc-record" },
-      { k: "note", label: "Note", to: `/shots?${where}` },
+      { k: "note", label: "Detail", to: `/shots?${where}` },
       { k: "live", label: "Live", to: "/live" },
     ];
   } else if (session?.role === "organiser") {

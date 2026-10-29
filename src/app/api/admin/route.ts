@@ -27,7 +27,7 @@ export const maxDuration = 60;
 const TOURNAMENT_FIELDS = [
   "name", "subtitle", "theme", "custom_colors", "logo_path", "hero_path", "tone",
   "side_games", "side_games_by", "teams", "auto_bulletins", "video_enabled", "organiser_player_id", "published",
-  "require_attestation", "feed_on", "ai_on", "standings", "units", "share_shape",
+  "require_attestation", "feed_on", "ai_on", "standings", "units", "share_shape", "one_scorer",
 ];
 const PLAYER_FIELDS = [
   "name", "nickname", "handicap", "home_club", "bio", "best_club", "worst_club", "weakness", "quote", "photo_path", "team_id", "sort",

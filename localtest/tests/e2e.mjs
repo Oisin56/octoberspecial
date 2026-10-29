@@ -55,7 +55,18 @@ ok(r1b.handicap_rule.shots.neil === 3 && r1b.holes[0].yards === 406 && r1b.tee =
 
 ok((await post(caddie, "/api/score", { roundId: r1.id, hole: 1, scores: {} })).status === 401, "someone not logged in can't score");
 ok((await post(anon, "/api/score", { roundId: r1.id, hole: 1, scores: {} })).status === 401, "anonymous can't score");
-ok((await post(neil, "/api/score", { roundId: r1.id, hole: 1, scores: {} })).status === 403, "Neil can't score (Oisin is scorer)");
+ok((await post(neil, "/api/score", { roundId: r1.id, hole: 1, scores: {} })).status === 200, "Neil can score: anyone in the group can");
+ok((await pub(`hole_entries?round_id=eq.${r1.id}&hole=eq.1`)).length === 0, "sending nothing saves nothing");
+// Two phones, one hole: each saves only its own player's score, and neither wipes the other's
+ok((await post(neil, "/api/score", { roundId: r1.id, hole: 1, scores: { neil: { gross: 5 } }, final: false })).status === 200, "Neil's phone saves Neil's score");
+ok((await post(org, "/api/score", { roundId: r1.id, hole: 1, scores: { oisin: { gross: 4 } }, final: false })).status === 200, "Oisin's phone saves Oisin's score");
+const both = (await pub(`hole_entries?round_id=eq.${r1.id}&hole=eq.1`))[0];
+ok(both?.scores?.neil?.gross === 5 && both?.scores?.oisin?.gross === 4, "both scores stand");
+ok(both?.scores?.neil?.by === "Neil" && both?.scores?.oisin?.by === "Oisin", "each score says who entered it");
+// One scorer per group: only the named scorer
+ok((await post(org, "/api/admin", { action: "updateTournament", patch: { one_scorer: true } })).status === 200, "organiser turns on One scorer per group");
+ok((await post(neil, "/api/score", { roundId: r1.id, hole: 1, scores: { neil: { gross: 6 } } })).status === 403, "with One scorer per group, Neil can't score (Oisin is scorer)");
+ok((await post(org, "/api/admin", { action: "updateTournament", patch: { one_scorer: false } })).status === 200, "and turns it off again");
 ok((await post(org, "/api/score", { roundId: r1.id, hole: 1, scores: { oisin: { gross: 44 } } })).status === 400, "silly score rejected");
 ok((await post(org, "/api/score", { roundId: r1.id, hole: 1, scores: { stranger: { gross: 4 } } })).status === 400, "unknown player rejected");
 const r3 = st.rounds.find((r) => r.number === 3);
@@ -150,9 +161,11 @@ ok((await post(org, "/api/admin", { action: "aiUpdate", id: prev.j.piece.id, sta
 await sleep(1500);
 // Every score is in: the round is finished but provisional until the card is submitted
 ok((await pub(`rounds?number=eq.1&select=status`))[0].status === "live", "all scores in: round stays live (provisional) until the card is in");
-ok((await post(neil, "/api/cards", { action: "submit", roundId: r1.id, game: "main" })).status === 403, "only the scorer submits the card");
-const sub = await post(org, "/api/cards", { action: "submit", roundId: r1.id, game: "main" });
-ok(sub.status === 200 && sub.j.stage === "final", "scorer submits: final straight away (signing off by default)");
+ok((await post(caddie, "/api/cards", { action: "submit", roundId: r1.id, game: "main" })).status === 401, "someone not signed in can't hand in the card");
+const sub = await post(neil, "/api/cards", { action: "submit", roundId: r1.id, game: "main" });
+ok(sub.status === 200 && sub.j.stage === "final", "anyone in the group hands in the card: final straight away (signing off by default)");
+ok((await post(neil, "/api/cards", { action: "check", roundId: r1.id, game: "main" })).status === 200, "Neil checks his own card with one tap");
+ok((await pub(`card_signatures?round_id=eq.${r1.id}&player_id=eq.neil`)).length === 1, "his check is kept");
 ok((await pub(`cards?round_id=eq.${r1.id}&select=status`))[0]?.status === "final", "card is public and final");
 await sleep(2500);
 const st3 = (await post(org, "/api/admin", { action: "state" })).j.state;
@@ -213,7 +226,7 @@ for (let h = 1; h <= 18; h++) {
 ok(true, "Aoife scored 18 holes of the fourball");
 const dara = agent();
 await linkIn(boss, dara, C, D);
-ok((await cpost(dara, "/api/score", { roundId: add.j.id, game: "m1", hole: 1, scores: {} })).status === 403, "non-scorer player can't score");
+ok((await cpost(dara, "/api/score", { roundId: add.j.id, game: "m1", hole: 1, scores: {} })).status === 200, "Dara is in the fourball, so she can score it too");
 const tEntries = await pub(`hole_entries?round_id=eq.${add.j.id}&game=eq.m1`);
 ok(tEntries.length === 18, "18 entries stored under match m1");
 ok((await cpost(boss, "/api/admin", { action: "updateTournament", patch: { published: true } })).status === 200, "published");
