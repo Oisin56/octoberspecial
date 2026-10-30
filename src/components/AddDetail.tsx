@@ -16,7 +16,9 @@ import {
   PENALTY_OUTCOMES,
   PUTT_LENGTHS,
   SHAPE,
-  WIND,
+  WIND_DIRECTIONS,
+  WIND_STRENGTHS,
+  windOf,
   clubOrder,
   extrasWords,
   kindOrder,
@@ -224,6 +226,8 @@ export function AddDetail({ roundId, roundNumber, hole, gameId, players, startPl
   const [openSeq, setOpenSeq] = useState<number | null>(null);
   const [said, setSaid] = useState<string | null>(null);
   const [windOpen, setWindOpen] = useState(false);
+  /** The wind's direction picked, waiting for its strength */
+  const [windDir, setWindDir] = useState<string | null>(null);
 
   function pick(id: string) {
     setWho(id);
@@ -260,6 +264,7 @@ export function AddDetail({ roundId, roundNumber, hole, gameId, players, startPl
   const windNow = note?.wind ?? fromWeather;
   async function setWind(w: string | null) {
     setWindOpen(false);
+    setWindDir(null);
     patch((st) => ({
       ...st,
       holeNotes: [
@@ -305,14 +310,32 @@ export function AddDetail({ roundId, roundNumber, hole, gameId, players, startPl
         <p className="dtl-head">{head}</p>
         {windOpen ? (
           <div className="dtl-wind-pick">
-            <span className="dtl-row-name">Wind on the {nth(hole)}</span>
-            <div className="dtl-tiles two">
-              {WIND.map((w) => (
-                <button key={w} className="dtl-tile" aria-pressed={windNow === w} onClick={() => setWind(w)}>
-                  {w}
+            {!windDir ? (
+              <>
+                <span className="dtl-row-name">Wind on the {nth(hole)}</span>
+                <div className="dtl-tiles two">
+                  {WIND_DIRECTIONS.map((d) => (
+                    <button key={d} className={`dtl-tile${d === "No wind" ? " soft" : ""}`} aria-pressed={windNow?.startsWith(d) ?? false} onClick={() => (d === "No wind" ? setWind("No wind") : setWindDir(d))}>
+                      {d}
+                    </button>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <>
+                <button className="dtl-folded" onClick={() => setWindDir(null)}>
+                  Wind: {windDir.toLowerCase()} ✓
                 </button>
-              ))}
-            </div>
+                <span className="dtl-row-name">How strong?</span>
+                <div className="dtl-tiles two">
+                  {WIND_STRENGTHS.map((st) => (
+                    <button key={st} className="dtl-tile" onClick={() => setWind(windOf(windDir, st))}>
+                      {st}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
             {note?.wind && fromWeather && (
               <button className="dtl-small" onClick={() => setWind(null)}>
                 Use the weather&apos;s: {fromWeather.toLowerCase()}

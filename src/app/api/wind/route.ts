@@ -16,7 +16,7 @@ const kept = new Map<string, { at: number; body: unknown }>();
 /**
  * GET ?t=slug&round=<id>: the wind through the round's day, hour by hour (km/h, and the direction it comes from),
  * and each hole's direction from the tee to the green when the course data has it. The phone turns these into
- * "A little hurt", "Left to right" and so on for each hole.
+ * "Hurting, light", "Left to right, strong" and so on for each hole.
  */
 export async function GET(req: Request) {
   const { t, session } = await context(req);
@@ -53,7 +53,7 @@ export async function GET(req: Request) {
       if (g.tee && g.green.middle) bearings[n] = Math.round(bearing(g.tee, g.green.middle));
     }
   } catch {
-    /* no course data: no direction, so only Calm can be worked out */
+    /* no course data: no direction, so only No wind can be worked out */
   }
   const body = { hourly, bearings };
   kept.set(roundId, { at: Date.now(), body });

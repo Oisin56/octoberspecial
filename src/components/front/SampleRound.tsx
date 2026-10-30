@@ -235,7 +235,7 @@ function Inner({ onStep }: { onStep?: (s: SampleStep) => void }) {
         spot: sampleSpot,
         note: SAMPLE_NOTE,
         locked: SAMPLE_LOCKED,
-        wind: "A little hurt",
+        wind: "Hurting, light",
       },
     };
   }, [state, patch, href]);

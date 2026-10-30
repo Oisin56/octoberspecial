@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clubOrder, kindOrder, outcomeOrder, shotWords, windWord, bearing, extrasWords } from "./detail";
+import { clubOrder, kindOrder, outcomeOrder, shotWords, windWord, bearing, extrasWords, WIND } from "./detail";
 import { mayScore, mayTellShots, oneScorer, scoringGames } from "./scoring-access";
 import type { Game } from "./engine";
 
@@ -47,14 +47,18 @@ describe("what comes first", () => {
 describe("the wind on a hole", () => {
   it("in golfers' words, from the weather and the hole's direction", () => {
     // A hole playing due north (0°)
-    expect(windWord(5, 0, 0)).toBe("Calm");
-    expect(windWord(15, 0, 0)).toBe("A little hurt");
-    expect(windWord(30, 10, 0)).toBe("Lots of hurt");
-    expect(windWord(15, 180, 0)).toBe("Helping");
-    expect(windWord(30, 170, 0)).toBe("Strong wind helping");
+    expect(windWord(5, 0, 0)).toBe("No wind");
+    expect(windWord(15, 0, 0)).toBe("Hurting, light");
+    expect(windWord(30, 10, 0)).toBe("Hurting, strong");
+    expect(windWord(15, 180, 0)).toBe("Helping, light");
+    expect(windWord(30, 170, 0)).toBe("Helping, strong");
     // From the east (the right of a hole playing north): it blows right to left
-    expect(windWord(15, 90, 0)).toBe("Right to left");
-    expect(windWord(15, 270, 0)).toBe("Left to right");
+    expect(windWord(15, 90, 0)).toBe("Right to left, light");
+    expect(windWord(30, 270, 0)).toBe("Left to right, strong");
+    // Everything it can say can be saved
+    expect(WIND).toContain(windWord(30, 270, 0));
+    expect(WIND).toContain("No wind");
+    expect(WIND).toHaveLength(9);
     // No direction known: only calm can be said
     expect(windWord(15, 90, null)).toBeNull();
     expect(windWord(null, 90, 0)).toBeNull();

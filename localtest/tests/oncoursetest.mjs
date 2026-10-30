@@ -222,11 +222,18 @@ const wl = await ad.locator(".dtl-wind").innerText();
 ok(/^Wind/.test(wl), `the wind line (${wl})`);
 await ad.locator(".dtl-wind").click();
 const winds = await ad.locator(".dtl-wind-pick .dtl-tile").allInnerTexts();
-ok(winds.length === 7 && winds[0] === "Calm", `wind: one row of seven (${winds.join(", ")})`);
-await ad.getByRole("button", { name: "Helping", exact: true }).click();
+ok(winds.join(",") === "Hurting,Helping,Left to right,Right to left,No wind", `wind: which way it blows on this hole first (${winds.join(", ")})`);
+await ad.getByRole("button", { name: "Left to right", exact: true }).click();
+const strengths = await ad.locator(".dtl-wind-pick .dtl-tile").allInnerTexts();
+ok(strengths.join(",") === "Light,Strong", `then how strong (${strengths.join(", ")})`);
+await ad.getByRole("button", { name: "Strong", exact: true }).click();
 let wind = "";
 for (let i = 0; i < 20 && !wind; i++) { await sleep(300); wind = q(`select coalesce(wind,'') from hole_notes where round_id='${r2}' and hole=1`); }
-ok(wind === "Helping" && /Wind: helping/.test(await ad.locator(".dtl-wind").innerText()), "the group's wind is kept for the hole");
+ok(wind === "Left to right, strong" && /Wind: left to right, strong/.test(await ad.locator(".dtl-wind").innerText()), `two taps: the group's wind is kept for the hole (${wind})`);
+await ad.locator(".dtl-wind").click();
+await ad.getByRole("button", { name: "No wind", exact: true }).click();
+for (let i = 0; i < 20 && wind !== "No wind"; i++) { await sleep(300); wind = q(`select coalesce(wind,'') from hole_notes where round_id='${r2}' and hole=1`); }
+ok(wind === "No wind", "No wind: one tap, no strength asked");
 // Say it to the commentators: hold, talk, let go (goes with the player picked)
 fs.rmSync("/var/tmp/ospg/stt.log", { force: true });
 const mic = ad.getByRole("button", { name: "Hold to tell the commentators" });

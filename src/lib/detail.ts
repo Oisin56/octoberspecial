@@ -39,7 +39,12 @@ export const PUTT_LENGTHS = ["Tap-in", "3 to 10 ft", "10 to 30 ft", "30 ft+"] as
 export const CONTACT = ["Flushed", "Heel", "Toe", "Topped", "Chunked", "Shanked"] as const;
 export const SHAPE = ["Dead straight", "Draw", "Fade", "Hook", "Slice"] as const;
 export const FLIGHT = ["High", "Normal", "Low"] as const;
-export const WIND = ["Calm", "A little hurt", "Lots of hurt", "Helping", "Strong wind helping", "Left to right", "Right to left"] as const;
+/** The wind on a hole: which way it blows for the hole, then how strong. "No wind" needs no strength. */
+export const WIND_DIRECTIONS = ["Hurting", "Helping", "Left to right", "Right to left", "No wind"] as const;
+export const WIND_STRENGTHS = ["Light", "Strong"] as const;
+/** Every wind that can be saved: "No wind", or a direction and a strength ("Hurting, strong") */
+export const WIND: string[] = ["No wind", ...WIND_DIRECTIONS.filter((d) => d !== "No wind").flatMap((d) => WIND_STRENGTHS.map((s) => `${d}, ${s.toLowerCase()}`))];
+export const windOf = (direction: string, strength?: string | null) => (direction === "No wind" ? "No wind" : `${direction}, ${(strength ?? "Light").toLowerCase()}`);
 
 /** Every kind of shot, in the order Other shows them */
 export const ALL_KINDS: ShotKind[] = ["tee", "second", "approach", "chip", "bunker", "putt", "recovery", "penalty"];
@@ -183,17 +188,17 @@ export const ALL_OUTCOMES = new Set<string>([
  * The wind on a hole, in golfers' words, from the weather (speed in km/h, the direction it comes FROM in degrees)
  * and the hole's direction (from the tee to the green, degrees from north). Null when either isn't known.
  */
-export function windWord(speedKmh: number | null | undefined, fromDeg: number | null | undefined, holeBearing: number | null | undefined): (typeof WIND)[number] | null {
+export function windWord(speedKmh: number | null | undefined, fromDeg: number | null | undefined, holeBearing: number | null | undefined): string | null {
   if (speedKmh == null || !Number.isFinite(speedKmh)) return null;
-  if (speedKmh < 8) return "Calm";
+  if (speedKmh < 8) return "No wind";
   if (fromDeg == null || holeBearing == null) return null;
   // 0 = blowing straight into the player's face (coming from the green), 180 = straight behind
   const a = (((fromDeg - holeBearing) % 360) + 360) % 360;
-  const strong = speedKmh >= 25;
-  if (a <= 45 || a >= 315) return strong ? "Lots of hurt" : "A little hurt";
-  if (a >= 135 && a <= 225) return strong ? "Strong wind helping" : "Helping";
+  const strength = speedKmh >= 25 ? "Strong" : "Light";
+  if (a <= 45 || a >= 315) return windOf("Hurting", strength);
+  if (a >= 135 && a <= 225) return windOf("Helping", strength);
   // From the right of the line (45 to 135) it blows right to left
-  return a < 180 ? "Right to left" : "Left to right";
+  return windOf(a < 180 ? "Right to left" : "Left to right", strength);
 }
 
 /** Degrees from north, from one point to another */

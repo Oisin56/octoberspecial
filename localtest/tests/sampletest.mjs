@@ -72,7 +72,7 @@ async function playRound(p, shot, label) {
   await p.locator(".dtl-tab", { hasText: "Declan" }).click();
   ok(/Tee shot[^\n]*right/i.test(await p.locator(".dtl-shots").innerText()), `${label}: Declan's shots are already told`);
   await p.locator(".dtl-tab", { hasText: "You" }).click();
-  ok(/Wind: a little hurt/.test(await p.locator(".dtl-wind").innerText()), `${label}: the wind on the hole, from the weather`);
+  ok(/Wind: hurting, light/.test(await p.locator(".dtl-wind").innerText()), `${label}: the wind on the hole, from the weather`);
   // The voice note for the commentators: a sample note, no microphone
   await p.getByRole("button", { name: "Hold to tell the commentators" }).click();
   await p.getByText(/greens are quick/).first().waitFor({ timeout: 8000 });
