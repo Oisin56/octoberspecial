@@ -207,7 +207,7 @@ export async function checkPiece(opts: { facts: string; title: string; body: str
 
 export interface CheckRecord {
   tournamentId: string | null;
-  what: "piece" | "film" | "test";
+  what: "piece" | "film";
   kind: string;
   label: string;
   refId?: string | null;

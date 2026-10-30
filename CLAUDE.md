@@ -61,9 +61,8 @@ Oisin is a GP in Ireland, not a developer. Talk in plain words about what people
 - The AI writers' grid: `src/lib/grid.ts` (one row per player per hole, told / known from the score / not told),
   `figures.ts` (the counts, always "N of the M told"), `moments.ts` (the story finder, plain rules), `writerBrief.ts`
   (what the writer is handed), `filmCards.ts` (the film's clip cards), `factcheck.ts` (the quiet check: one retry,
-  then the line is left out; logged in `fact_checks`, shown on the console's Health page). The grid writer is on
-  only when the site setting `writer.grid` is true (console, Writing); `writingTest.ts` writes a piece both ways for
-  the blind A/B test. `testRound.ts` is a made-up 18-hole round with a fixed story for the tests.
+  then the line is left out; logged in `fact_checks`, shown on the console's Health page). It's the only writer, for
+  every piece and film. `testRound.ts` is a made-up 18-hole round with a fixed story for the tests.
 - `src/components/front/` the front page. Its phone screens are real app screens taken by
   `localtest/tools/frontshots.mjs` (made-up names only), composed to 1170×2532 by `compose.py`;
   `pagelook.mjs` takes section screenshots of the page for review.

@@ -256,7 +256,7 @@ ok(fin === "Finished when the last hole was saved", `the last hole finishes it (
 const wu = await waitFor(() => sql(`select status from ai_pieces where tournament_id='${solo.id}' and kind='tournament'`) || null);
 ok(wu === "published", `the write-up of the round, published straight away (${wu})`);
 const prompt = fs.readdirSync("/var/tmp/ospg").filter((f) => /^prompt-\d+\.txt$/.test(f)).map((f) => fs.readFileSync(`/var/tmp/ospg/${f}`, "utf8")).filter((x) => /WRITE-UP/.test(x)).pop() ?? "";
-ok(/played on their own/.test(prompt) && /never say won, winner, champion/.test(prompt) && /HOLE-BY-HOLE/.test(prompt) && !/TOURNAMENT STANDINGS/.test(prompt), "written as a round on your own, from the card, with no winner");
+ok(/played on their own/.test(prompt) && /never say won, winner, champion/.test(prompt) && /THE GRID \(every hole, as told\)/.test(prompt) && !/TOURNAMENT STANDINGS/.test(prompt), "written as a round on your own, from the card, with no winner");
 ok((await me("/api/score", { t: solo.slug, roundId: roundId(solo.id), game: gameOf(solo.id).id, hole: 9, scores: { [sid]: { gross: 6 } }, final: true })).status === 200, "on your own, you can still fix your card");
 
 // the round page

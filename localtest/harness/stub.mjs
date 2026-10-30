@@ -395,7 +395,9 @@ http
         fs.writeFileSync("/var/tmp/ospg/plan-images.json", JSON.stringify({ images: imgs, labels: blocks.filter((x) => x.type === "text" && x.text.startsWith("CLIP ")).map((x) => x.text) }));
         b.messages[0].content = blocks.map((x) => (x.type === "text" ? x.text : "[image]")).join("\n");
       }
-      fs.writeFileSync(`/var/tmp/ospg/prompt-${promptN}.txt`, `MODEL ${b.model}\nSYSTEM\n${b.system}\n\nUSER\n${b.messages[0].content}`);
+      // The fact check's calls are kept apart, so "the last prompt" is still the writer's
+      const checking = b.tools?.some((t) => t.name === "report_problems" || t.name === "fix_lines");
+      fs.writeFileSync(`/var/tmp/ospg/${checking ? "check" : "prompt"}-${promptN}.txt`, `MODEL ${b.model}\nSYSTEM\n${b.system}\n\nUSER\n${b.messages[0].content}`);
       const said = String(b.messages[0].content);
       const reply = (text, extra = {}) => { res.writeHead(200, { "content-type": "application/json" }); return res.end(JSON.stringify({ id: "msg", type: "message", role: "assistant", model: b.model, content: [{ type: "text", text }], stop_reason: "end_turn", usage: { input_tokens: 1, output_tokens: 1 }, ...extra })); };
       // The fact check: a sentence with WRONGFACT in it doesn't match. The fix puts it right, unless it's STUBBORN.

@@ -266,9 +266,15 @@ const gen = await call(page, "/api/admin", { t: T, action: "aiGenerate", kind: "
 
 const prompts = fs.readdirSync("/var/tmp/ospg").filter((f) => /^prompt-\d+\.txt$/.test(f)).map((f) => [f, fs.statSync(`/var/tmp/ospg/${f}`).mtimeMs]).filter((x) => x[1] >= before - 1000).sort((a, b) => b[1] - a[1]);
 const latest = prompts.length ? fs.readFileSync(`/var/tmp/ospg/${prompts[0][0]}`, "utf8") : "";
-const line = latest.split("\n").find((l) => l.startsWith("- H1 Oisin"));
+// The grid: round 2's first hole, Oisin's row and the strokes under it
+const grid = latest.split("THE GRID, ROUND 2")[1] ?? "";
+const hole1 = (grid.split(/\nR2 H/)[1] ?? "").split("\n");
+const oisinAt = hole1.findIndex((l) => l.startsWith("Oisin"));
+const rest = oisinAt >= 0 ? hole1.slice(oisinAt + 1) : [];
+const end = rest.findIndex((l) => !l.startsWith("  "));
+const line = oisinAt >= 0 ? (end < 0 ? rest : rest.slice(0, end)).map((l) => l.trim()).join("; ") : "";
 if (line) {
-  ok(/1 Tee shot, from \d+ yds, went about \d+ yds; 2 [^;]*from \d+ yds/.test(line) && !line.includes(`from ${m3}`), `the writer's line for Oisin: ${line}`);
+  ok(/1 tee shot[^;]*went about \d+ yds;\s+2 [^;]*from \d+ yds/.test(line) && !line.includes(`from ${m3}`), `the writer's grid row for Oisin: ${line}`);
   ok(latest.includes("never infer what a player was trying to do"), "and the rule: distances, never guessed intent");
 } else ok(false, `no prompt with the stroke timeline (status ${gen.status}, ${prompts.length} new prompts)`);
 

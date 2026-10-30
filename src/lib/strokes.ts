@@ -4,7 +4,7 @@
  * filled in (stroke 1 is the tee shot, the last is holed). Pure: the "what happened" card and the AI writer share it.
  */
 import { driveYards, inUnits, placeReadings, unitWord, type Reading } from "./gps";
-import { toRoundCfg, type GpsRow, type PostRow, type ShotRow, type TournamentState } from "./types";
+import type { GpsRow, PostRow, ShotRow } from "./types";
 import { extrasWords, shotWords } from "./detail";
 
 export interface StrokeRow {
@@ -100,40 +100,4 @@ export function strokesLine(rows: StrokeRow[], label: (kind: string) => string, 
     if (parts.length) bits.push(`${r.seq} ${parts.join(", ")}`);
   }
   return bits.join("; ");
-}
-
-/** Every hole of a round, player by player, for the AI writer: "H7 Neil (7): 1 tee shot, went about 212 yds; 2 from 320 yds…". */
-export function roundTimeline(s: TournamentState, roundId: string, label: (kind: string) => string): string {
-  const round = s.rounds.find((r) => r.id === roundId);
-  if (!round) return "";
-  const cfg = toRoundCfg(round, s.players);
-  const shots = (s.shots ?? []).filter((x) => x.round_id === roundId);
-  const readings = (s.gps ?? []).filter((x) => x.round_id === roundId);
-  const clips = s.posts.filter((p) => p.kind === "video" && p.round_id === roundId);
-  const lines: string[] = [];
-  for (const h of round.holes) {
-    const pids = new Set([...shots.filter((x) => x.hole === h.number).map((x) => x.player_id), ...readings.filter((x) => x.hole === h.number).map((x) => x.player_id)]);
-    for (const pid of pids) {
-      let gross: number | null = null;
-      let pickedUp = false;
-      for (const e of s.entries.filter((x) => x.round_id === roundId && x.hole === h.number)) {
-        const side = cfg.games.find((g) => g.id === (e.game ?? "main"))?.sides.find((sd) => sd.playerIds.includes(pid));
-        const b = e.scores[pid] ?? (side ? e.scores[side.id] : undefined);
-        if (b?.gross != null && !b.pickedUp) gross = b.gross;
-        if (b?.pickedUp) pickedUp = true;
-      }
-      const rows = strokeRows({
-        shots: shots.filter((x) => x.hole === h.number && x.player_id === pid),
-        readings: readings.filter((x) => x.hole === h.number && x.player_id === pid),
-        gross,
-        holeYards: h.yards ?? null,
-        clips: clips.filter((c) => c.hole === h.number),
-        pickedUp,
-        playerId: pid,
-      });
-      const line = strokesLine(rows, label, s.tournament.units === "metres" ? "metres" : "yards");
-      if (line) lines.push(`- H${h.number} ${s.players.find((p) => p.id === pid)?.name ?? pid}${gross != null ? ` (${gross})` : pickedUp ? " (picked up)" : ""}: ${line}`);
-    }
-  }
-  return lines.join("\n");
 }

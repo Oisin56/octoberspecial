@@ -263,6 +263,8 @@ const planPrompt = fs.readFileSync(fs.readdirSync("/var/tmp/ospg").filter((f) =>
 ok(/pundit/i.test(planPrompt) && /commentator/i.test(planPrompt) && /bone-dry/.test(planPrompt), "the director writes for a commentator and a pundit, in the chosen style");
 ok(/OFF-COURSE CLIPS/.test(planPrompt) && /Prediction/.test(planPrompt), "and is told about the prediction");
 ok(/go quiet|own sound/i.test(planPrompt), "Both: the commentator goes quiet while the shot plays");
+ok(/AVAILABLE CLIPS \(JSON\)\. seconds = clip length; card = /.test(planPrompt), "each clip comes with its card from the grid");
+ok(Number(q(`select count(*) from fact_checks where what='film'`)) >= 1, "the script was fact-checked before the voices were recorded");
 // No two lines overlap
 const trackPath = q(`select value->0->>'path' from site_settings where key='music'`);
 const lines = all.filter((c) => c.asset.type === "audio" && !/whoosh/.test(c.asset.src) && !c.asset.src.includes(trackPath.split("/").pop())).sort((a, b) => a.start - b.start);
@@ -310,7 +312,7 @@ await p.getByRole("button", { name: "Make the film again" }).click();
 await p.locator(".film-prod").waitFor({ timeout: 15000 });
 ok(await until(() => q(`select status||'|'||renders from reels where id='${reelId}'`) === "done|2", 120000), "made again: the second film of the tournament");
 const tts2 = fs.readFileSync("/var/tmp/ospg/tts.log", "utf8").trim().split("\n").map((l) => JSON.parse(l)).slice(sample.length + tts.length);
-ok(tts2.some((t) => /fresh line/.test(t.text)) && tts2.filter((t) => t.voice !== "pundit02").length === 1 && tts2.filter((t) => t.voice === "pundit02").length === 2, `recorded again: the changed line, and the pundit's lines in the new voice; the rest reused (${tts2.length})`);
+ok(tts2.some((t) => /fresh line/.test(t.text)) && tts2.filter((t) => t.voice !== "pundit02").length === 1 && tts2.filter((t) => t.voice === "pundit02").length >= 1 && tts2.filter((t) => t.voice === "pundit02").every((t) => tts.some((o) => o.text === t.text && o.voice !== "pundit02")), `recorded again: the changed line, and the pundit's lines in the new voice; the rest reused (${tts2.length})`);
 const fm = await until(() => fs.readdirSync("/var/tmp/ospg/mail").sort().map((f) => JSON.parse(fs.readFileSync(`/var/tmp/ospg/mail/${f}`, "utf8"))).find((m) => m.to.join() === "organiser@example.com" && /film/i.test(m.subject)), 20000);
 ok(!!fm && /film\?reel=/.test(fm.text ?? fm.html ?? ""), `the organiser's email says the film is ready (${fm?.subject})`);
 

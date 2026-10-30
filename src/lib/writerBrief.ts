@@ -164,10 +164,11 @@ export function writerBrief(s: TournamentState, kind: PieceKind, roundId: string
     blocks.push({ head: "THE MOMENTS OF THE TRIP (found by the app, best first)", text: momentsText(moments) || "None stand out: tell it from the standings and the cards." });
     blocks.push({ head: "THE FIGURES, ROUND BY ROUND (quote as given, never as percentages, never count again)", text: figs });
     if (trip) blocks.push({ head: "THE TRIP IN FIGURES", text: trip });
-    // The holes the moments are about, in full
+    // The holes the moments are about, in full (on your own, every hole: the write-up tells the round)
     const keys = new Set(moments.flatMap((m) => m.refs.map((r) => `${r.round}|${r.hole}`)));
-    const detail = rows.filter((r) => keys.has(`${r.round}|${r.hole}`));
-    if (detail.length) blocks.push({ head: "THE GRID FOR THOSE HOLES", text: gridText(detail, units) });
+    const solo = !!s.tournament.solo;
+    const detail = solo ? rows : rows.filter((r) => keys.has(`${r.round}|${r.hole}`));
+    if (detail.length) blocks.push({ head: solo ? "THE GRID (every hole, as told)" : "THE GRID FOR THOSE HOLES", text: gridText(detail, units) });
     facts.push(`THE FIGURES\n${figs}`, trip ? `THE TRIP\n${trip}` : "", detail.length ? `THE GRID FOR THE MOMENTS' HOLES\n${gridText(detail, units)}` : "", `EVERY SCORE\n${all.map(cardLines).join("\n")}`);
   } else if (kind === "preview") {
     // Form from the rounds before
@@ -218,6 +219,7 @@ export function gridLength(kind: PieceKind, told: WriterBrief["told"], whole = f
 export const GRID_RULES = `RULES FOR THE GRID:
 - Not told stays not told. A cell marked not told is never filled in, guessed at or hinted at. "Known from the score" can be said plainly but not dressed up: the last stroke went in, but nobody says it was a putt or a 30-footer unless that was told.
 - The score wins. If the shots and the score ever disagree, the score stands and the gap is treated as not told.
+- Distances ("from 140 yds", "went about 230 yds") were measured by GPS at the ball: use them freely, but never infer what a player was trying to do (going for the green, laying up) from a distance alone, only from what was told.
 - Figures as given: quoted with what they're out of ("5 of the 9 fairways told"), never turned into percentages, never added up again by you.
 - Voice notes ("said to the commentators") are paraphrased, never quoted. Quotes come only from things posted publicly (marked "posted") or a player's own pre-trip quote.
 - Kind, always. A disaster is told with affection. A player having a bad day isn't the joke in every paragraph, and a pick-up is mentioned lightly or not at all unless it cost a match.

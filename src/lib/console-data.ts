@@ -411,7 +411,6 @@ export async function factCheckSummary() {
   const { data, error } = await adminClient()
     .from("fact_checks")
     .select("*")
-    .in("what", ["piece", "film"])
     .gte("at", iso(Date.now() - 30 * 864e5))
     .order("at", { ascending: false })
     .limit(2000);

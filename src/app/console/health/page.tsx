@@ -184,7 +184,7 @@ function FactChecks({ f }: { f: FactCheck | null }) {
       {!f ? (
         <p className="con-warn">This needs the latest database update (run supabase/schema.sql).</p>
       ) : f.pieces + f.films === 0 ? (
-        <p className="con-calm">Nothing checked yet. Checks start once the new writer is switched on in Writing.</p>
+        <p className="con-calm">Nothing written in the last 30 days.</p>
       ) : (
         <>
           <p className="con-big-line">
