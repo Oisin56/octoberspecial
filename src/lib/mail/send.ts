@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import nodemailer from "nodemailer";
 import { adminClient } from "../admin";
 import { recordUsage } from "../usage";
-import { pm, postmarkOn, postmarkSetup, setUpPostmark, streamId, type Stream } from "./postmark";
+import { PostmarkError, pm, postmarkOn, postmarkSetup, setUpPostmark, streamId, type Stream } from "./postmark";
 import { sendingAddress, site } from "./settings";
 
 /**
@@ -196,6 +196,19 @@ async function viaSmtp(o: Outgoing) {
   return null;
 }
 
+const smtpOn = () => !!(process.env.SMTP_USER && process.env.SMTP_PASS);
+
+/**
+ * Postmark said no because the account is still waiting for its approval (it then only sends to addresses at the
+ * site's own domain). With the old email route still set up, that carries the email instead, so nothing stops
+ * between adding the Postmark key and Postmark saying yes.
+ */
+function awaitingApproval(e: unknown) {
+  const code = e instanceof PostmarkError ? e.code : typeof e === "object" && e ? Number((e as { ErrorCode?: number }).ErrorCode) : 0;
+  const msg = e instanceof Error ? e.message : typeof e === "object" && e ? String((e as { Message?: string }).Message ?? "") : "";
+  return smtpOn() && (code === 412 || /pending approval/i.test(msg));
+}
+
 /** Send one email. Throws NotSent when the site won't email that address, or the error when sending failed. */
 export async function deliver(input: Outgoing): Promise<{ id: string }> {
   const o = { ...input, to: input.to.trim().toLowerCase(), subject: input.subject.replace(/[\r\n]+/g, " "), sendId: input.sendId ?? newSendId() };
@@ -206,8 +219,14 @@ export async function deliver(input: Outgoing): Promise<{ id: string }> {
     let messageId: string | null = null;
     if (postmarkOn()) {
       await ready();
-      const r = await pm<{ MessageID?: string }>("/email", { body: postmarkMessage(o, await streamId(o.stream)) });
-      messageId = r.MessageID ?? null;
+      try {
+        const r = await pm<{ MessageID?: string }>("/email", { body: postmarkMessage(o, await streamId(o.stream)) });
+        messageId = r.MessageID ?? null;
+      } catch (e) {
+        // Postmark hasn't approved the account yet: the old route carries it meanwhile
+        if (!awaitingApproval(e)) throw e;
+        await viaSmtp(o);
+      }
     } else await viaSmtp(o);
     await mark([{ id: o.sendId, status: "sent", message_id: messageId }]);
   } catch (e) {
@@ -246,11 +265,19 @@ export async function deliverMany(input: Outgoing[], opts: { between?: () => Pro
         const sid = await streamId(stream);
         try {
           const res = await pm<{ ErrorCode: number; Message: string; MessageID?: string }[]>("/email/batch", { body: go.map((o) => postmarkMessage(o, sid)) });
-          go.forEach((o, k) => {
+          for (const [k, o] of go.entries()) {
             const r = (res as unknown as { ErrorCode: number; Message: string; MessageID?: string }[])[k];
             if (r && r.ErrorCode === 0) marks.push({ id: o.sendId, status: "sent", message_id: r.MessageID ?? null });
-            else marks.push({ id: o.sendId, status: "failed", error: String(r?.Message ?? "No answer").slice(0, 500) });
-          });
+            else if (r && awaitingApproval(r) && smtpOn()) {
+              // Postmark hasn't approved the account yet: the old route carries it meanwhile
+              try {
+                await viaSmtp(o);
+                marks.push({ id: o.sendId, status: "sent" });
+              } catch (e2) {
+                marks.push({ id: o.sendId, status: "failed", error: (e2 instanceof Error ? e2.message : String(e2)).slice(0, 500) });
+              }
+            } else marks.push({ id: o.sendId, status: "failed", error: String(r?.Message ?? "No answer").slice(0, 500) });
+          }
         } catch (e) {
           for (const o of go) marks.push({ id: o.sendId, status: "failed", error: (e instanceof Error ? e.message : String(e)).slice(0, 500) });
         }
