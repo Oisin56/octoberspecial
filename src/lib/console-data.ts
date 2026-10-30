@@ -406,16 +406,51 @@ export async function money() {
 
 export type Light = "green" | "amber" | "red" | "idle";
 
+/** The AI writers' fact check over the last 30 days: pieces and film scripts checked, lines fixed and dropped */
+export async function factCheckSummary() {
+  const { data, error } = await adminClient()
+    .from("fact_checks")
+    .select("*")
+    .in("what", ["piece", "film"])
+    .gte("at", iso(Date.now() - 30 * 864e5))
+    .order("at", { ascending: false })
+    .limit(2000);
+  if (error) return null;
+  const rows = (data ?? []) as { at: string; tournament_id: string | null; what: string; kind: string | null; label: string | null; checked: number; first_problems: number; fixed: number; dropped: number; lines: { text: string; why: string }[] }[];
+  const ids = [...new Set(rows.filter((r) => r.dropped && r.tournament_id).map((r) => r.tournament_id!))];
+  const names = new Map<string, string>();
+  if (ids.length) {
+    const { data: ts } = await adminClient().from("tournaments").select("id,name,slug").in("id", ids);
+    for (const t of (ts ?? []) as { id: string; name: string }[]) names.set(t.id, t.name);
+  }
+  const lines = rows.reduce((a, r) => a + r.checked, 0);
+  const dropped = rows.reduce((a, r) => a + r.dropped, 0);
+  return {
+    pieces: rows.filter((r) => r.what === "piece").length,
+    films: rows.filter((r) => r.what === "film").length,
+    lines,
+    fixed: rows.reduce((a, r) => a + r.fixed, 0),
+    dropped,
+    // More than one line in twenty dropped: it stands out
+    amber: lines > 0 && dropped * 20 > lines,
+    list: rows
+      .filter((r) => r.dropped)
+      .flatMap((r) => (r.lines ?? []).map((l) => ({ at: r.at, tournament: (r.tournament_id && names.get(r.tournament_id)) || "A tournament", piece: r.label ?? r.kind ?? "", text: l.text, why: l.why })))
+      .slice(0, 60),
+  };
+}
+
 export async function health() {
   const db = adminClient();
   const today = todayDublin();
-  const [svc, counts, incidents, room, cron, failsToday] = await Promise.all([
+  const [svc, counts, incidents, room, cron, failsToday, factCheck] = await Promise.all([
     db.from("services").select("*"),
     db.from("day_counts").select("name,n").eq("day", today),
     db.from("incidents").select("*").order("last_at", { ascending: false }).limit(50),
     db.rpc("console_room"),
     getSetting<{ at?: string; did?: string[] }>("cron", {}),
     db.from("usage").select("service", { count: "exact", head: false }).eq("ok", false).gte("at", iso(Date.now() - 3600e3)).limit(1000),
+    factCheckSummary(),
   ]);
   const recentFails = new Map<string, number>();
   for (const r of (failsToday.data ?? []) as { service: string }[]) recentFails.set(r.service, (recentFails.get(r.service) ?? 0) + 1);
@@ -442,6 +477,7 @@ export async function health() {
     errors: incidents.data ?? [],
     room: { ...((room.data as { db: number; files: number | null; fileBytes: number | null }) ?? { db: 0, files: null, fileBytes: null }), dbLimit: Number(process.env.DB_LIMIT_BYTES || 8 * 1024 ** 3), fileLimit: Number(process.env.FILES_LIMIT_BYTES || 100 * 1024 ** 3) },
     cron,
+    factCheck,
     consoleEmail: await consoleAddress(),
   };
 }

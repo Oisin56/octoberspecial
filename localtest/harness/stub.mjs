@@ -398,6 +398,20 @@ http
       fs.writeFileSync(`/var/tmp/ospg/prompt-${promptN}.txt`, `MODEL ${b.model}\nSYSTEM\n${b.system}\n\nUSER\n${b.messages[0].content}`);
       const said = String(b.messages[0].content);
       const reply = (text, extra = {}) => { res.writeHead(200, { "content-type": "application/json" }); return res.end(JSON.stringify({ id: "msg", type: "message", role: "assistant", model: b.model, content: [{ type: "text", text }], stop_reason: "end_turn", usage: { input_tokens: 1, output_tokens: 1 }, ...extra })); };
+      // The fact check: a sentence with WRONGFACT in it doesn't match. The fix puts it right, unless it's STUBBORN.
+      if (b.tools?.some((t) => t.name === "report_problems")) {
+        const only = said.match(/Check ONLY sentences ([\d, ]+);/)?.[1]?.split(",").map((x) => Number(x.trim()));
+        const lines = [...said.split("THE SENTENCES\n")[1].matchAll(/^(\d+)\. (.*)$/gm)].map((m) => ({ n: Number(m[1]), text: m[2] }));
+        const problems = lines.filter((l) => /WRONGFACT/.test(l.text) && (!only || only.includes(l.n))).map((l) => ({ n: l.n, why: "the card doesn't say that" }));
+        fs.appendFileSync("/var/tmp/ospg/factchecks.log", JSON.stringify({ n: promptN, lines: lines.length, only: only ?? null, problems }) + "\n");
+        res.writeHead(200, { "content-type": "application/json" });
+        return res.end(JSON.stringify({ id: "msg_" + promptN, type: "message", role: "assistant", model: b.model, stop_reason: "tool_use", usage: { input_tokens: 1, output_tokens: 1 }, content: [{ type: "tool_use", id: "tu_" + promptN, name: "report_problems", input: { problems } }] }));
+      }
+      if (b.tools?.some((t) => t.name === "fix_lines")) {
+        const lines = [...said.split("These sentences don't match the facts:\n")[1].matchAll(/^(\d+)\. (.*)$/gm)].map((m) => ({ n: Number(m[1]), text: /STUBBORN/.test(m[2]) ? m[2] : m[2].replace(/WRONGFACT ?/g, "") }));
+        res.writeHead(200, { "content-type": "application/json" });
+        return res.end(JSON.stringify({ id: "msg_" + promptN, type: "message", role: "assistant", model: b.model, stop_reason: "tool_use", usage: { input_tokens: 1, output_tokens: 1 }, content: [{ type: "tool_use", id: "tu_" + promptN, name: "fix_lines", input: { lines } }] }));
+      }
       // Course research (research.ts): find, map the club's site, read pages in batches, look for more
       if (said.includes("Find the web pages that describe this golf course: its holes and its history")) {
         fs.appendFileSync("/var/tmp/ospg/research.log", "find " + JSON.stringify(b.tools ?? null) + "\n");
@@ -549,7 +563,15 @@ http
         const md = content0.includes("MARKDOWN");
         res.writeHead(200, { "content-type": "application/json" });
         return res.end(JSON.stringify({ id: "msg_" + promptN, type: "message", role: "assistant", model: b.model, stop_reason: "tool_use", usage: { input_tokens: 1, output_tokens: 1 },
-          content: [{ type: "tool_use", id: "tu_" + promptN, name: "publish_article", input: { title: md ? "**Heath** and heartache" : `Test ${task.trim().toLowerCase()} #${promptN}`, body: md ? "## The Week Ahead\n\n**Oisin** arrives with the *edge*.\n\n- Neil has a new driver" : `First paragraph of the ${task.trim().toLowerCase()}.\n\nSecond paragraph with more detail.` } }] }));
+          content: [{ type: "tool_use", id: "tu_" + promptN, name: "publish_article", input: {
+            title: md ? "**Heath** and heartache" : `Test ${task.trim().toLowerCase()} #${promptN}`,
+            body: md
+              ? "## The Week Ahead\n\n**Oisin** arrives with the *edge*.\n\n- Neil has a new driver"
+              : content0.includes("FACTTEST")
+                ? `First paragraph of the ${task.trim().toLowerCase()}. Neil holed a WRONGFACT 40-footer on the 3rd.\n\nPaddy made a STUBBORN WRONGFACT eagle on the 9th. Second paragraph with more detail.`
+                : `First paragraph of the ${task.trim().toLowerCase()}.\n\nSecond paragraph with more detail.`,
+            ...(b.tools.find((t) => t.name === "publish_article").input_schema.properties.storylines ? { storylines: ["Neil's driver", "Paddy's lead let slip"] } : {}),
+          } }] }));
       }
       if (content0.includes("BROKENJSON")) {
         res.writeHead(200, { "content-type": "application/json" });

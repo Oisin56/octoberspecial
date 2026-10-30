@@ -1599,4 +1599,50 @@ begin
   end if;
 end $$;
 
+-- ------------------------------------------------------------ the grid: the AI writers' fact check and the writing test
+-- Threads a piece leaves for later pieces on the trip to pick up
+alter table ai_pieces add column if not exists storylines jsonb;
+
+-- Every fact check (a piece or a film script): how many lines were checked, fixed on the retry, and dropped
+create table if not exists fact_checks (
+  id uuid primary key default gen_random_uuid(),
+  at timestamptz not null default now(),
+  tournament_id uuid references tournaments(id) on delete cascade,
+  what text not null check (what in ('piece','film','test')),
+  kind text,
+  label text,
+  ref_id uuid,
+  checked int not null default 0,
+  first_problems int not null default 0,
+  fixed int not null default 0,
+  dropped int not null default 0,
+  lines jsonb not null default '[]'::jsonb        -- each dropped line: {text, why}
+);
+create index if not exists fact_checks_at_idx on fact_checks (at desc);
+alter table fact_checks enable row level security;                -- server only
+revoke all on fact_checks from anon, authenticated;
+grant all on fact_checks to service_role;
+
+-- The writing test in the console: each piece written both ways, labelled A and B, and which one read better
+create table if not exists writing_tests (
+  id uuid primary key default gen_random_uuid(),
+  at timestamptz not null default now(),
+  tournament_id uuid references tournaments(id) on delete cascade,   -- none: the made-up round
+  round_id uuid references rounds(id) on delete cascade,
+  label text not null,
+  kind text not null,                             -- report | bulletin | tournament | film
+  told text,                                      -- scores | some | most
+  new_is text not null check (new_is in ('a','b')),
+  a jsonb not null,                               -- {title, body, mistakes, problems: [{text, why}]}
+  b jsonb not null,
+  pick text check (pick in ('a','b','same')),
+  note text,
+  picked_at timestamptz,
+  picked_by text
+);
+create index if not exists writing_tests_at_idx on writing_tests (at desc);
+alter table writing_tests enable row level security;              -- server only
+revoke all on writing_tests from anon, authenticated;
+grant all on writing_tests to service_role;
+
 notify pgrst, 'reload schema';

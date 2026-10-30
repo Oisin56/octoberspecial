@@ -8,12 +8,16 @@ import { cardUrl, type CardSpec } from "./cards";
 import { mediaUrl } from "./supabase";
 import { fileUrl, plainUrl, primeFiles, signStoredLinks, slugOf, storeFor } from "./files";
 import { gameSummary, tournamentSummary } from "./engine";
-import { TONES, courseInfo, forecast } from "./ai";
+import { TONES, courseInfo, forecast, writerWay } from "./ai";
 import { cleanBody, cleanTitle } from "./cleanText";
 import { readPlanJson } from "./planJson";
 import { extrasWords, shotWords } from "./detail";
 import { clipTypeOf, filmClips, musicPieces, uprightCrop, type MusicSpan } from "./film";
 import { scoreBug, type ScoreBug } from "./scorebug";
+import { filmCards } from "./filmCards";
+import { gridText } from "./grid";
+import { figuresText } from "./figures";
+import { checkLines, fixLines, recordCheck, type CheckLog } from "./factcheck";
 import { standings, totalsView } from "./live";
 import {
   ballName,
@@ -363,8 +367,79 @@ function timedText(t: { words: { w: string; s: number; e: number }[] }, from = 0
 
 const TYPE_NAME: Record<string, string> = { interview: "Interview", prediction: "Prediction", scene: "Scene-setting", other: "Clip" };
 
-export async function writePlan(tournamentId: string, brief: Brief, probes: ClipProbe[] = []): Promise<Plan> {
+const system0 = (tone: TournamentState["tournament"]["tone"]) =>
+  `You are the director and lead commentator of a golf highlights package for a private tournament between friends. House style for the event: ${(TONES[tone] ?? TONES.broadsheet).voice}. Irish/British English. A setup line never gives away the result; a payoff is a short reaction (2 to 6 words).`;
+
+/**
+ * Check every line of a film's script against the grid: the commentary on each shot clip, its caption and sub line,
+ * and the lines over the cards. A line that doesn't match goes back once; if it still doesn't, it's left out (the clip
+ * plays with its own sound, a caption goes back to the player's name).
+ */
+async function checkScript(s: TournamentState, segs: Segment[], fc: NonNullable<ReturnType<typeof filmCards>>, rounds: TournamentState["rounds"], system: string, label: string, opts: PlanOpts = {}) {
+  type Slot = { seg: Segment; field: "voice" | "payoff" | "replayVoice" | "caption" | "sub" };
+  const slots = new Map<number, Slot>();
+  const lines: { n: number; text: string }[] = [];
+  let n = 0;
+  for (const seg of segs) {
+    if (seg.kind === "clip" && seg.clipType && seg.clipType !== "shot") continue;
+    const fields: Slot["field"][] = seg.kind === "clip" ? ["caption", "sub", "voice", "payoff", "replayVoice"] : ["voice"];
+    for (const field of fields) {
+      const text = (seg as unknown as Record<string, unknown>)[field];
+      if (typeof text !== "string" || !text.trim()) continue;
+      n++;
+      slots.set(n, { seg, field });
+      const where = seg.kind === "clip" ? `[clip of ${seg.round != null ? `Round ${seg.round}, ` : ""}hole ${seg.hole ?? "?"}, ${field === "voice" ? "setup, said before the result" : field}]` : `[over the ${seg.kind === "card" ? seg.card : "opening"} ${seg.kind === "card" ? "card" : "shot"}]`;
+      lines.push({ n, text: `${where} ${stripTags(text)}` });
+    }
+  }
+  if (!lines.length) return;
+  const facts = [
+    `THE STANDINGS NOW\n${standingsRows(s).map(([a, b]) => `${a} ${b}`).join(", ")}`,
+    ...rounds.map((r) => {
+      const rows = fc.rows.get(r.id);
+      if (!rows) return "";
+      const holes = new Set(segs.filter((x) => x.kind === "clip" && x.round === r.number).map((x) => (x as ClipSegment).hole));
+      return `ROUND ${r.number}: THE FIGURES\n${figuresText(rows)}\n\nROUND ${r.number}: THE GRID FOR THE FILMED HOLES\n${gridText(rows.filter((x) => holes.has(x.hole)))}`;
+    }),
+    ...[...fc.cards.entries()].map(([id, card]) => `CLIP CARD ${id}\n${card}`),
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+  const context = lines.map((l) => `${l.n}. ${l.text}`).join("\n");
+  const { lines: out, log } = await checkLines(facts, lines, (problems) => fixLines(system, facts, problems, context, "film fact fix"), "film fact check");
+  for (const [k, slot] of slots) {
+    const was = lines.find((l) => l.n === k)!.text;
+    const now = out.get(k) ?? was;
+    if (now === was) continue;
+    // Take off the label the checker saw
+    const text = now.replace(/^\[[^\]]*\]\s*/, "").trim();
+    const seg = slot.seg as unknown as Record<string, unknown>;
+    if (text) seg[slot.field] = text;
+    else if (slot.field === "caption" && slot.seg.kind === "clip") {
+      const post = s.posts.find((p) => p.id === (slot.seg as ClipSegment).postId);
+      seg.caption = post ? defaultCaption(s, post).slice(0, 40) : undefined;
+    } else seg[slot.field] = undefined;
+  }
+  // A clip that lost its setup but kept a payoff, or the other way round, still works; one with a replay and no line keeps the replay
+  await recordCheck({ tournamentId: s.tournament.id, what: opts.record ?? "film", kind: "film", label, log });
+  opts.onCheck?.(log);
+}
+
+export interface PlanOpts {
+  /** Which writer (the site's setting when not given) */
+  way?: "classic" | "grid";
+  /** The grid way's script check before the voices are recorded (on unless switched off) */
+  check?: boolean;
+  /** The writing test: its checks are kept apart from the real ones */
+  record?: "film" | "test";
+  /** Told what the check found */
+  onCheck?: (log: CheckLog) => void;
+}
+
+export async function writePlan(tournamentId: string, brief: Brief, probes: ClipProbe[] = [], opts: PlanOpts = {}): Promise<Plan> {
   const s = await loadServerState(tournamentId);
+  const way = opts.way ?? (await writerWay());
+  const grid = way === "grid";
   const t = s.tournament;
   const scopeRound = brief.roundNumber != null ? s.rounds.find((r) => r.number === brief.roundNumber) ?? null : null;
   const portraitFilm = brief.aspect === "9:16";
@@ -392,7 +467,17 @@ export async function writePlan(tournamentId: string, brief: Brief, probes: Clip
     const pr = probeById.get(c.id);
     return c.trim_out != null ? Number(c.trim_out) - Number(c.trim_in ?? 0) : pr?.duration ?? null;
   };
-  const facts = clipFacts(s, shots).map((f) => {
+  // The grid way: each clip's card (the exact shot, the hole so far, the match) and the moment it belongs to
+  const fc = grid ? filmCards(s, shots) : null;
+  const facts = clipFacts(s, shots).map((f0) => {
+    let f: ClipFact & { card?: string; moment?: string; replayOk?: boolean } = f0;
+    if (fc) {
+      const { holeLog: _h, toldUs: _t, ...rest } = f0 as ClipFact & { toldUs?: string };
+      void _h;
+      void _t;
+      const m = fc.moments.get(f0.id);
+      f = { ...rest, ...(fc.cards.get(f0.id) ? { card: fc.cards.get(f0.id) } : {}), ...(m ? { moment: m.label, replayOk: m.replayOk } : {}) };
+    }
     const pr = probeById.get(f.id);
     const post = shots.find((c) => c.id === f.id)!;
     return pr ? { ...f, seconds: lengthOf(post), shape: pr.w && pr.h ? ((pr.h > pr.w ? "portrait" : "landscape") as "portrait" | "landscape") : undefined, stills: pr.frames.length } : f;
@@ -486,7 +571,9 @@ export async function writePlan(tournamentId: string, brief: Brief, probes: Clip
         .join("\n")}`,
       `OVERALL STANDINGS NOW: ${standingsRows(s).map(([n, v]) => `${n} ${v}`).join(", ")}`,
       stories ? `THE STORY SO FAR (published previews and reports; reuse their storylines, running jokes and nicknames, but facts come from the scores):\n${stories}` : "",
-      `AVAILABLE CLIPS (JSON). seconds = clip length; statusBefore/statusAfter = the match before and after that hole; holeNote = background on the hole; shot/result/club (when present) were entered by the person filming and are reliable; holeLog is how the player played the whole hole, as logged on the course (use it to set up and pay off the shot); toldUs is what the group said privately to the commentators about the hole (use it, in your own words, never quoted); shape = how it was filmed:\n${JSON.stringify(facts)}`,
+      grid
+        ? `AVAILABLE CLIPS (JSON). seconds = clip length; card = the clip's row in the grid: the exact stroke filmed, the hole so far, what came after and the match before and after (every word of a setup and a payoff should be on the card; never fill in anything it marks not told; "known from the score" can be said plainly, not dressed up); moment (when present) = the story moment the clip belongs to and where it ranks in the round; statusBefore/statusAfter = every match before and after that hole; holeNote = background on the hole; shot/result/club (when present) were entered by the person filming and are reliable; shape = how it was filmed:\n${JSON.stringify(facts)}`
+        : `AVAILABLE CLIPS (JSON). seconds = clip length; statusBefore/statusAfter = the match before and after that hole; holeNote = background on the hole; shot/result/club (when present) were entered by the person filming and are reliable; holeLog is how the player played the whole hole, as logged on the course (use it to set up and pay off the shot); toldUs is what the group said privately to the commentators about the hole (use it, in your own words, never quoted); shape = how it was filmed:\n${JSON.stringify(facts)}`,
       asideFacts.length
         ? `OFF-COURSE CLIPS (JSON): interviews, predictions and scene-setting, filmed when no round was being played. "said" is what's said in it, with start times in seconds ([4.2] means 4.2 seconds in):\n${JSON.stringify(asideFacts)}`
         : "",
@@ -499,13 +586,15 @@ export async function writePlan(tournamentId: string, brief: Brief, probes: Clip
       booth === 2
         ? `TASK: You are directing a highlights package with TWO in the commentary box, in the manner of ${persona}. The COMMENTATOR calls the play: openingVoice, each chapter intro, each clip's "setup", the intros of off-course clips, and closingVoice. The PUNDIT (a former tournament golfer with opinions) reacts and analyses: each clip's "payoff", every "replayLine" and each round's "resultVoice". Write it as a real exchange: the pundit answers what the commentator just said ("He'll be kicking himself.", "That's the shot of the week for me."). Don't imitate any real, named commentator or pundit.`
         : `TASK: You are directing and commentating a highlights package, written and voiced like ${persona}. Set up each shot (who, where, what's at stake given statusBefore), then pay it off (the result, using scoresOnHole and statusAfter). Use the course knowledge and conditions naturally ("into that wind", "the green falls away at the back"). Don't imitate any real, named commentator.`,
-      `Choose and order clips for each round's chapter (story order, usually hole order; save a big moment for the end of a chapter). For each chosen clip write an on-screen caption naming the player and the shot (max 32 characters, e.g. "Pat · approach to 4 feet"; use "players" when given) and a sub line (max 40 characters). The hole number, par and score are shown automatically in a TV-style panel, so don't repeat them in captions.`,
+      `${grid ? "Clips with a moment go in first, in the order of their moments; a clip with no moment still goes in if there's room, but doesn't jump the queue. " : ""}Choose and order clips for each round's chapter (story order, usually hole order; save a big moment for the end of a chapter). For each chosen clip write an on-screen caption naming the player and the shot (max 32 characters, e.g. "Pat · approach to 4 feet"; use "players" when given) and a sub line (max 40 characters). The hole number, par and score are shown automatically in a TV-style panel, so don't repeat them in captions.`,
       `STILLS: images labelled CLIP <id> are stills from that clip. Describe what you can actually see (the shot being played, the lie, the setting, the reaction) and tie it to the facts. If a clip has no note, write its caption, sub and commentary from the stills and facts; if it has a note, flesh it out. Never claim an outcome the facts don't support (don't say a putt dropped unless the scores show it); if the stills are unclear, keep it general.`,
       `NARRATION: an opening line, a short intro per chapter, commentary for ${light ? "only the best 2 or 3 clips of each round (leave \"setup\" and \"payoff\" empty on the rest so the pictures breathe)" : "every chosen clip"}, a line over each round's result card, and a closing line.`,
       sound === "both"
         ? `CLIP COMMENTARY: the commentator's "setup" is said BEFORE the clip starts, over a still: who, where, what's at stake. Then the clip plays with its own sound (the strike, the shouts), so leave "payoff" empty. It must NEVER give away the result.`
         : `CLIP COMMENTARY comes in two parts, like real TV: set it up, go quiet for the stroke, then react. "setup" is read from the start of the clip, before the shot is played: who, where, what's at stake. It must NEVER say or hint at the result ("for the half", "twelve feet to stay alive", not "and he holes it"). "payoff" is a short reaction (2 to 6 words) that ends just as the clip ends, when the result is on screen: "And in it goes!", "Oh, just shaved the edge.", "That'll do nicely." Only call a result the facts support (scoresOnHole, statusAfter, the stills); if unsure, keep the payoff neutral ("Let's see…"). For clips under 4 seconds write ONE part only: the payoff if the result is visible, otherwise the setup.`,
-      `REPLAYS: like TV, the very biggest moments get a slow-motion replay straight after. Mark "replay": true on at most ${Math.min(3, Math.max(1, Math.round(maxClips / 4)))} clips in the whole film, only where the result is visible and special (birdie or better, a chip-in, a long putt, a hole-winning shot), and write "replayLine": a quiet, knowing line of at most 7 words for over the replay ("Watch the pace on that.", "Never a doubt."). Leave replay false everywhere else.`,
+      grid
+        ? `REPLAYS: like TV, the very biggest moments get a slow-motion replay straight after. Only clips with "replayOk": true can have one (a moment that decided something, or a big hole). Mark "replay": true on at most ${Math.min(3, Math.max(1, Math.round(maxClips / 4)))} of them, where the result is visible, and write "replayLine": a quiet, knowing line of at most 7 words for over the replay ("Watch the pace on that.", "Never a doubt."). Leave replay false everywhere else.`
+        : `REPLAYS: like TV, the very biggest moments get a slow-motion replay straight after. Mark "replay": true on at most ${Math.min(3, Math.max(1, Math.round(maxClips / 4)))} clips in the whole film, only where the result is visible and special (birdie or better, a chip-in, a long putt, a hole-winning shot), and write "replayLine": a quiet, knowing line of at most 7 words for over the replay ("Watch the pace on that.", "Never a doubt."). Leave replay false everywhere else.`,
       asideFacts.length
         ? `OFF-COURSE CLIPS: put scene-setting and predictions in "buildUp" (before Round 1: scene-setting first) and each interview in "afterClips" of the round it follows. Use at most 6 off-course clips in all, the best ones. For each: "caption" (who and what, max 32 characters, e.g. "Neil · his prediction"), "intro" (the commentator's line introducing it, said before it plays, max 15 words, never repeating what's said in it), and the best part to play: "in" and "out" in seconds from the "said" times, at most 30 seconds, starting and ending on whole sentences (leave them out to play it all). If there are predictions, the closingVoice calls the boldest one back against the final result ("Neil predicted a ten-point win. He finished fourth.").`
         : "",
@@ -644,7 +733,10 @@ export async function writePlan(tournamentId: string, brief: Brief, probes: Clip
     }
     const chosen = (ch?.clips ?? []).filter((c) => clipById.get(c.id)?.round_id === r.id && clipTypeOf(clipById.get(c.id)!) === "shot" && !used.has(c.id));
     // Without a plan from Claude, fall back to the clips in hole order
-    const list = chosen.length ? chosen : roundClips.slice(0, Math.max(1, Math.floor(maxClips / Math.max(1, roundsInScope.length)))).map((c) => ({ id: c.id }));
+    // (the grid way: clips of the round's moments first, the biggest last)
+    const byMoment = fc ? [...roundClips].sort((a, b) => (fc.moments.get(a.id)?.rank ?? 99) - (fc.moments.get(b.id)?.rank ?? 99)) : roundClips;
+    const fallback = byMoment.slice(0, Math.max(1, Math.floor(maxClips / Math.max(1, roundsInScope.length))));
+    const list = chosen.length ? chosen : (fc ? fallback.reverse() : fallback).map((c) => ({ id: c.id }));
     for (const pick of list as { id: string; caption?: string; sub?: string; voice?: string; setup?: string; payoff?: string; replay?: boolean; replayLine?: string }[]) {
       const c = clipById.get(pick.id)!;
       used.add(c.id);
@@ -668,7 +760,7 @@ export async function writePlan(tournamentId: string, brief: Brief, probes: Clip
         finishes: finishesHole(c.tags),
         voice: (pick.setup ?? pick.voice)?.trim().slice(0, 220) || undefined,
         payoff: sound === "both" ? undefined : pick.payoff?.trim().slice(0, 80) || undefined,
-        replay: pick.replay === true && replays < 3 && (pr?.duration ?? 8) >= 2 ? (replays++, true) : undefined,
+        replay: pick.replay === true && replays < 3 && (pr?.duration ?? 8) >= 2 && (!fc || !!fc.moments.get(c.id)?.replayOk) ? (replays++, true) : undefined,
         replayVoice: pick.replay === true ? pick.replayLine?.trim().slice(0, 80) || undefined : undefined,
         duration: pr?.duration ?? null,
         portrait: portraitClip,
@@ -717,6 +809,9 @@ export async function writePlan(tournamentId: string, brief: Brief, probes: Clip
     const last = segs[segs.length - 1];
     if (last.kind === "card" && !last.voice) last.voice = cp.closingVoice.slice(0, 300);
   }
+
+  // The grid way: the script is checked against the grid before a word is recorded
+  if (fc && opts.check !== false && process.env.ANTHROPIC_API_KEY) await checkScript(s, segs, fc, roundsInScope, system0(t.tone), scopeRound ? `Film: Round ${scopeRound.number}` : "Film: the whole trip", opts);
 
   return {
     title: scopeRound ? `${t.name}: Round ${scopeRound.number}` : t.name,

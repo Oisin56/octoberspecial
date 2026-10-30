@@ -2613,6 +2613,30 @@ a.con-fig:hover { border-color: var(--board); box-shadow: var(--shadow-sm); }
 .con-big-line strong { font: 700 30px var(--font-display); }
 .con-errors li > span:first-child { font-family: ui-monospace, Menlo, monospace; font-size: 14px; }
 .con-errors small { font-family: var(--font-serif); }
+.con-panel-amber { border-color: #e9c27a; box-shadow: inset 4px 0 0 #d18b00; }
+.con-sub { font: 700 18px var(--font-display); color: var(--board-deep); margin: 16px 0 4px; }
+.con-dropped q { font-style: italic; }
+/* the writing test: two versions side by side */
+.con-wide { flex: 1 1 360px; max-width: 640px; }
+.con-wide select { width: 100%; }
+.con-acts { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 4px 0 8px; }
+.con-ab { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; margin: 12px 0 18px; }
+.con-ab-side { border: 1px solid var(--rule); border-radius: 12px; padding: 16px 18px 18px; background: var(--paper); min-width: 0; }
+.con-ab-side h3 { display: flex; align-items: baseline; gap: 10px; font: 700 34px/1 var(--font-display); color: var(--board-deep); margin: 0 0 10px; }
+.con-ab-side h3 span { font: 600 16px var(--font-display); color: var(--ink-soft); }
+.con-ab-title { font: 700 21px/1.25 var(--font-display); color: var(--ink); margin: 0 0 10px; }
+.con-ab-body { font-size: 17px; line-height: 1.6; max-width: 68ch; }
+.con-ab-body p { margin: 0 0 12px; }
+.con-ab-found { border-top: 1px solid var(--rule); margin-top: 14px; padding-top: 10px; font-size: 15px; color: var(--ink-soft); }
+.con-ab-found p { margin: 0 0 6px; }
+.con-ab-found ul { margin: 0; padding-left: 18px; }
+.con-ab-found li { margin: 4px 0; }
+.con-ab-pick { display: grid; gap: 10px; max-width: 640px; }
+.con-ab-pick textarea { width: 100%; font-size: 16px; padding: 10px 12px; }
+.con-ab-pick > .btn { justify-self: start; }
+.con-ab-picked { font: 600 17px var(--font-display); color: var(--board); margin: 0; }
+
+@media (max-width: 760px) { .con-ab { grid-template-columns: 1fr; } }
 .con-room { display: grid; gap: 6px; margin-bottom: 14px; }
 
 /* signed out */

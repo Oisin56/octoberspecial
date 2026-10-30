@@ -304,6 +304,8 @@ export interface AiPieceRow {
   tone?: Tone | null;
   prev_title?: string | null;
   prev_body?: string | null;
+  /** Threads for later pieces to pick up (the grid writer leaves them) */
+  storylines?: string[] | null;
 }
 
 export interface VoteRow {

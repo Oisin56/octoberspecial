@@ -13,7 +13,18 @@ interface Health {
   errors: { key: string; place: string; message: string; count: number; first_at: string; last_at: string; tournaments: string[] }[];
   room: { db: number; files: number | null; fileBytes: number | null; dbLimit: number; fileLimit: number };
   cron: { at?: string; did?: string[] };
+  factCheck: FactCheck | null;
   consoleEmail: string | null;
+}
+
+interface FactCheck {
+  pieces: number;
+  films: number;
+  lines: number;
+  fixed: number;
+  dropped: number;
+  amber: boolean;
+  list: { at: string; tournament: string; piece: string; text: string; why: string }[];
 }
 
 const gb = (b: number) => (b >= 1024 ** 3 ? `${(b / 1024 ** 3).toFixed(1)} GB` : `${Math.max(1, Math.round(b / 1024 ** 2))} MB`);
@@ -131,6 +142,8 @@ export default function HealthPage() {
         )}
       </section>
 
+      <FactChecks f={data.factCheck} />
+
       <div className="con-two">
         <section className="con-panel" aria-labelledby="h-jobs">
           <h2 id="h-jobs">The daily jobs</h2>
@@ -157,6 +170,58 @@ export default function HealthPage() {
         </section>
       </div>
     </>
+  );
+}
+
+/** The AI writers' fact check: how often a line is fixed or dropped, and every line dropped (last 30 days). */
+function FactChecks({ f }: { f: FactCheck | null }) {
+  return (
+    <section className={`con-panel${f?.amber ? " con-panel-amber" : ""}`} aria-labelledby="h-facts">
+      <h2 id="h-facts">Fact check</h2>
+      <p className="small con-quiet">
+        Every piece the AI writes, and every film script, is checked against the scorecards before it goes out. A line that doesn&apos;t match goes back once to be fixed; if it still doesn&apos;t, it&apos;s left out. The last 30 days.
+      </p>
+      {!f ? (
+        <p className="con-warn">This needs the latest database update (run supabase/schema.sql).</p>
+      ) : f.pieces + f.films === 0 ? (
+        <p className="con-calm">Nothing checked yet. Checks start once the new writer is switched on in Writing.</p>
+      ) : (
+        <>
+          <p className="con-big-line">
+            <strong>{n(f.pieces)}</strong> piece{f.pieces === 1 ? "" : "s"} and <strong>{n(f.films)}</strong> film{f.films === 1 ? "" : "s"} checked, {n(f.lines)} lines
+          </p>
+          <ul className="con-rows plain">
+            <li>
+              <span>Lines fixed on the retry</span>
+              <span className="con-age">{n(f.fixed)}</span>
+            </li>
+            <li>
+              <span>Lines left out</span>
+              <span className={`con-age${f.amber ? " con-warn" : ""}`}>{n(f.dropped)}</span>
+            </li>
+          </ul>
+          {f.amber && <p className="con-warn">More than one line in twenty is being left out. Worth a look at the lines below.</p>}
+          {f.list.length > 0 && (
+            <>
+              <h3 className="con-sub">The lines left out</h3>
+              <ul className="con-rows plain con-dropped">
+                {f.list.map((l, i) => (
+                  <li key={i}>
+                    <span>
+                      <q>{l.text}</q>
+                      <small>
+                        {l.why.charAt(0).toUpperCase() + l.why.slice(1)}. {l.tournament}, {l.piece.charAt(0).toLowerCase() + l.piece.slice(1)}.
+                      </small>
+                    </span>
+                    <span className="con-age">{when(l.at)}</span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+        </>
+      )}
+    </section>
   );
 }
 

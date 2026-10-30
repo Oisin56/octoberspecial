@@ -20,8 +20,11 @@ import { kickResearch, startResearch } from "@/lib/research";
 import { passkeyCount } from "@/lib/owner-check";
 import { BRAND } from "@/lib/brand";
 import type { TournamentRow } from "@/lib/types";
+import { pickWritingTest, runWritingTest, setWriter, writingView, type TestKind } from "@/lib/writingTest";
 
 export const dynamic = "force-dynamic";
+// The writing test writes a piece both ways and checks them: up to a couple of minutes
+export const maxDuration = 300;
 const NO_STORE = { "cache-control": "no-store, private" };
 const ok = (data: unknown) => Response.json(data, { headers: NO_STORE });
 
@@ -89,6 +92,9 @@ export async function GET(req: Request) {
         return ok(await money());
       case "health":
         return ok(await health());
+      case "writing":
+        await requireConsole("owner");
+        return ok(await writingView());
       case "activity": {
         const l = await activityList({ q: p("q"), who: p("who"), action: p("action"), from: p("from"), to: p("to"), page: num(p("page") ?? null) });
         return ok(user.role === "owner" ? l : { ...l, rows: l.rows.map((r) => ({ ...r, detail: null })) });
@@ -120,10 +126,43 @@ export async function POST(req: Request) {
     if (area === "person") return await person(user, b);
     if (area === "money") return await moneyAction(user, b);
     if (area === "settings") return await settings(user, b);
+    if (area === "writing") return await writing(user, b);
     return bad("Unknown action");
   } catch (e) {
     return denied(e);
   }
+}
+
+// ------------------------------------------------------------ Writing: the new writer, tested side by side
+
+async function writing(user: ConsoleUser, b: Record<string, unknown>) {
+  if (user.role !== "owner") return bad("Only the owner can do that", 403);
+  if (b.action === "writing.run") {
+    const kind = String(b.kind ?? "") as TestKind;
+    if (!["report", "bulletin", "tournament", "film"].includes(kind)) return bad("Pick what to write");
+    try {
+      const row = await runWritingTest(String(b.source ?? ""), kind, user.email);
+      await logActivity(user, "writing.test", { detail: { kind, label: row.label } });
+      return json({ ok: true, id: row.id });
+    } catch (e) {
+      const m = e instanceof Error ? e.message : String(e);
+      console.error("[writing test]", m);
+      return bad(/no video clips/i.test(m) ? "There are no clips from that round to make a film of." : m.length < 160 ? m : "The writer didn't come back. Try again.", 500);
+    }
+  }
+  if (b.action === "writing.pick") {
+    const pick = String(b.pick ?? "");
+    if (!["a", "b", "same"].includes(pick)) return bad("Pick one");
+    await pickWritingTest(String(b.id ?? ""), pick as "a" | "b" | "same", String(b.note ?? ""), user.email);
+    return json({ ok: true });
+  }
+  if (b.action === "writing.switch") {
+    const on = b.on === true;
+    await setWriter(on, user.email);
+    await logActivity(user, on ? "writing.on" : "writing.off");
+    return json({ ok: true });
+  }
+  return bad("Unknown action");
 }
 
 // ------------------------------------------------------------ Needs you

@@ -1,17 +1,13 @@
 import { adminClient } from "@/lib/admin";
 import { isCrew, isOrganiser } from "@/lib/auth";
-import { courseInfo } from "@/lib/ai";
-import { bearing, WIND } from "@/lib/detail";
-import { geoFor } from "@/lib/gpsServer";
+import { WIND } from "@/lib/detail";
+import { windDay } from "@/lib/windServer";
 import { bad, context, json, DEMO_READONLY } from "@/lib/server-data";
 import { mayTellShots } from "@/lib/scoring-access";
 import type { Game } from "@/lib/engine";
 import type { RoundRow } from "@/lib/types";
 
 export const maxDuration = 30;
-
-/** The weather's wind through the day, kept a while per round (it's the same for every phone in the group). */
-const kept = new Map<string, { at: number; body: unknown }>();
 
 /**
  * GET ?t=slug&round=<id>: the wind through the round's day, hour by hour (km/h, and the direction it comes from),
@@ -23,41 +19,9 @@ export async function GET(req: Request) {
   if (!t) return bad("Tournament not found", 404);
   if (!isCrew(session)) return bad("Log in first", 401);
   const roundId = new URL(req.url).searchParams.get("round") ?? "";
-  const hit = kept.get(roundId);
-  if (hit && Date.now() - hit.at < 20 * 60e3) return json(hit.body);
   const { data: round } = await adminClient().from("rounds").select("*").eq("id", roundId).eq("tournament_id", t.id).maybeSingle();
   if (!round) return bad("Round not found", 404);
-  const info = courseInfo(round as RoundRow);
-  const day = (round as RoundRow).play_date ?? new Date().toISOString().slice(0, 10);
-
-  let hourly: { time: string[]; speed: number[]; dir: number[] } | null = null;
-  if (info.lat != null && info.lon != null) {
-    try {
-      const url =
-        `https://api.open-meteo.com/v1/forecast?latitude=${info.lat}&longitude=${info.lon}` +
-        `&hourly=wind_speed_10m,wind_direction_10m&wind_speed_unit=kmh&timezone=Europe%2FDublin&start_date=${day}&end_date=${day}`;
-      const r = await fetch(url, { cache: "no-store" });
-      if (r.ok) {
-        const h = (await r.json()).hourly;
-        if (h?.time?.length) hourly = { time: h.time, speed: h.wind_speed_10m, dir: h.wind_direction_10m };
-      }
-    } catch {
-      /* no weather: the group can still say */
-    }
-  }
-
-  const bearings: Record<string, number> = {};
-  try {
-    const geo = await geoFor((round as RoundRow).course_slug);
-    for (const [n, g] of Object.entries(geo ?? {})) {
-      if (g.tee && g.green.middle) bearings[n] = Math.round(bearing(g.tee, g.green.middle));
-    }
-  } catch {
-    /* no course data: no direction, so only No wind can be worked out */
-  }
-  const body = { hourly, bearings };
-  kept.set(roundId, { at: Date.now(), body });
-  return json(body);
+  return json(await windDay(round as RoundRow));
 }
 
 /** Correct the wind on a hole for a group: {roundId, game, hole, wind} (wind null = back to the weather's). */

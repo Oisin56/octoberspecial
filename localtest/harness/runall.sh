@@ -29,6 +29,8 @@ for t in signintest; do fresh; run $t.mjs; done
 for t in privacytest; do fresh; run $t.mjs; done
 # the console: the owner and support staff, Needs you, money, the activity record, exports
 for t in consoletest emailsteptest stage4test; do fresh; run $t.mjs; done
+# the grid: the writing test, the switch, the fact check and its panel
+for t in writingtest; do fresh; run $t.mjs; done
 for t in sampletest; do fresh; run $t.mjs; done
 # the sample film's commentary and sound, with the voice stand-in on; then the app back to normal
 voice() { ps -eo pid,comm | awk '$2 ~ /^next-server/ {print $1}' | xargs -r kill; sleep 1; VOICE=1 bash startapp.sh; sleep 6; bash fresh.sh; node e2e.mjs | tail -1; }
