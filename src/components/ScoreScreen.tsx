@@ -13,7 +13,7 @@ import { oneScorer, scoringGames } from "@/lib/scoring-access";
 import { useSwipe } from "@/lib/useSwipe";
 import { ballsOfGame, ballsOfSide, gameHole, gameShots, holeShots, ONE_BALL, sideGameHoles, type BallHole, type Game } from "@/lib/engine";
 import { CardPanel } from "@/components/CardPanel";
-import { cardInfo, gameComplete } from "@/lib/scorecards";
+import { cardInfo, gameComplete, roundToScore } from "@/lib/scorecards";
 import { fieldPosition, roundBoard } from "@/lib/live";
 import { ballName, sideLabel, toRoundCfg } from "@/lib/types";
 import { scoreWord } from "@/lib/scoreEntry";
@@ -88,8 +88,9 @@ function ScoreInner() {
     if (!state) return null;
     const n = sp.get("round");
     if (n) return state.rounds.find((r) => r.number === Number(n)) ?? null;
-    return state.rounds.find((r) => r.status === "live") ?? state.rounds.find((r) => r.status === "upcoming") ?? null;
-  }, [state, sp]);
+    // The first round this person hasn't finished: their card handed in moves them on to the next
+    return roundToScore(state, session);
+  }, [state, sp, session]);
   const rcfg = useMemo(() => (round && state ? toRoundCfg(round, state.players) : null), [round, state]);
   /** The holes of this round in order (1 to 18, 1 to 9, or 10 to 18) */
   const holeNums = useMemo(() => (round ? round.holes.map((x) => x.number).sort((a, b) => a - b) : []), [round]);
@@ -307,6 +308,24 @@ function ScoreInner() {
       </div>
     );
   }
+
+  // Who plays with whom isn't set for this round yet: say so, rather than an empty screen
+  if (!rcfg.games.length && state.players.length > 1)
+    return (
+      <div className="scorer stack">
+        <h1>
+          Round {round.number}, {round.course_name}
+        </h1>
+        <p className="lead">Who plays with whom isn&apos;t set for this round yet.</p>
+        {session.role === "organiser" ? (
+          <Link className="btn block" href={href("/setup")}>
+            Set the groups
+          </Link>
+        ) : (
+          <p className="muted">The organiser sets them in Tournament setup.</p>
+        )}
+      </div>
+    );
 
   // Not the scorer (or not yet chosen): the live card
   if (!game) {
@@ -575,8 +594,15 @@ function ScoreInner() {
   // The card: checking and submitting at the end, signing, or a final card (read-only unless correcting)
   if (!t.solo && (review || card.stage === "submitted" || (card.stage === "final" && !correcting))) {
     const early = card.stage === "finished" && entries.length < round.holes.length;
+    // The card's handed in: the next round, one tap away
+    const nextRound = card.stage === "submitted" || card.stage === "final" ? [...state.rounds].sort((a, b) => a.number - b.number).find((r) => r.number > round.number && r.status !== "complete") : undefined;
     return (
       <div className="scorer">
+        {nextRound && (
+          <Link className="btn block next-round" href={href(`/score?round=${nextRound.number}`)}>
+            Start round {nextRound.number}, {nextRound.course_name}
+          </Link>
+        )}
         <CardPanel
           roundId={round.id}
           gameId={game.id}

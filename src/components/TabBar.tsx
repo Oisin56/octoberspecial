@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useT, type ClientSession } from "./Providers";
 import { currentHole } from "@/lib/scorePos";
 import { landingPath, liveRound, scoresToday } from "@/lib/landing";
+import { roundToScore } from "@/lib/scorecards";
 
 /**
  * The bar at the foot of every tournament page on a phone: five big buttons, set by who you are.
@@ -21,7 +22,11 @@ export function TabBar() {
   const [, bump] = useState(0);
   const [more, setMore] = useState(false);
 
-  const live = useMemo(() => liveRound(state), [state]);
+  // The round this person is playing (their card handed in moves them on), else any round under way
+  const live = useMemo(() => {
+    const mine = state && session ? roundToScore(state, session) : null;
+    return mine?.status === "live" ? mine : liveRound(state);
+  }, [state, session]);
   const onCourse = !!(live && crew);
 
   // Follow the scorer's hole (it's saved as they move)

@@ -10,7 +10,7 @@
  * or closed by the organiser) counts as final.
  */
 import { gameSummary, type Game } from "./engine";
-import { toEntries, toRoundCfg, toTournamentCfg, type CardRow, type TournamentState } from "./types";
+import { toEntries, toRoundCfg, toTournamentCfg, type CardRow, type RoundRow, type TournamentState } from "./types";
 
 export type CardStage = "open" | "finished" | "submitted" | "final";
 
@@ -84,4 +84,22 @@ export function cardLabel(i: CardInfo, names: Record<string, string>): string {
   }
   if (i.stage === "finished") return "Provisional: the card hasn't been submitted yet";
   return "Live";
+}
+
+/**
+ * The round the Score button opens: the first one this person hasn't finished. Their group's card handed in (or
+ * final) moves them on to the next round, without waiting for the other groups or the signatures.
+ */
+export function roundToScore(s: S, who: { playerId?: string | null } | null | undefined): RoundRow | null {
+  const rounds = [...s.rounds].sort((a, b) => a.number - b.number);
+  const doneFor = (r: RoundRow) => {
+    if (r.status === "complete") return true;
+    const mine = toRoundCfg(r, s.players).games.filter((g) => !!who?.playerId && g.sides.some((sd) => sd.playerIds.includes(who.playerId!)));
+    if (!mine.length) return false;
+    return mine.every((g) => {
+      const st = cardInfo(s, r.id, g.id).stage;
+      return st === "final" || st === "submitted";
+    });
+  };
+  return rounds.find((r) => !doneFor(r)) ?? null;
 }

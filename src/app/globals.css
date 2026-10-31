@@ -3003,3 +3003,4 @@ a.con-fig:hover { border-color: var(--board); box-shadow: var(--shadow-sm); }
 .cd-caption-voice .talk-btn { background: var(--paper); color: var(--board); box-shadow: inset 0 0 0 2px var(--board); min-height: 56px; font-size: 19px; }
 .cd-caption-voice .talk-btn.listening { background: var(--red); color: #fff; box-shadow: none; }
 .cp .my-check { margin: 4px 0 12px; }
+.next-round { margin-bottom: 14px; min-height: 60px; font-size: 20px; }
