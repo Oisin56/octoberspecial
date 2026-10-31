@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useT } from "./Providers";
 import { cleanBody, cleanTitle } from "@/lib/cleanText";
 import { cardInfo, cardLabel } from "@/lib/scorecards";
-import { liveLine, pointsLine, pointsParts, roundBoard, standings, stillToPlay, toPar, totalsView, type TotalsView } from "@/lib/live";
+import { liveLine, pointsParts, pointsTally, roundBoard, standings, stillTally, toPar, totalsView, type TallyBox, type TotalsView } from "@/lib/live";
 import { CountUp, CourseImage, Icon } from "./visual";
 import { ballsOfGame, gameHole, holeShots, isNine, roundPointsAvailable, type Game, type GameSummary, type SegmentResult } from "@/lib/engine";
 import { winBoard } from "@/lib/boards";
@@ -150,7 +150,7 @@ export function Board() {
   const toWin = total / 2;
   // Points race: where each player's points came from, and what's still to play for
   const race = summary.win.kind === "points";
-  const foot = race ? stillToPlay(summary, cfg) : null;
+  const left = race ? stillTally(summary) : null;
 
   return (
     <section className="board" aria-label="Overall standings">
@@ -169,7 +169,7 @@ export function Board() {
                   {r.name}
                   {lead && <span className="lead-tag">{second < best && rows.length > 1 ? `leads by ${pts(best - second)}` : "leads"}</span>}
                 </span>
-                {race && !teamMode && <Breakdown line={pointsLine(pointsParts(summary, r.id, r.value))} />}
+                {race && !teamMode && <Tally boxes={pointsTally(pointsParts(summary, r.id, r.value))} label={`${r.name}: where the points came from`} />}
               </div>
               <Tiles value={r.value} red={lead} small={small} />
             </div>
@@ -210,13 +210,12 @@ export function Board() {
       )}
 
       <div className="board-foot">
-        {foot ? (
-          (foot.left || foot.onTop) && (
-            <span className="board-left">
-              {foot.left}
-              {foot.left && foot.onTop ? " " : ""}
-              {foot.onTop}
-            </span>
+        {left ? (
+          left.length > 0 && (
+            <div className="board-left">
+              <span className="board-left-k">Still to play for</span>
+              <Tally boxes={left} label="Still to play for" />
+            </div>
           )
         ) : (
           <span>
@@ -241,9 +240,19 @@ export function Board() {
   );
 }
 
-/** Under a name in a points race: where the points came from */
-function Breakdown({ line }: { line: string | null }) {
-  return line ? <span className="board-break">{line}</span> : null;
+/** Points race: small boxes, a number over a word (under a name: where the points came from; at the foot: what's left) */
+function Tally({ boxes, label }: { boxes: TallyBox[]; label: string }) {
+  if (!boxes.length) return null;
+  return (
+    <ul className="tally" aria-label={label}>
+      {boxes.map((b) => (
+        <li key={b.key} className="tally-box">
+          <b className="num">{b.value}</b>
+          <span>{b.label}</span>
+        </li>
+      ))}
+    </ul>
+  );
 }
 
 function AwardCell({ kind, counts }: { kind: keyof typeof SIDE_GAME_LABEL; counts: Record<string, number> }) {

@@ -399,7 +399,7 @@ const up = (s: string) => (s ? s[0].toUpperCase() + s.slice(1) : s);
  * drive." and "Birdies and eagles on top." Either can be null.
  */
 export function stillToPlay(summary: TournamentSummary, cfg: Pick<TournamentCfg, "win" | "standings" | "teams">): { left: string | null; onTop: string | null } {
-  const l = summary.left ?? { rounds: summary.pointsRemaining, prizes: 0, holes: 0 };
+  const l = summary.left ?? { rounds: summary.pointsRemaining, prizes: 0, holes: 0, ctp: 0, ld: 0 };
   const rounds = Math.max(0, summary.pointsRemaining - l.prizes - l.holes);
   const w = summary.win;
   const holeWords = (["ctp", "ld"] as const).filter((k) => w.kind === "points" && (w.bonus?.[k] ?? 0) > 0).map((k) => BONUS_WORD[k]).join(" and ");
@@ -409,4 +409,36 @@ export function stillToPlay(summary: TournamentSummary, cfg: Pick<TournamentCfg,
     left: bits.length ? `Still to play for: ${bits.join(", ")}.` : null,
     onTop: open && !summary.complete ? `${up(open)} on top.` : null,
   };
+}
+
+export interface TallyBox {
+  key: string;
+  /** "60", or "+2" for so many each */
+  value: string;
+  /** "Rounds", "Closest the pin", "Each birdie" */
+  label: string;
+}
+
+const TALLY_LABEL: Record<BonusKind, string> = { birdies: "Birdies", eagles: "Eagles", gir: "Greens", ctp: "Closest the pin", ld: "Long drive" };
+const EACH_LABEL: Record<string, string> = { birdies: "Each birdie", eagles: "Each eagle", gir: "Each green" };
+
+/** A player's breakdown as small boxes: Rounds 40, Birdies 2, Closest the pin 3 (none when it's rounds alone) */
+export function pointsTally(parts: PointsPart[]): TallyBox[] {
+  if (!parts.length || (parts.length === 1 && parts[0].key === "rounds")) return [];
+  return parts.map((p) => ({ key: p.key, value: fmtPts(p.value), label: p.key === "rounds" ? "Rounds" : p.key === "prizes" ? "Prizes" : TALLY_LABEL[p.key] }));
+}
+
+/** What's still to play for, as small boxes: Rounds 60, Closest the pin 18, Long drive 18, Prizes 10, then +2 each birdie */
+export function stillTally(summary: TournamentSummary): TallyBox[] {
+  const l = summary.left ?? { rounds: summary.pointsRemaining, prizes: 0, holes: 0, ctp: 0, ld: 0 };
+  const rounds = Math.max(0, summary.pointsRemaining - l.prizes - l.holes);
+  const out: TallyBox[] = [];
+  if (rounds > 0) out.push({ key: "rounds", value: fmtPts(rounds), label: "Rounds" });
+  if (l.ctp > 0) out.push({ key: "ctp", value: fmtPts(l.ctp), label: "Closest the pin" });
+  if (l.ld > 0) out.push({ key: "ld", value: fmtPts(l.ld), label: "Long drive" });
+  if (l.prizes > 0) out.push({ key: "prizes", value: fmtPts(l.prizes), label: "Prizes" });
+  const w = summary.win;
+  if (w.kind === "points" && !summary.complete)
+    for (const k of ["birdies", "eagles", "gir"] as const) if ((w.bonus?.[k] ?? 0) > 0) out.push({ key: k, value: `+${fmtPts(w.bonus![k]!)}`, label: EACH_LABEL[k] });
+  return out;
 }

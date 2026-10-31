@@ -715,7 +715,7 @@ export interface TournamentSummary {
   /** Points race: points won from prizes, per player (already in the totals) */
   prizePoints: Record<string, number>;
   /** What's still to play for, by where it comes from */
-  left: { rounds: number; prizes: number; holes: number };
+  left: { rounds: number; prizes: number; holes: number; ctp: number; ld: number };
 }
 
 /** Points on offer in a round (used for "points remaining"). */
@@ -1342,11 +1342,12 @@ export function openBonusWords(cfg: Pick<TournamentCfg, "win" | "standings" | "t
  * Closest the pin and long drive bonuses are a known number of points: one winner on each of those holes, in each
  * group. All of them, and those still to be decided.
  */
-function holeBonus(cfg: TournamentCfg, entriesByRound: Record<string, HoleEntry[]>): { all: number; left: number } {
+function holeBonus(cfg: TournamentCfg, entriesByRound: Record<string, HoleEntry[]>): { all: number; left: number; leftBy: { ctp: number; ld: number } } {
   const w = winRuleOf(cfg);
   let all = 0;
   let left = 0;
-  if (w.kind !== "points") return { all, left };
+  const leftBy = { ctp: 0, ld: 0 };
+  if (w.kind !== "points") return { all, left, leftBy };
   for (const kind of ["ctp", "ld"] as const) {
     const v = w.bonus?.[kind] ?? 0;
     if (!(v > 0)) continue;
@@ -1359,12 +1360,15 @@ function holeBonus(cfg: TournamentCfg, entriesByRound: Record<string, HoleEntry[
           if (r.closed) continue;
           const e = (entriesByRound[r.id] ?? []).find((x) => x.game === g.id && x.hole === n);
           const decided = !!e && ((kind === "ctp" ? e.ctpWinner : e.ldWinner) || ballsOfGame(g, r.play).every((b) => e.scores[b]?.gross != null || e.scores[b]?.pickedUp));
-          if (!decided) left += v;
+          if (!decided) {
+            left += v;
+            leftBy[kind] += v;
+          }
         }
       }
     }
   }
-  return { all, left };
+  return { all, left, leftBy };
 }
 
 export function tournamentSummary(cfg: TournamentCfg, entriesByRound: Record<string, HoleEntry[]>): TournamentSummary {
@@ -1487,6 +1491,6 @@ export function tournamentSummary(cfg: TournamentCfg, entriesByRound: Record<str
     bonus,
     bonusBy,
     prizePoints: prizePts,
-    left: { rounds: roundsLeft, prizes: prizePtsLeft, holes: holeBonusPts.left },
+    left: { rounds: roundsLeft, prizes: prizePtsLeft, holes: holeBonusPts.left, ctp: holeBonusPts.leftBy.ctp, ld: holeBonusPts.leftBy.ld },
   };
 }

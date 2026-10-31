@@ -498,7 +498,7 @@ describe("a two-player points race: what's on offer", () => {
     expect(sideGameHoles(chosen, r2, "ld")).toEqual([5, 9]);
     const s0 = tournamentSummary(chosen, {});
     expect(s0.pointsAvailable).toBe(38 + 20 + 2 + 2 * 3 + 6 * 3);
-    expect(s0.left).toEqual({ rounds: 58, prizes: 2, holes: 24 });
+    expect(s0.left).toEqual({ rounds: 58, prizes: 2, holes: 24, ctp: 6, ld: 18 });
     // Won on the 3rd counts; won on the 7th (not chosen) doesn't
     const e1 = entries("g1", { o: flat(0), n: flat(1) }).filter((e) => e.hole <= 7);
     e1[2].ctpWinner = "n";
