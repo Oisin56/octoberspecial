@@ -103,3 +103,17 @@ export function roundToScore(s: S, who: { playerId?: string | null } | null | un
   };
   return rounds.find((r) => !doneFor(r)) ?? null;
 }
+
+/**
+ * A round this person can start now: their next round to play hasn't begun (nobody has entered a score). Shown as
+ * "Start round 2, Glenlo" on the tournament home, the organiser's page and the bar. Players in a group of that
+ * round, and the organiser.
+ */
+export function roundToStart(s: S, who: { role?: string; playerId?: string | null } | null | undefined): RoundRow | null {
+  if (!who) return null;
+  const r = roundToScore(s, who);
+  if (!r || r.status !== "upcoming") return null;
+  if (who.role === "organiser") return r;
+  const games = toRoundCfg(r, s.players).games;
+  return games.some((g) => !!who.playerId && g.sides.some((sd) => sd.playerIds.includes(who.playerId!))) ? r : null;
+}

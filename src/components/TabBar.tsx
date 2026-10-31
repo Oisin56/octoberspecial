@@ -6,7 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useT, type ClientSession } from "./Providers";
 import { currentHole } from "@/lib/scorePos";
 import { landingPath, liveRound, scoresToday } from "@/lib/landing";
-import { roundToScore } from "@/lib/scorecards";
+import { roundToScore, roundToStart } from "@/lib/scorecards";
 
 /**
  * The bar at the foot of every tournament page on a phone: five big buttons, set by who you are.
@@ -28,6 +28,8 @@ export function TabBar() {
     return mine?.status === "live" ? mine : liveRound(state);
   }, [state, session]);
   const onCourse = !!(live && crew);
+  // Nothing under way for you: your next round, to start
+  const start = useMemo(() => (!onCourse && state && crew ? roundToStart(state, session) : null), [onCourse, state, crew, session]);
 
   // Follow the scorer's hole (it's saved as they move)
   useEffect(() => {
@@ -82,6 +84,14 @@ export function TabBar() {
       { k: "record", label: video ? "Record" : "Photo", to: video ? `/record?${where}` : `/post?${where}&from=course`, cls: "oc-record" },
       { k: "note", label: "Detail", to: `/shots?${where}` },
       { k: "live", label: "Live", to: "/live" },
+    ];
+  } else if (start) {
+    // Your next round hasn't started: Score starts it
+    items = [
+      { k: "home", label: "Home", to: "/" },
+      { k: "score", label: "Score", to: `/score?round=${start.number}` },
+      { k: "live", label: "Live", to: "/live" },
+      session?.role === "organiser" ? { k: "admin", label: "Organiser", to: "/admin" } : { k: "board", label: "Leaderboard", to: "/leaderboard" },
     ];
   } else if (session?.role === "organiser") {
     items = [

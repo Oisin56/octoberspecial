@@ -14,6 +14,7 @@ import { roundPointsAvailable } from "@/lib/engine";
 import { CourseImage, PhotoCredit, useCountdown } from "@/components/visual";
 import type { RoundRow, TournamentState } from "@/lib/types";
 import { RoundPage, TripPage } from "@/components/TripPage";
+import { roundToStart } from "@/lib/scorecards";
 
 export default function Home() {
   const { state, summary, href, session } = useT();
@@ -168,8 +169,10 @@ function HomeHero({
   complete: boolean;
   liveLabel: string | null;
 }) {
-  const { href } = useT();
+  const { href, session } = useT();
   const countdown = useCountdown(next && !live ? next.play_date : null, next && !live ? next.tee_time : null);
+  // Your next round hasn't started: start it here
+  const start = roundToStart(state, session);
   const focus = live ?? next ?? lastDone;
   const t = state.tournament;
   return (
@@ -202,6 +205,11 @@ function HomeHero({
         <h1 className="hero-title">{t.name}</h1>
         {t.subtitle && <p className="hero-sub">{t.subtitle}</p>}
         <div className="hero-actions">
+          {start && (
+            <Link className="btn glow hero-start" href={href(`/score?round=${start.number}`)}>
+              Start round {start.number}, {start.course_name}
+            </Link>
+          )}
           {live ? (
             <Link className="btn glow" href={href("/live")}>
               Follow it live

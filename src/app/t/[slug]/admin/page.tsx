@@ -22,7 +22,7 @@ import { EmailTab, useSubscribers } from "@/components/EmailAdmin";
 import { Writer, WRITE_TYPES, type WriteType } from "@/components/Writer";
 import { useCountdown } from "@/components/visual";
 import { THEMES, TONE_LABEL, toRoundCfg, type SetupJob } from "@/lib/types";
-import { cardInfo } from "@/lib/scorecards";
+import { cardInfo, roundToStart } from "@/lib/scorecards";
 import { CardsAdmin } from "@/components/CardsAdmin";
 import { BroadcastSettings } from "@/components/BroadcastSettings";
 import { FinishCard, FinishSettings, longDay } from "@/components/FinishPanel";
@@ -131,7 +131,7 @@ export default function Admin() {
 // ------------------------------------------------------------ home
 
 function OrganiserHome({ data, onSaved }: { data: AdminData; onSaved: () => void }) {
-  const { href } = useT();
+  const { href, session } = useT();
   const subs = useSubscribers();
   const st = data.state;
   const t = st.tournament;
@@ -178,6 +178,9 @@ function OrganiserHome({ data, onSaved }: { data: AdminData; onSaved: () => void
   if (filmReady && !filmMade) todo.unshift({ text: "The tournament is over. Time for the film.", action: "Make the film", to: href("/film"), external: true });
   if (flagged.length) todo.push({ text: `${flagged[0].info.flag!.by} says something's not right on a round ${flagged[0].round.number} card.`, action: "Check the cards", to: "#cards" });
   if (live) todo.push({ text: `Round ${live.number} at ${live.course_name} is under way.`, action: "Enter scores", to: href(`/score?round=${live.number}`), external: true });
+  // The next round hasn't started: the first thing on the list
+  const start = roundToStart(st, session);
+  if (start) todo.unshift({ text: `Round ${start.number} at ${start.course_name} is next.`, action: `Start round ${start.number}`, to: href(`/score?round=${start.number}`), external: true });
   const lastDone = complete[complete.length - 1];
   const aiOn = t.ai_on !== false;
   if (aiOn && lastDone && !pieces.some((p) => p.kind === "report" && p.round_id === lastDone.id && p.status === "published")) {

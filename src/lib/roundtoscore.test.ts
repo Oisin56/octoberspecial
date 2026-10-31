@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { roundToScore } from "./scorecards";
+import { roundToScore, roundToStart } from "./scorecards";
 import type { TournamentState } from "./types";
 
 const holes = Array.from({ length: 18 }, (_, i) => ({ number: i + 1, par: 4, si: i + 1 }));
@@ -25,5 +25,12 @@ describe("which round Score opens", () => {
   });
   it("round 1 finished: round 2", () => {
     expect(roundToScore(base([], "complete"), { playerId: "o" })?.number).toBe(2);
+  });
+  it("round 2 to start: for a player in it and the organiser, not a follower, and not while it's under way", () => {
+    const done = base([], "complete");
+    expect(roundToStart(done, { role: "player", playerId: "o" })?.number).toBe(2);
+    expect(roundToStart(done, { role: "organiser", playerId: null })?.number).toBe(2);
+    expect(roundToStart(done, { role: "fan", playerId: null })).toBeNull();
+    expect(roundToStart(base([]), { role: "player", playerId: "o" })).toBeNull();
   });
 });
