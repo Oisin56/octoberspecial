@@ -2,7 +2,7 @@
 
 import { useT } from "@/components/Providers";
 import { Loading, pts } from "@/components/ui";
-import { acrossField, bonusOn, roundPointsAvailable, stageName } from "@/lib/engine";
+import { acrossField, bonusOn, openBonusWords, roundPointsAvailable, stageName } from "@/lib/engine";
 import { PRIZE_NAME, prizeHolesText } from "@/lib/boards";
 import { PLAY_LABEL, SCORING_LABEL, SIDE_GAME_LABEL, toRoundCfg } from "@/lib/types";
 
@@ -54,7 +54,7 @@ export default function Rules() {
       case "matches":
         return `Matches won: every match is worth points to its team (below). ${pts(summary.pointsAvailable)} points in all; the team with the most wins.`;
       default:
-        return `A points race: points from every round${(cfg.prizes ?? []).some((p) => (p.points ?? 0) > 0) ? " and the prizes" : ""} (below), ${pts(summary.pointsAvailable)} in all${bonusOn(cfg) ? ", plus the bonus points" : ""}. Most points wins.`;
+        return `A points race: points from every round${(cfg.prizes ?? []).some((p) => (p.points ?? 0) > 0) ? " and the prizes" : ""}${win.kind === "points" && ((win.bonus?.ctp ?? 0) > 0 || (win.bonus?.ld ?? 0) > 0) ? ", closest the pin and long drive" : ""} (below), ${pts(summary.pointsAvailable)} in all${bonusOn(cfg) ? `, plus the bonus points for ${openBonusWords(cfg)}` : ""}. Most points wins.`;
     }
   })();
   const bonus = win.kind === "points" && win.bonus ? (Object.entries(win.bonus) as [string, number][]).filter(([, v]) => v > 0) : [];

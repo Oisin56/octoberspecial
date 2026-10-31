@@ -6,7 +6,7 @@ import { cleanBody, cleanTitle } from "@/lib/cleanText";
 import { cardInfo, cardLabel } from "@/lib/scorecards";
 import { liveLine, roundBoard, standings, toPar, totalsView, type TotalsView } from "@/lib/live";
 import { CountUp, CourseImage, Icon } from "./visual";
-import { ballsOfGame, bonusOn, gameHole, holeShots, isNine, roundPointsAvailable, type Game, type GameSummary, type SegmentResult } from "@/lib/engine";
+import { ballsOfGame, bonusOn, openBonusWords, gameHole, holeShots, isNine, roundPointsAvailable, type Game, type GameSummary, type SegmentResult } from "@/lib/engine";
 import { winBoard } from "@/lib/boards";
 import { WinBoardView } from "@/components/WinBoards";
 import {
@@ -207,7 +207,7 @@ export function Board() {
 
       <div className="board-foot">
         <span>
-          <b className="num">{pts(summary.pointsRemaining)}</b> points still to play for{open ? ", plus bonus points" : ""}
+          <b className="num">{pts(summary.pointsRemaining)}</b> points still to play for{open ? `, plus the bonus points for ${openBonusWords(cfg)}` : ""}
         </span>
         {live && liveLabel && (
           <span>

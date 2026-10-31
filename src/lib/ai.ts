@@ -119,6 +119,7 @@ export function guideText(r: RoundRow, focus?: number[]): string | null {
 }
 
 const fmt = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
+const bonusWordsPlural = (k: string) => (k === "ctp" ? "closest the pin" : "long drive");
 
 function playerProfiles(s: TournamentState) {
   const team = (id: string | null) => s.tournament.teams.find((t) => t.id === id)?.name;
@@ -191,9 +192,11 @@ function standingsText(s: TournamentState) {
   } else {
     const bonus = t.win.kind === "points" && t.win.bonus ? Object.entries(t.win.bonus).filter(([, v]) => (v ?? 0) > 0) : [];
     const bonusWords: Record<string, string> = { birdies: "birdie", eagles: "eagle", gir: "green in regulation", ctp: "closest the pin won", ld: "long drive won" };
+    const fixed = bonus.filter(([k]) => k === "ctp" || k === "ld");
+    const open = bonus.filter(([k]) => k !== "ctp" && k !== "ld");
     lines.push(
-      `Tournament: ${s.tournament.name}. ${fmt(t.pointsAvailable)} points available from the rounds${(cfg.prizes ?? []).some((p) => (p.points ?? 0) > 0) ? " and the prizes" : ""}; ${fmt(t.pointsRemaining)} of them still to be decided.` +
-        (bonus.length ? ` On top of those, bonus points with no limit: ${bonus.map(([k, v]) => `${fmt(v as number)} for each ${bonusWords[k] ?? k}`).join(", ")}. Never say how many points are left to win in total.` : ""),
+      `Tournament: ${s.tournament.name}. ${fmt(t.pointsAvailable)} points available from the rounds${(cfg.prizes ?? []).some((p) => (p.points ?? 0) > 0) ? ", the prizes" : ""}${fixed.length ? ` and the bonuses for ${fixed.map(([k, v]) => `${bonusWordsPlural(k)} (${fmt(v as number)} each)`).join(" and ")}` : ""}; ${fmt(t.pointsRemaining)} of them still to be decided.` +
+        (open.length ? ` On top of those, bonus points with no limit: ${open.map(([k, v]) => `${fmt(v as number)} for each ${bonusWords[k] ?? k}`).join(", ")}. Never say how many points are left to win in total.` : ""),
     );
   }
   if (cfg.teams.length) {

@@ -4,6 +4,7 @@ import {
   tournamentSummary,
   roundPointsAvailable,
   bonusOn,
+  openBonusWords,
   roundSummary,
   gameShots,
   oneBallHandicap,
@@ -459,16 +460,26 @@ describe("a two-player points race: what's on offer", () => {
     sideGames: [],
     sideGamesBy: "player",
     rounds: [r1, r2],
-    win: { kind: "points", bonus: { birdies: 1, eagles: 2, gir: 1, ld: 1 } },
+    win: { kind: "points", bonus: { birdies: 2, eagles: 5, ctp: 3, ld: 3 } },
     prizes: [{ kind: "gir", per: "trip", points: 2 }],
   };
-  it("38 for round 1, 20 for the 9-hole match, 2 for the prize: 60, with bonuses on top", () => {
+  it("38 for round 1, 20 for the 9-hole match, 2 for the prize, and 3 for every closest the pin and long drive", () => {
     expect(roundPointsAvailable(r1)).toBe(38);
     expect(roundPointsAvailable(r2)).toBe(20);
     const s = tournamentSummary(cfg, {});
-    expect(s.pointsAvailable).toBe(60);
-    expect(s.pointsRemaining).toBe(60);
+    // Par 3s: 4 in round 1, 2 on the front nine; par 5s the same. 6 × 3 + 6 × 3 = 36
+    expect(s.pointsAvailable).toBe(38 + 20 + 2 + 36);
+    expect(s.pointsRemaining).toBe(96);
+    // Birdies and eagles have no ceiling: they come on top
     expect(bonusOn(cfg)).toBe(true);
+    expect(openBonusWords(cfg)).toBe("birdies and eagles");
+  });
+  it("a closest the pin won counts in the total, and is no longer to play for", () => {
+    const e1 = entries("g1", { o: flat(0), n: flat(1) }).filter((e) => e.hole <= 3);
+    e1[2].ctpWinner = "n";
+    const s = tournamentSummary(cfg, { r1: e1 });
+    expect(s.bonus).toEqual({ o: 0, n: 3 });
+    expect(s.pointsRemaining).toBe(96 - 3);
   });
   it("the stroke play winner takes the 18 and the nines; the prize's 2 are decided at the end", () => {
     const e1 = entries("g1", { o: flat(0), n: flat(1) });

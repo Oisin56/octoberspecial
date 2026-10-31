@@ -1308,11 +1308,47 @@ export function prizeResults(
   return out;
 }
 
-/** A points race with bonus points (each birdie, eagle…): the total can't be known in advance */
-export const bonusOn = (cfg: Pick<TournamentCfg, "win" | "standings" | "teams">) => {
+/** Bonus points with no ceiling (each birdie, eagle, green in regulation): nobody knows in advance how many there'll be */
+const OPEN_BONUS: BonusKind[] = ["birdies", "eagles", "gir"];
+export function openBonus(cfg: Pick<TournamentCfg, "win" | "standings" | "teams">): BonusKind[] {
   const w = winRuleOf(cfg);
-  return w.kind === "points" && Object.values(w.bonus ?? {}).some((v) => (v ?? 0) > 0);
-};
+  return w.kind === "points" ? OPEN_BONUS.filter((k) => (w.bonus?.[k] ?? 0) > 0) : [];
+}
+export const bonusOn = (cfg: Pick<TournamentCfg, "win" | "standings" | "teams">) => openBonus(cfg).length > 0;
+/** "birdies and eagles": the open-ended bonuses, in words */
+export function openBonusWords(cfg: Pick<TournamentCfg, "win" | "standings" | "teams">): string {
+  const w = openBonus(cfg).map((k) => ({ birdies: "birdies", eagles: "eagles", gir: "greens in regulation" })[k as "birdies" | "eagles" | "gir"]);
+  return w.length < 2 ? w.join("") : `${w.slice(0, -1).join(", ")} and ${w[w.length - 1]}`;
+}
+
+/**
+ * Closest the pin and long drive bonuses are a known number of points: one winner on each of those holes, in each
+ * group. All of them, and those still to be decided.
+ */
+function holeBonus(cfg: TournamentCfg, entriesByRound: Record<string, HoleEntry[]>): { all: number; left: number } {
+  const w = winRuleOf(cfg);
+  let all = 0;
+  let left = 0;
+  if (w.kind !== "points") return { all, left };
+  for (const kind of ["ctp", "ld"] as const) {
+    const v = w.bonus?.[kind] ?? 0;
+    if (!(v > 0)) continue;
+    for (const r of cfg.rounds) {
+      const holes = sideGameHoles(cfg, r, kind);
+      for (const g of r.games) {
+        if (g.free) continue;
+        for (const n of holes) {
+          all += v;
+          if (r.closed) continue;
+          const e = (entriesByRound[r.id] ?? []).find((x) => x.game === g.id && x.hole === n);
+          const decided = !!e && ((kind === "ctp" ? e.ctpWinner : e.ldWinner) || ballsOfGame(g, r.play).every((b) => e.scores[b]?.gross != null || e.scores[b]?.pickedUp));
+          if (!decided) left += v;
+        }
+      }
+    }
+  }
+  return { all, left };
+}
 
 export function tournamentSummary(cfg: TournamentCfg, entriesByRound: Record<string, HoleEntry[]>): TournamentSummary {
   const pids = cfg.players.map((p) => p.id);
@@ -1373,7 +1409,8 @@ export function tournamentSummary(cfg: TournamentCfg, entriesByRound: Record<str
   // Prizes that count as points: each one's points, once per time it's awarded (each round, each nine, or the trip)
   const prizePtsOn = prizes.reduce((a, pr) => a + (cfg.prizes ?? []).filter((p) => p.kind === pr.kind && (p.points ?? 0) > 0).reduce((x, p) => x + (p.points ?? 0), 0), 0);
   const prizePtsLeft = prizes.filter((pr) => !pr.decided).reduce((a, pr) => a + (cfg.prizes ?? []).filter((p) => p.kind === pr.kind && (p.points ?? 0) > 0).reduce((x, p) => x + (p.points ?? 0), 0), 0);
-  const pointsAvailable = cfg.rounds.reduce((t, r) => t + roundPointsAvailable(r), 0) + sideGamePts + prizePtsOn;
+  const holeBonusPts = holeBonus(cfg, entriesByRound);
+  const pointsAvailable = cfg.rounds.reduce((t, r) => t + roundPointsAvailable(r), 0) + sideGamePts + prizePtsOn + holeBonusPts.all;
 
   let pointsRemaining = 0;
   cfg.rounds.forEach((r, i) => {
@@ -1398,7 +1435,7 @@ export function tournamentSummary(cfg: TournamentCfg, entriesByRound: Record<str
     if (acrossField(r) && !rs.games.every((g, gi) => g.full.complete || r.games[gi]?.free)) pointsRemaining += (r.points.positions ?? []).reduce((a, b) => a + b, 0);
   });
   if (!complete) pointsRemaining += sideGamePts;
-  pointsRemaining += prizePtsLeft;
+  pointsRemaining += prizePtsLeft + holeBonusPts.left;
 
   return {
     rounds,
