@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import * as old from "./scoring";
 import {
   tournamentSummary,
+  sideGameHoles,
   roundPointsAvailable,
   bonusOn,
   openBonusWords,
@@ -489,5 +490,23 @@ describe("a two-player points race: what's on offer", () => {
     expect(s.rounds[1].playerPoints).toEqual({ o: 0, n: 20 });
     expect(s.complete).toBe(true);
     expect(s.pointsRemaining).toBe(0);
+  });
+  it("closest the pin on chosen holes only: two in round 1, none in round 2", () => {
+    const chosen: TournamentCfg = { ...cfg, win: { kind: "points", bonus: { birdies: 2, eagles: 5, ctp: 3, ld: 3 }, bonusHoles: { ctp: { "1": [3, 12], "2": [] } } } };
+    expect(sideGameHoles(chosen, r1, "ctp")).toEqual([3, 12]);
+    expect(sideGameHoles(chosen, r2, "ctp")).toEqual([]);
+    expect(sideGameHoles(chosen, r2, "ld")).toEqual([5, 9]);
+    const s0 = tournamentSummary(chosen, {});
+    expect(s0.pointsAvailable).toBe(38 + 20 + 2 + 2 * 3 + 6 * 3);
+    expect(s0.left).toEqual({ rounds: 58, prizes: 2, holes: 24 });
+    // Won on the 3rd counts; won on the 7th (not chosen) doesn't
+    const e1 = entries("g1", { o: flat(0), n: flat(1) }).filter((e) => e.hole <= 7);
+    e1[2].ctpWinner = "n";
+    e1[6].ctpWinner = "o";
+    e1[4].ldWinner = "o";
+    const s = tournamentSummary(chosen, { r1: e1 });
+    expect(s.bonus).toEqual({ o: 3, n: 3 });
+    expect(s.bonusBy).toEqual({ o: { ld: 3 }, n: { ctp: 3 } });
+    expect(s.left.holes).toBe(24 - 3 - 3);
   });
 });

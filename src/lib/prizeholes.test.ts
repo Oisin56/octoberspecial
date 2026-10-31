@@ -25,9 +25,17 @@ describe("closest the pin and long drive: which holes", () => {
     const cfg: Pick<TournamentCfg, "win" | "prizes"> = { win: { kind: "stableford" }, prizes: [{ kind: "ctp", per: "trip", holesByRound: { "2": [4, 7] } }] };
     expect(sideGameHoles(cfg, round, "ctp")).toEqual([7]);
   });
-  it("a points race bonus for each one won: every par 5", () => {
+  it("a points race bonus for each one won: every par 5, or the holes chosen (the same as the prize's)", () => {
+    expect(sideGameHoles({ win: { kind: "points", bonus: { ld: 1 } }, prizes: [] }, round, "ld")).toEqual([4, 9, 13, 18]);
     const cfg: Pick<TournamentCfg, "win" | "prizes"> = { win: { kind: "points", bonus: { ld: 1 } }, prizes: [{ kind: "ld", per: "trip", holesByRound: { "2": [4] } }] };
-    expect(sideGameHoles(cfg, round, "ld")).toEqual([4, 9, 13, 18]);
+    expect(sideGameHoles(cfg, round, "ld")).toEqual([4]);
+    const own: Pick<TournamentCfg, "win" | "prizes"> = { win: { kind: "points", bonus: { ld: 1 }, bonusHoles: { ld: { "2": [9, 18] } } }, prizes: [] };
+    expect(sideGameHoles(own, round, "ld")).toEqual([9, 18]);
+  });
+  it("not in this round: an empty choice", () => {
+    const cfg: Pick<TournamentCfg, "win" | "prizes"> = { win: { kind: "stableford" }, prizes: [{ kind: "ctp", per: "trip", holesByRound: { "2": [] } }] };
+    expect(sideGameHoles(cfg, round, "ctp")).toEqual([]);
+    expect(sideGameHoles(cfg, { ...round, number: 1 }, "ctp")).toEqual([3, 7, 12, 16]);
   });
 });
 

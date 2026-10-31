@@ -1108,6 +1108,10 @@ table.card.compact .shotdot { display: none; }
 .tb-state { display: grid; justify-items: center; gap: 6px; }
 .tb-state .tile { font-family: var(--font-display); font-weight: 700; font-size: clamp(34px, 8vw, 54px); color: var(--ink); white-space: nowrap; text-align: center; }
 .tb-state.up .tile { color: var(--red); box-shadow: 0 0 0 2px var(--gold), 0 0 26px -4px color-mix(in srgb, var(--gold) 70%, transparent), 0 10px 20px -10px rgba(0,0,0,0.6); }
+/* Points race: under each name, where the points came from */
+.board-who { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.board-break { font-family: var(--font-display); font-size: 17px; font-weight: 500; line-height: 1.3; color: var(--board-soft); }
+.board-left { line-height: 1.4; }
 .tb-small { font-family: var(--font-display); font-size: 17px; font-weight: 600; color: var(--board-soft); white-space: nowrap; }
 .tb-card { margin: 12px 0 0; font-family: var(--font-display); font-size: 15px; color: var(--board-soft); text-align: center; }
 .tb-session { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 4px 0 12px; }
@@ -1523,7 +1527,7 @@ html.has-tabbar .made-with { display: none; }
 [data-board="light"] .board .tile.red, [data-board="light"] .board-row.lead .tile { color: var(--red); box-shadow: inset 0 0 0 2px var(--red); }
 [data-board="light"] .lead-tag { background: var(--sb-ink); color: var(--sb-bg); }
 [data-board="light"] .board-foot, [data-board="light"] .board-pos, [data-board="light"] .board-sub, [data-board="light"] .board-split .k,
-[data-board="light"] .muted-on-dark, [data-board="light"] .tug-labels, [data-board="light"] .board-proj, [data-board="light"] .tb-small, [data-board="light"] .tb-card { color: var(--sb-soft); }
+[data-board="light"] .muted-on-dark, [data-board="light"] .board-break, [data-board="light"] .tug-labels, [data-board="light"] .board-proj, [data-board="light"] .tb-small, [data-board="light"] .tb-card { color: var(--sb-soft); }
 [data-board="light"] .board-foot b, [data-board="light"] .board-proj-v b, [data-board="light"] .board-split .v { color: var(--sb-ink); }
 [data-board="light"] .board-proj { background: var(--sb-wash); }
 [data-board="light"] .board-split > div.award { background: var(--sb-wash); border-color: var(--sb-line); }
@@ -2407,6 +2411,21 @@ textarea.fr-input { resize: vertical; }
 .prize-s { grid-column: 2; grid-row: 1 / span 2; align-self: center; font-size: 14px; font-weight: 700; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--rule); color: var(--ink-soft); }
 .prize-s.prize-won { background: var(--board); color: #fff; border-color: var(--board); }
 .wz-prize-holes { display: grid; gap: 10px; margin-top: 10px; }
+/* Side games: an opened tile, a question at a time */
+.wz-side-body { display: grid; gap: 16px; border-top: 1px solid var(--rule); padding-top: 14px; }
+.wz-side-q { display: grid; gap: 8px; }
+.wz-side-k { margin: 0; font-family: var(--font-display); font-size: 18px; font-weight: 700; color: var(--ink); }
+.wz-choice { display: grid; gap: 8px; }
+.wz-choice .pick-tile { text-align: left; padding: 10px 16px; }
+.wz-side-end { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.wz-side-end .btn { width: 100%; min-height: 52px; }
+.wz-side-total { margin: 14px 0 0; font-size: 17px; line-height: 1.45; color: var(--ink-soft); }
+.wz-holes-group { display: grid; gap: 10px; }
+.wz-holes-pick { display: grid; gap: 8px; }
+.wz-holes-pick .pick-tiles .pick-tile { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; line-height: 1.1; min-height: 64px; }
+.wz-holes-pick .pick-tile .wz-played { font-size: 12px; font-weight: 600; opacity: 0.8; }
+.wz-holes-pick .pick-tile:disabled { cursor: default; opacity: 0.75; }
+.wz-not-in { justify-self: start; min-height: 48px; padding: 0 18px; font-size: 17px; }
 .wz-holes-pick .pick-tiles { grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); }
 .wz-holes-pick .pick-tile small { font-weight: 500; opacity: 0.75; }
 .wz-holes-pick p { margin: 0 0 6px; }

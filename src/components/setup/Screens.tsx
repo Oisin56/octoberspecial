@@ -8,6 +8,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { CardTable } from "@/components/editors";
 import { LIGHT_BOARD, THEMES, TONE_LABEL, type HoleSet, type Tone } from "@/lib/types";
 import { bracketSize, type BonusKind, type Prize, type PrizeKind } from "@/lib/engine";
+import { CAN_POINTS, CAN_PRIZE, SIDE_KINDS, SIDE_NAME, and, onTopLine, ordinal, parHoles, sideLine, type SideKind, type SideRound, type SideSetup } from "@/lib/sidegames";
 import {
   FORMAT_NAMES,
   MAX_PLAYERS,
@@ -801,14 +802,6 @@ export function HandicapScreen({ d, set, done, i, nextLabel }: StepProps & { i: 
 
 // ------------------------------------------------------------------ points
 
-const BONUS: [BonusKind, string][] = [
-  ["birdies", "Each birdie"],
-  ["eagles", "Each eagle"],
-  ["gir", "Each green in regulation"],
-  ["ctp", "Each closest the pin won"],
-  ["ld", "Each long drive won"],
-];
-
 export function PointsScreen({ d, set, done, nextLabel }: StepProps) {
   const n = named(d).length || 8;
   const rounds = settle(d).rounds;
@@ -883,19 +876,6 @@ export function PointsScreen({ d, set, done, nextLabel }: StepProps) {
             </div>
           );
         })}
-        {d.win === "points" && (
-          <div className="wz-pt">
-            <div className="wz-pt-h">
-              <strong>Bonus points</strong> <span className="muted">all off to start</span>
-            </div>
-            {BONUS.map(([k, label]) => (
-              <div className="wz-pt-row" key={k}>
-                <span>{label}</span>
-                <Stepper value={d.bonus[k] ?? 0} label={label} fmt={(v) => (v ? (Number.isInteger(v) ? String(v) : `${Math.floor(v)}½`) : "Off")} onChange={(v) => set((x) => ({ ...x, bonus: { ...x.bonus, [k]: v } }))} />
-              </div>
-            ))}
-          </div>
-        )}
       </div>
       <Next onClick={() => done()} label={nextLabel} />
     </Screen>
@@ -1113,119 +1093,286 @@ export function GroupsScreen({ d, set, done, nextLabel, editing }: StepProps) {
   );
 }
 
-// ------------------------------------------------------------------ prizes
+// ------------------------------------------------------------------ side games
 
-const PRIZE_LIST: { kind: PrizeKind; name: string; note: string; perRound: boolean }[] = [
-  { kind: "ctp", name: "Closest the pin", note: "Nearest the hole from the tee, on the par 3s", perRound: true },
-  { kind: "ld", name: "Long drive", note: "Longest drive on the fairway, on the par 5s", perRound: true },
-  { kind: "nines", name: "Front 9 and back 9", note: "Best score on each nine, every round", perRound: false },
-  { kind: "birdies", name: "Most birdies", note: "Gross birdies", perRound: true },
-  { kind: "gir", name: "Most greens in regulation", note: "On in par minus two", perRound: true },
-  { kind: "skins", name: "Skins", note: "Holes won outright, ties carried over", perRound: true },
-  { kind: "bestround", name: "Best round", note: "The best single round", perRound: true },
-];
+const SIDE_NOTE: Record<SideKind, string> = {
+  ctp: "Nearest the hole from the tee, on the par 3s",
+  ld: "Longest drive on the fairway, on the par 5s",
+  birdies: "Gross birdies",
+  eagles: "Gross eagles",
+  gir: "On in par minus two",
+  nines: "Best score on each nine",
+  skins: "Holes won outright, ties carried over",
+  bestround: "The best single round",
+};
+const EACH: Record<string, string> = { ctp: "For each closest the pin won", ld: "For each long drive won", birdies: "For each birdie", eagles: "For each eagle", gir: "For each green in regulation" };
+const PER_ROUND: SideKind[] = ["ctp", "ld", "birdies", "gir", "skins", "bestround"];
 
-export function PrizesScreen({ d, set, done, nextLabel }: StepProps) {
-  const has = (k: PrizeKind) => d.prizes.find((p) => p.kind === k);
-  const put = (k: PrizeKind, p: Partial<Prize> | null) =>
-    set((x) => ({ ...x, prizes: p === null ? x.prizes.filter((q) => q.kind !== k) : x.prizes.some((q) => q.kind === k) ? x.prizes.map((q) => (q.kind === k ? { ...q, ...p } : q)) : [...x.prizes, { kind: k, per: k === "nines" ? "round" : "trip", ...p }] }));
-  const list = PRIZE_LIST.filter((p) => !(p.kind === "skins" && d.win === "skins"));
+/** The draft's rounds as the side games see them: the holes played (with par and yards), the course, the groups */
+function sideRounds(d: Draft): (SideRound & { key: string })[] {
+  const out: (SideRound & { key: string })[] = [];
+  settle(d).rounds.forEach((r, i) => {
+    const tee = r.tees?.find((t) => t.name === r.tee) ?? r.tees?.[0];
+    const card = tee ? tee.par.map((p, k) => ({ par: p, yards: tee.yards[k] ?? 0 })) : r.manual ? (r.manualCard ?? []).map((h) => ({ par: h.par, yards: 0 })) : (r.card ?? []).map((h) => ({ par: h.par, yards: h.yards ?? 0 }));
+    const nine = card.length === 18 && r.holeSet !== "all" ? r.holeSet : null;
+    const holes = card.map((h, k) => ({ number: k + 1, par: h.par, yards: h.yards })).filter((h) => !nine || (nine === "front" ? h.number <= 9 : h.number >= 10));
+    out.push({ number: i + 1, course: r.courseName, holes, nine, games: r.format ? boxesFor(d, r.format).length : 1, key: `${r.courseRef ?? r.courseName}|${r.tee ?? ""}|${r.holeSet}` });
+  });
+  return out;
+}
+
+export function sideSetupOfDraft(d: Draft): SideSetup {
+  return { race: d.win === "points", bonus: d.bonus ?? {}, prizes: d.prizes ?? [], holes: d.sideHoles ?? {}, rounds: sideRounds(d) };
+}
+
+/** Stacked big buttons, one answer */
+function Choice<T extends string>({ value, options, onChange, label }: { value: T | null; options: [T, string][]; onChange: (v: T) => void; label: string }) {
   return (
-    <Screen q="Any prizes?" hint="Tick the ones you play for. They're shown beside the leaderboard and don't change the standings.">
+    <div className="wz-choice" role="group" aria-label={label}>
+      {options.map(([v, l]) => (
+        <button key={v} type="button" className="pick-tile" aria-pressed={value === v} onClick={() => onChange(v)}>
+          {l}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Side games: one screen for everything played alongside the rounds. Each is ticked, then answered right under its
+ * tile (in a points race: points for each one, a prize for the most, or both), then folds to one line.
+ * `played`: when changing a tournament, the holes already played in each round (round number → holes); those stay.
+ */
+export function SideGamesScreen({ d, set, done, nextLabel, played }: StepProps & { played?: Record<string, number[]> }) {
+  const race = d.win === "points";
+  const s = sideSetupOfDraft(d);
+  const [open, setOpen] = useState<SideKind | null>(null);
+  const kinds = SIDE_KINDS.filter((k) => (race || CAN_PRIZE.includes(k)) && !(k === "skins" && d.win === "skins") && !(k === "nines" && !s.rounds.some((r) => r.holes.length === 18)));
+  const multi = (d.count ?? d.rounds.length) > 1;
+
+  const prizeOf = (k: SideKind) => d.prizes.find((p) => p.kind === k);
+  const putPrize = (x: Draft, k: SideKind, p: Partial<Prize> | null): Draft => {
+    if (!CAN_PRIZE.includes(k)) return x;
+    const kind = k as PrizeKind;
+    const has = x.prizes.some((q) => q.kind === kind);
+    const prizes = p === null ? x.prizes.filter((q) => q.kind !== kind) : has ? x.prizes.map((q) => (q.kind === kind ? { ...q, ...p } : q)) : [...x.prizes, { kind, per: kind === "nines" ? "round" : "trip", ...p } as Prize];
+    return { ...x, prizes };
+  };
+  const putBonus = (x: Draft, k: SideKind, v: number): Draft => (CAN_POINTS.includes(k) ? { ...x, bonus: { ...x.bonus, [k]: v } } : x);
+  const startPts = (k: SideKind) => (k === "eagles" ? 2 : 1);
+  type Mode = "points" | "prize" | "both";
+  const modeOf = (k: SideKind): Mode | null => {
+    const pts = race && (d.bonus[k as BonusKind] ?? 0) > 0;
+    const pr = !!prizeOf(k);
+    return pts && pr ? "both" : pts ? "points" : pr ? "prize" : null;
+  };
+  const setMode = (k: SideKind, m: Mode) =>
+    set((x) => {
+      let y = putBonus(x, k, m === "prize" ? 0 : (x.bonus[k as BonusKind] ?? 0) > 0 ? x.bonus[k as BonusKind]! : startPts(k));
+      y = m === "points" ? putPrize(y, k, null) : prizeOf(k) ? y : putPrize(y, k, {});
+      return y;
+    });
+  const tick = (k: SideKind) => {
+    if (modeOf(k)) return setOpen(open === k ? null : k);
+    // Ticked: points for each one in a points race, otherwise a prize
+    setMode(k, race && CAN_POINTS.includes(k) ? "points" : "prize");
+    setOpen(k);
+  };
+  const untick = (k: SideKind) => {
+    set((x) => {
+      const y = putPrize(putBonus(x, k, 0), k, null);
+      if (k !== "ctp" && k !== "ld") return y;
+      const holes = { ...(y.sideHoles ?? {}) };
+      delete holes[k];
+      return { ...y, sideHoles: holes };
+    });
+    setOpen(null);
+  };
+
+  const on = kinds.filter((k) => modeOf(k));
+  const total = onTopLine(s);
+  return (
+    <Screen q="Side games" hint="Played alongside the rounds. Tick the ones you want.">
       <div className="wz-prizes">
-        {list.map((p) => {
-          const on = has(p.kind);
+        {kinds.map((k) => {
+          const m = modeOf(k);
+          const isOpen = open === k && !!m;
+          const rest = m ? sideLine(s, k)?.slice(SIDE_NAME[k].length + 2) : null;
+          const line = rest ? rest[0].toUpperCase() + rest.slice(1) : null;
+          const both = race && CAN_POINTS.includes(k) && CAN_PRIZE.includes(k);
+          const pr = prizeOf(k);
           return (
-            <div className={`wz-prize${on ? " on" : ""}`} key={p.kind}>
-              <button type="button" className="wz-prize-t" aria-pressed={!!on} onClick={() => put(p.kind, on ? null : {})}>
+            <div className={`wz-prize${m ? " on" : ""}${isOpen ? " open" : ""}`} key={k}>
+              <button type="button" className="wz-prize-t" aria-pressed={!!m} aria-expanded={m ? isOpen : undefined} onClick={() => tick(k)}>
                 <span className="wz-tick" aria-hidden />
                 <span>
-                  <strong>{p.name}</strong>
-                  <small>{p.note}</small>
+                  <strong>{SIDE_NAME[k]}</strong>
+                  <small>{line ?? SIDE_NOTE[k]}</small>
                 </span>
               </button>
-              {on && p.perRound && (d.count ?? 0) > 1 && <Pair label={`${p.name}: how often`} value={on.per} options={[["trip", "Whole trip"], ["round", "Each round"]]} onChange={(v) => put(p.kind, { per: v })} />}
-              {on && (p.kind === "ctp" || p.kind === "ld") && <PrizeHoles d={d} kind={p.kind} prize={on} onChange={(holesByRound) => put(p.kind, { holesByRound, holes: null })} />}
-              {on && d.win === "points" && (
-                <div className="wz-pt-row">
-                  <span>Counts as points</span>
-                  <Stepper value={on.points ?? 0} label={`${p.name} points`} fmt={(v) => (v ? String(v) : "No")} onChange={(v) => put(p.kind, { points: v || null })} />
+              {isOpen && (
+                <div className="wz-side-body">
+                  {both && (
+                    <div className="wz-side-q">
+                      <p className="wz-side-k">How does it count?</p>
+                      <Choice
+                        label={`${SIDE_NAME[k]}: how it counts`}
+                        value={m}
+                        options={[
+                          ["points", "Points for each one"],
+                          ["prize", "A prize for the most"],
+                          ["both", "Both"],
+                        ]}
+                        onChange={(v) => setMode(k, v)}
+                      />
+                    </div>
+                  )}
+                  {race && (m === "points" || m === "both") && (
+                    <div className="wz-pt-row">
+                      <span>{EACH[k]}</span>
+                      <Stepper value={d.bonus[k as BonusKind] ?? startPts(k)} min={0.5} step={0.5} label={`${SIDE_NAME[k]}: points for each one`} onChange={(v) => set((x) => putBonus(x, k, v))} />
+                    </div>
+                  )}
+                  {pr && (
+                    <>
+                      {multi && PER_ROUND.includes(k) && (
+                        <div className="wz-side-q">
+                          <p className="wz-side-k">The prize</p>
+                          <Pair label={`${SIDE_NAME[k]}: how often`} value={pr.per} options={[["trip", "Whole trip"], ["round", "Each round"]]} onChange={(v) => set((x) => putPrize(x, k, { per: v }))} />
+                        </div>
+                      )}
+                      {race && (
+                        <div className="wz-pt-row">
+                          <span>Worth points in the race</span>
+                          <Stepper value={pr.points ?? 0} label={`${SIDE_NAME[k]}: prize points`} fmt={(v) => (v ? (Number.isInteger(v) ? String(v) : `${Math.floor(v) || ""}½`) : "No")} onChange={(v) => set((x) => putPrize(x, k, { points: v || null }))} />
+                        </div>
+                      )}
+                    </>
+                  )}
+                  {(k === "ctp" || k === "ld") && <SideHolesPick d={d} set={set} kind={k} rounds={s.rounds as (SideRound & { key: string })[]} played={played} />}
+                  <div className="wz-side-end">
+                    <button type="button" className="btn" onClick={() => setOpen(null)}>
+                      Done
+                    </button>
+                    <button type="button" className="btn secondary" onClick={() => untick(k)}>
+                      Take it off
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
           );
         })}
       </div>
-      <Next onClick={() => done()} label={nextLabel ?? (d.prizes.length ? "Next" : "No prizes")} />
+      {on.length > 0 && total && <p className="wz-side-total">{total}</p>}
+      <Next onClick={() => done()} label={nextLabel ?? (on.length ? "Next" : "No side games")} />
     </Screen>
   );
 }
 
-/** Closest the pin and long drive: every par 3 (par 5), or the holes chosen, course by course. */
-function PrizeHoles({ d, kind, prize, onChange }: { d: Draft; kind: "ctp" | "ld"; prize: Prize; onChange: (h: Record<string, number[]> | null) => void }) {
+/**
+ * Closest the pin and long drive: every par 3 (par 5), or chosen round by round. Rounds on the same course share
+ * their holes unless switched apart. A hole already played can't change.
+ */
+function SideHolesPick({ d, set, kind, rounds, played }: { d: Draft; set: StepProps["set"]; kind: "ctp" | "ld"; rounds: (SideRound & { key: string })[]; played?: Record<string, number[]> }) {
   const par = kind === "ctp" ? 3 : 5;
-  const chosen = prize.holesByRound ?? {};
-  const [choosing, setChoosing] = useState(Object.keys(chosen).length > 0);
-  // Each course once (with its tee and holes played); a choice covers every round there
-  const groups: { key: string; name: string; rounds: number[]; holes: { n: number; yards: number }[] }[] = [];
-  settle(d).rounds.forEach((r, i) => {
-    const tee = r.tees?.find((t) => t.name === r.tee) ?? r.tees?.[0];
-    const card = tee ? tee.par.map((p, k) => ({ par: p, yards: tee.yards[k] ?? 0 })) : r.manual ? (r.manualCard ?? []).map((h) => ({ par: h.par, yards: 0 })) : (r.card ?? []).map((h) => ({ par: h.par, yards: h.yards ?? 0 }));
-    const holes = card
-      .map((h, k) => ({ n: k + 1, par: h.par, yards: h.yards }))
-      .filter((h) => h.par === par && (card.length !== 18 || r.holeSet === "all" || (r.holeSet === "front" ? h.n <= 9 : h.n >= 10)));
-    if (!holes.length) return;
-    const key = `${r.courseRef ?? r.courseName}|${r.tee ?? ""}|${r.holeSet}`;
-    const g = groups.find((x) => x.key === key);
-    if (g) g.rounds.push(i + 1);
-    else groups.push({ key, name: r.courseName, rounds: [i + 1], holes: holes.map((h) => ({ n: h.n, yards: h.yards })) });
-  });
-  if (!groups.length) return null;
+  const chosen = d.sideHoles?.[kind] ?? null;
+  const [choosing, setChoosing] = useState(!!chosen && Object.keys(chosen).length > 0);
+  const withPar = rounds.filter((r) => parHoles(r, kind).length);
+  const without = rounds.filter((r) => r.holes.length && !parHoles(r, kind).length);
+  // Rounds on one course (same tee, same holes) share, unless they were set differently or switched apart
+  const groups: { key: string; rounds: (SideRound & { key: string })[] }[] = [];
+  for (const r of withPar) {
+    const g = groups.find((x) => x.key === r.key);
+    if (g) g.rounds.push(r);
+    else groups.push({ key: r.key, rounds: [r] });
+  }
+  const listOf = (r: SideRound) => chosen?.[String(r.number)] ?? parHoles(r, kind);
+  const [apart, setApart] = useState<string[]>(() => groups.filter((g) => g.rounds.some((r) => listOf(r).join() !== listOf(g.rounds[0]).join())).map((g) => g.key));
   const every = kind === "ctp" ? "Every par 3" : "Every par 5";
-  const toggle = (g: (typeof groups)[number], n: number) => {
-    const now = chosen[String(g.rounds[0])] ?? [];
-    const next = now.includes(n) ? now.filter((x) => x !== n) : [...now, n].sort((a, b) => a - b);
-    const out = { ...chosen };
-    for (const rn of g.rounds) {
-      if (next.length) out[String(rn)] = next;
-      else delete out[String(rn)];
-    }
-    onChange(Object.keys(out).length ? out : null);
+  const isPlayed = (r: SideRound, n: number) => !!played?.[String(r.number)]?.includes(n);
+  const write = (rs: SideRound[], next: (r: SideRound) => number[]) =>
+    set((x) => {
+      const now = { ...(x.sideHoles?.[kind] ?? Object.fromEntries(withPar.map((r) => [String(r.number), parHoles(r, kind)]))) };
+      for (const r of rs) now[String(r.number)] = next(r);
+      return { ...x, sideHoles: { ...(x.sideHoles ?? {}), [kind]: now } };
+    });
+  const toggle = (rs: SideRound[], n: number) => write(rs, (r) => (listOf(r).includes(n) ? listOf(r).filter((h) => h !== n) : [...listOf(r), n].sort((a, b) => a - b)));
+  const noneIn = (rs: SideRound[]) => rs.every((r) => !listOf(r).length);
+  // "Not in this round": every hole off (those played stay as they are); pressed again, every hole back on
+  const allOff = (rs: SideRound[]) => write(rs, (r) => (noneIn(rs) ? parHoles(r, kind) : listOf(r).filter((h) => isPlayed(r, h))));
+  const nineWords = (r: SideRound) => (r.nine === "front" ? " on the front nine" : r.nine === "back" ? " on the back nine" : "");
+  const block = (rs: SideRound[]) => {
+    const first = rs[0];
+    const head = `${rs.length === 1 ? `Round ${first.number}` : `Rounds ${and(rs.map((r) => String(r.number)))}`}, ${first.course}`;
+    return (
+      <div className="wz-holes-pick" key={rs.map((r) => r.number).join("-")}>
+        <p className="wz-side-k">{head}</p>
+        <div className="pick-tiles">
+          {parHoles(first, kind).map((n) => {
+            const y = first.holes.find((h) => h.number === n)?.yards;
+            const locked = rs.some((r) => isPlayed(r, n));
+            return (
+              <button key={n} type="button" className="pick-tile" aria-pressed={listOf(first).includes(n)} disabled={locked} onClick={() => toggle(rs, n)}>
+                {ordinal(n)}
+                {y ? <small>{y} yds</small> : null}
+                {locked && <small className="wz-played">Played</small>}
+              </button>
+            );
+          })}
+        </div>
+        <button type="button" className="pick-tile wz-not-in" aria-pressed={noneIn(rs)} onClick={() => allOff(rs)}>
+          {rs.length === 1 ? "Not in this round" : "Not in these rounds"}
+        </button>
+      </div>
+    );
   };
-  const roundsLabel = (rs: number[]) => (rs.length === 1 ? `Round ${rs[0]}` : `Rounds ${rs.slice(0, -1).join(", ")} and ${rs[rs.length - 1]}`);
+  if (!withPar.length) return <p className="small muted">{`No par ${par}s in ${rounds.length > 1 ? "any round" : "this round"}, so there's nowhere to play it.`}</p>;
   return (
     <div className="wz-prize-holes">
+      <p className="wz-side-k">Which holes?</p>
       <Pair
         label={`${kind === "ctp" ? "Closest the pin" : "Long drive"}: which holes`}
         value={choosing ? "choose" : "every"}
         options={[
           ["every", every],
-          ["choose", "Choose the holes"],
+          ["choose", "Choose holes"],
         ]}
         onChange={(v) => {
           setChoosing(v === "choose");
-          if (v === "every") onChange(null);
+          // Every par 3: the choice goes (a hole already played keeps how it was, on the server)
+          if (v === "every") set((x) => ({ ...x, sideHoles: Object.fromEntries(Object.entries(x.sideHoles ?? {}).filter(([k]) => k !== kind)) }));
         }}
       />
       {choosing &&
-        groups.map((g) => (
-          <div key={g.key} className="wz-holes-pick">
-            {groups.length > 1 && (
-              <p className="small muted">
-                {roundsLabel(g.rounds)}: {g.name}
-              </p>
-            )}
-            <div className="pick-tiles">
-              {g.holes.map((h) => (
-                <button key={h.n} type="button" className="pick-tile" aria-pressed={(chosen[String(g.rounds[0])] ?? []).includes(h.n)} onClick={() => toggle(g, h.n)}>
-                  {h.n}
-                  {h.yards ? <small> {h.yards} yds</small> : null}
-                </button>
-              ))}
+        groups.map((g) =>
+          g.rounds.length > 1 ? (
+            <div key={g.key} className="wz-holes-group">
+              <label className="wz-switch">
+                <input
+                  type="checkbox"
+                  checked={!apart.includes(g.key)}
+                  onChange={(e) => {
+                    if (e.target.checked) {
+                      setApart(apart.filter((k) => k !== g.key));
+                      write(g.rounds.slice(1), () => listOf(g.rounds[0]));
+                    } else setApart([...apart, g.key]);
+                  }}
+                />
+                <span>Same holes in every round here</span>
+              </label>
+              {apart.includes(g.key) ? g.rounds.map((r) => block([r])) : block(g.rounds)}
             </div>
-          </div>
-        ))}
-      {choosing && !Object.keys(chosen).length && <p className="small muted">Tap the holes you play for. Until then it&apos;s {every.toLowerCase()}.</p>}
+          ) : (
+            block(g.rounds)
+          ),
+        )}
+      {without.map((r) => (
+        <p key={r.number} className="small muted">
+          No par {par}s{nineWords(r)} at {r.course}
+          {rounds.length > 1 ? ` (round ${r.number})` : ""}, so it isn&apos;t played there.
+        </p>
+      ))}
     </div>
   );
 }

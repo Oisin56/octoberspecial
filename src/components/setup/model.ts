@@ -2,7 +2,7 @@
  * The set-up answers as the phone keeps them while the wizard runs (kept in localStorage so a locked screen or a
  * phone call loses nothing), which screens to show for them, and the tidy version sent to the server.
  */
-import type { BonusKind, Prize } from "@/lib/engine";
+import type { BonusKind, Prize, SideHoles } from "@/lib/engine";
 import type { HoleSet, ThemeId, Tone } from "@/lib/types";
 import {
   defaultFormat,
@@ -83,6 +83,8 @@ export interface Draft {
   count: number | null;
   rounds: DRound[];
   bonus: Partial<Record<BonusKind, number>>;
+  /** Closest the pin and long drive: the holes chosen, round by round (one choice for the points and the prize) */
+  sideHoles: SideHoles;
   draw: "random" | "balanced" | "pick";
   teeGap: number;
   prizes: Prize[];
@@ -126,6 +128,7 @@ export const fresh = (): Draft => ({
   count: null,
   rounds: [],
   bonus: {},
+  sideHoles: {},
   draw: "random",
   teeGap: 10,
   prizes: [],
@@ -267,9 +270,10 @@ export function toWizard(d: Draft): Wizard {
       shots: r.hcp === "manual" ? r.shots : undefined,
     })),
     bonus: d.bonus,
+    bonusHoles: d.sideHoles,
     draw: d.draw,
     teeGap: d.teeGap,
-    prizes: d.prizes,
+    prizes: d.prizes.map((p) => (p.kind === "ctp" || p.kind === "ld" ? { ...p, holes: null, holesByRound: d.sideHoles?.[p.kind] ?? null } : p)),
     extras: d.extras,
     tone: d.tone,
     theme: d.theme ?? "spring",

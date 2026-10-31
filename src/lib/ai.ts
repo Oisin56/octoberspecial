@@ -14,12 +14,15 @@ import {
   gameHole,
   gameSummary,
   roundSummary,
+  playersOfBall,
+  sideGameHoles,
   tournamentSummary,
   type Game,
   type GameSummary,
   type RoundCfg,
 } from "./engine";
-import { totalsView } from "./live";
+import { pointsLine, pointsParts, standings, stillToPlay, totalsView } from "./live";
+import { ordinal, sideLines, sideSetupOf } from "./sidegames";
 import { checkPiece, recordCheck, type CheckLog } from "./factcheck";
 import { windDay } from "./windServer";
 import { windAt, type WindDay } from "./windDay";
@@ -119,7 +122,6 @@ export function guideText(r: RoundRow, focus?: number[]): string | null {
 }
 
 const fmt = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
-const bonusWordsPlural = (k: string) => (k === "ctp" ? "closest the pin" : "long drive");
 
 function playerProfiles(s: TournamentState) {
   const team = (id: string | null) => s.tournament.teams.find((t) => t.id === id)?.name;
@@ -139,6 +141,25 @@ function playerProfiles(s: TournamentState) {
       return "- " + bits.join("; ");
     })
     .join("\n");
+}
+
+/** Closest the pin and long drive: who won each one, hole by hole ("Closest the pin: Neil on the 7th in R1") */
+function holeWinsText(s: TournamentState, cfg: ReturnType<typeof toTournamentCfg>): string | null {
+  const nm = (id: string) => s.players.find((p) => p.id === id)?.name ?? id;
+  const out: string[] = [];
+  for (const kind of ["ctp", "ld"] as const) {
+    const bits: string[] = [];
+    for (const r of cfg.rounds) {
+      const holes = sideGameHoles(cfg, r, kind);
+      for (const e of s.entries.filter((x) => x.round_id === r.id && holes.includes(x.hole))) {
+        const w = kind === "ctp" ? e.ctp_winner : e.ld_winner;
+        const g = r.games.find((x) => x.id === e.game);
+        if (w && g) bits.push(`${playersOfBall(w, g).map(nm).join(" and ")} on the ${ordinal(e.hole)}${cfg.rounds.length > 1 ? ` in R${r.number}` : ""}`);
+      }
+    }
+    if (bits.length) out.push(`${kind === "ctp" ? "Closest the pin" : "Long drive"} won: ${bits.join(", ")}.`);
+  }
+  return out.length ? out.join(" ") : null;
 }
 
 function standingsText(s: TournamentState) {
@@ -190,14 +211,17 @@ function standingsText(s: TournamentState) {
           .join(", "),
     );
   } else {
-    const bonus = t.win.kind === "points" && t.win.bonus ? Object.entries(t.win.bonus).filter(([, v]) => (v ?? 0) > 0) : [];
-    const bonusWords: Record<string, string> = { birdies: "birdie", eagles: "eagle", gir: "green in regulation", ctp: "closest the pin won", ld: "long drive won" };
-    const fixed = bonus.filter(([k]) => k === "ctp" || k === "ld");
-    const open = bonus.filter(([k]) => k !== "ctp" && k !== "ld");
+    const race = t.win.kind === "points";
+    const left = race ? stillToPlay(t, cfg) : null;
     lines.push(
-      `Tournament: ${s.tournament.name}. ${fmt(t.pointsAvailable)} points available from the rounds${(cfg.prizes ?? []).some((p) => (p.points ?? 0) > 0) ? ", the prizes" : ""}${fixed.length ? ` and the bonuses for ${fixed.map(([k, v]) => `${bonusWordsPlural(k)} (${fmt(v as number)} each)`).join(" and ")}` : ""}; ${fmt(t.pointsRemaining)} of them still to be decided.` +
-        (open.length ? ` On top of those, bonus points with no limit: ${open.map(([k, v]) => `${fmt(v as number)} for each ${bonusWords[k] ?? k}`).join(", ")}. Never say how many points are left to win in total.` : ""),
+      `Tournament: ${s.tournament.name}. ${fmt(t.pointsAvailable)} points available${race ? " from the rounds and the side games" : ""}; ${fmt(t.pointsRemaining)} of them still to be decided.` +
+        (left?.left ? ` ${left.left}` : "") +
+        (left?.onTop ? ` ${left.onTop.replace(/ on top\.$/, "")} come on top, with no limit. Never say how many points are left to win in total.` : ""),
     );
+    if (race) {
+      const sl = sideLines(sideSetupOf(cfg));
+      if (sl.length) lines.push(`Side games: ${sl.join(" ")}`);
+    }
   }
   if (cfg.teams.length) {
     lines.push(
@@ -206,12 +230,28 @@ function standingsText(s: TournamentState) {
         (cfg.sideGamesBy === "team" ? ` (with side games as they stand: ${cfg.teams.map((tm) => `${tm.name} ${fmt(t.teamProjected[tm.id])}`).join(", ")})` : ""),
     );
   }
-  lines.push(
-    "Individual points: " +
-      cfg.players
-        .map((p) => `${p.name} ${fmt(t.playerRoundPoints[p.id])}${cfg.sideGamesBy === "player" ? ` (${fmt(t.playerProjected[p.id])} incl. side games as they stand)` : ""}`)
-        .join(", "),
-  );
+  if (t.win.kind === "points" && !cfg.teams.length) {
+    // The totals as the scoreboard shows them, and where each player's points came from
+    const st = standings(s, t, false);
+    lines.push(
+      "Overall points (as on the scoreboard; only final cards count): " +
+        [...cfg.players]
+          .sort((a, b) => (st.banked[b.id] ?? 0) - (st.banked[a.id] ?? 0))
+          .map((p) => {
+            const line = pointsLine(pointsParts(t, p.id, st.banked[p.id] ?? 0));
+            return `${p.name} ${fmt(st.banked[p.id] ?? 0)}${line ? ` (${line.toLowerCase()})` : ""}`;
+          })
+          .join(", "),
+    );
+    const won = holeWinsText(s, cfg);
+    if (won) lines.push(won);
+  } else
+    lines.push(
+      "Individual points: " +
+        cfg.players
+          .map((p) => `${p.name} ${fmt(t.playerRoundPoints[p.id])}${cfg.sideGamesBy === "player" ? ` (${fmt(t.playerProjected[p.id])} incl. side games as they stand)` : ""}`)
+          .join(", "),
+    );
   for (const a of t.awards) {
     const label = SIDE_GAME_LABEL[a.kind];
     const counts = Object.entries(a.counts)

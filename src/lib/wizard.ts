@@ -3,7 +3,7 @@
  * tournament (formats, handicap allowances, points, groups and matches). Pure, so the wizard checks its answers
  * as it goes and the server builds exactly the same thing. The blueprint: docs/setup-redesign.md.
  */
-import type { BonusKind, CourseRating, Game, HandicapRule, PlayType, PointsRule, Prize, ScoringType, StandingsMode, WinRule } from "./engine";
+import type { BonusKind, CourseRating, Game, HandicapRule, PlayType, PointsRule, Prize, ScoringType, SideHoles, StandingsMode, WinRule } from "./engine";
 import type { HoleSet, ThemeId, Tone } from "./types";
 
 export type { CourseRating } from "./engine";
@@ -253,6 +253,8 @@ export interface Wizard {
   rounds: WizRound[];
   /** Points race: bonus points each time */
   bonus?: Partial<Record<BonusKind, number>>;
+  /** Points race: closest the pin and long drive bonus holes, round by round (a round missing: every par 3 / par 5) */
+  bonusHoles?: SideHoles;
   draw: "random" | "balanced" | "pick";
   /** Minutes between tee times */
   teeGap?: number;
@@ -271,10 +273,13 @@ export interface Wizard {
 }
 
 /** The engine's win rule for these answers (the knockout's bracket is added when the players have ids). */
-export function winRule(w: Pick<Wizard, "win" | "skinsCarry" | "teamCount" | "bonus">): Exclude<WinRule, { kind: "knockout" }> | null {
+export function winRule(w: Pick<Wizard, "win" | "skinsCarry" | "teamCount" | "bonus" | "bonusHoles">): Exclude<WinRule, { kind: "knockout" }> | null {
   switch (w.win) {
-    case "points":
-      return { kind: "points", bonus: Object.fromEntries(Object.entries(w.bonus ?? {}).filter(([, v]) => (v ?? 0) > 0)) };
+    case "points": {
+      const bonus = Object.fromEntries(Object.entries(w.bonus ?? {}).filter(([, v]) => (v ?? 0) > 0)) as Partial<Record<BonusKind, number>>;
+      const holes = Object.fromEntries((["ctp", "ld"] as const).filter((k) => (bonus[k] ?? 0) > 0 && w.bonusHoles?.[k]).map((k) => [k, w.bonusHoles![k]!])) as SideHoles;
+      return Object.keys(holes).length ? { kind: "points", bonus, bonusHoles: holes } : { kind: "points", bonus };
+    }
     case "skins":
       return { kind: "skins", carry: w.skinsCarry !== false };
     case "teamscore":

@@ -4,7 +4,7 @@ import { adminClient } from "./admin";
 import { getCourse, validStrokeIndexes } from "./courses";
 import { slugify } from "./server-data";
 import { THEMES, TONE_LABEL, type SetupJob, type ThemeId, type Tone } from "./types";
-import { drawBracket, knockoutGames, type Entrant, type Knockout, type PrizeKind, type RoundCfg, type TournamentCfg, type WinRule } from "./engine";
+import { drawBracket, knockoutGames, type Entrant, type Knockout, type PrizeKind, type RoundCfg, type SideHoles, type TournamentCfg, type WinRule } from "./engine";
 import {
   MAX_PLAYERS,
   MAX_ROUNDS,
@@ -40,6 +40,16 @@ const BONUS = ["birdies", "eagles", "gir", "ctp", "ld"] as const;
 
 const clip = (v: unknown, n: number) => String(v ?? "").trim().slice(0, n);
 const num = (v: unknown, lo: number, hi: number) => (v == null || v === "" || !Number.isFinite(Number(v)) ? null : Math.max(lo, Math.min(hi, Number(v))));
+/** Holes chosen round by round (round number → holes). An empty list stays: it means not in that round. */
+function cleanHoles(v: unknown): Record<string, number[]> | null {
+  if (!v || typeof v !== "object") return null;
+  const out = Object.fromEntries(
+    Object.entries(v as Record<string, unknown>)
+      .filter(([k, h]) => /^\d{1,2}$/.test(k) && Array.isArray(h))
+      .map(([k, h]) => [k, [...new Set((h as unknown[]).map(Number).filter((n) => Number.isInteger(n) && n >= 1 && n <= 18))].sort((a, b) => a - b)]),
+  );
+  return Object.keys(out).length ? out : null;
+}
 
 /** Tidy and check everything the wizard sent. Throws a WizardError with a plain-words message. */
 export function cleanWizard(raw: unknown): Wizard {
@@ -117,17 +127,16 @@ export function cleanWizard(raw: unknown): Wizard {
       per: p.kind === "nines" || p.per === "round" ? ("round" as const) : ("trip" as const),
       holes: Array.isArray(p.holes) && p.holes.length ? p.holes.map(Number).filter((n) => n >= 1 && n <= 18) : null,
       holesByRound:
-        (p.kind === "ctp" || p.kind === "ld") && p.holesByRound && typeof p.holesByRound === "object"
-          ? Object.fromEntries(
-              Object.entries(p.holesByRound)
-                .filter(([k, v]) => /^\d{1,2}$/.test(k) && Array.isArray(v))
-                .map(([k, v]) => [k, (v as unknown[]).map(Number).filter((n) => Number.isInteger(n) && n >= 1 && n <= 18)])
-                .filter(([, v]) => (v as number[]).length),
-            )
-          : null,
+        (p.kind === "ctp" || p.kind === "ld") ? cleanHoles(p.holesByRound) : null,
       points: win === "points" ? num(p.points, 0, 100) : null,
     }));
   const bonus = win === "points" ? Object.fromEntries(BONUS.map((k) => [k, num(w.bonus?.[k], 0, 100) ?? 0]).filter(([, v]) => (v as number) > 0)) : {};
+  const bonusHoles: SideHoles = {};
+  if (win === "points")
+    for (const k of ["ctp", "ld"] as const) {
+      const h = (bonus as Record<string, number>)[k] ? cleanHoles(w.bonusHoles?.[k]) : null;
+      if (h) bonusHoles[k] = h;
+    }
 
   const out: Wizard = {
     who,
@@ -143,6 +152,7 @@ export function cleanWizard(raw: unknown): Wizard {
     allowance: num(w.allowance, 0, 100),
     rounds,
     bonus,
+    bonusHoles: Object.keys(bonusHoles).length ? bonusHoles : undefined,
     draw: w.draw === "balanced" ? "balanced" : w.draw === "pick" ? "pick" : "random",
     teeGap: num(w.teeGap, 5, 20) ?? 10,
     prizes,

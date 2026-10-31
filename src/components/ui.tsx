@@ -4,9 +4,9 @@ import Link from "next/link";
 import { useT } from "./Providers";
 import { cleanBody, cleanTitle } from "@/lib/cleanText";
 import { cardInfo, cardLabel } from "@/lib/scorecards";
-import { liveLine, roundBoard, standings, toPar, totalsView, type TotalsView } from "@/lib/live";
+import { liveLine, pointsLine, pointsParts, roundBoard, standings, stillToPlay, toPar, totalsView, type TotalsView } from "@/lib/live";
 import { CountUp, CourseImage, Icon } from "./visual";
-import { ballsOfGame, bonusOn, openBonusWords, gameHole, holeShots, isNine, roundPointsAvailable, type Game, type GameSummary, type SegmentResult } from "@/lib/engine";
+import { ballsOfGame, gameHole, holeShots, isNine, roundPointsAvailable, type Game, type GameSummary, type SegmentResult } from "@/lib/engine";
 import { winBoard } from "@/lib/boards";
 import { WinBoardView } from "@/components/WinBoards";
 import {
@@ -143,13 +143,14 @@ export function Board() {
   const liveLabel = liveBoard ? `${liveLine(liveBoard)}${liveBoard.stage === "finished" ? " (provisional)" : ""}` : null;
   const hasSidePoints = cfg.sideGames.some((g) => g.enabled && g.points > 0);
 
-  // Head-to-head: a tug-of-war bar over the whole pot
-  // Fixed sides (first player/team on the left) so the bar doesn't flip when the lead changes
-  const duel = rows.length === 2 ? (teamMode ? rows : cfg.players.map((p) => rows.find((r) => r.id === p.id)!)) : null;
+  // Matches won (a fixed pot, so a fixed score wins it): a tug-of-war bar over the whole pot, fixed sides (first
+  // player/team on the left) so the bar doesn't flip when the lead changes
+  const duel = summary.win.kind === "matches" && rows.length === 2 ? (teamMode ? rows : cfg.players.map((p) => rows.find((r) => r.id === p.id)!)) : null;
   const total = summary.pointsAvailable || 1;
   const toWin = total / 2;
-  // Bonus points (each birdie, eagle…) have no ceiling, so no score is sure to win it
-  const open = bonusOn(cfg);
+  // Points race: where each player's points came from, and what's still to play for
+  const race = summary.win.kind === "points";
+  const foot = race ? stillToPlay(summary, cfg) : null;
 
   return (
     <section className="board" aria-label="Overall standings">
@@ -162,11 +163,14 @@ export function Board() {
           const lead = leaders.length === 1 && leaders[0].id === r.id && best > 0;
           return (
             <div className={`board-row${lead ? " lead" : ""}${r.color ? " has-team" : ""}`} key={r.id} style={r.color ? ({ "--team": r.color } as React.CSSProperties) : undefined}>
-              <span className={`board-name${lead ? " leader" : ""}`} style={{ fontSize: small ? 24 : undefined }}>
-                {r.color && <span aria-hidden className="team-swatch" style={{ background: r.color }} />}
-                {r.name}
-                {lead && <span className="lead-tag">{second < best && rows.length > 1 ? `leads by ${pts(best - second)}` : "leads"}</span>}
-              </span>
+              <div className="board-who">
+                <span className={`board-name${lead ? " leader" : ""}`} style={{ fontSize: small ? 24 : undefined }}>
+                  {r.color && <span aria-hidden className="team-swatch" style={{ background: r.color }} />}
+                  {r.name}
+                  {lead && <span className="lead-tag">{second < best && rows.length > 1 ? `leads by ${pts(best - second)}` : "leads"}</span>}
+                </span>
+                {race && !teamMode && <Breakdown line={pointsLine(pointsParts(summary, r.id, r.value))} />}
+              </div>
               <Tiles value={r.value} red={lead} small={small} />
             </div>
           );
@@ -189,7 +193,7 @@ export function Board() {
       )}
 
       {duel && (
-        <div className="tug" aria-label={open ? "The race between them" : `${pts(toWin + 0.5)} points wins it`}>
+        <div className="tug" aria-label={`${pts(toWin + 0.5)} points wins it`}>
           <div className="tug-bar">
             {st.moving && <span className="tug-a proj" style={{ width: `${(duel[0].proj / total) * 100}%` }} />}
             {st.moving && <span className="tug-b proj" style={{ width: `${(duel[1].proj / total) * 100}%` }} />}
@@ -199,16 +203,26 @@ export function Board() {
           </div>
           <div className="tug-labels">
             <span>{duel[0].name}</span>
-            <span className="muted-on-dark">{open ? "" : `${pts(toWin + 0.5)} wins it`}</span>
+            <span className="muted-on-dark">{pts(toWin + 0.5)} wins it</span>
             <span>{duel[1].name}</span>
           </div>
         </div>
       )}
 
       <div className="board-foot">
-        <span>
-          <b className="num">{pts(summary.pointsRemaining)}</b> points still to play for{open ? `, plus the bonus points for ${openBonusWords(cfg)}` : ""}
-        </span>
+        {foot ? (
+          (foot.left || foot.onTop) && (
+            <span className="board-left">
+              {foot.left}
+              {foot.left && foot.onTop ? " " : ""}
+              {foot.onTop}
+            </span>
+          )
+        ) : (
+          <span>
+            <b className="num">{pts(summary.pointsRemaining)}</b> points still to play for
+          </span>
+        )}
         {live && liveLabel && (
           <span>
             Live: <b>R{live.number} {live.course_name}</b> · {liveLabel}
@@ -225,6 +239,11 @@ export function Board() {
       )}
     </section>
   );
+}
+
+/** Under a name in a points race: where the points came from */
+function Breakdown({ line }: { line: string | null }) {
+  return line ? <span className="board-break">{line}</span> : null;
 }
 
 function AwardCell({ kind, counts }: { kind: keyof typeof SIDE_GAME_LABEL; counts: Record<string, number> }) {

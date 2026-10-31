@@ -6,6 +6,7 @@ import { useT } from "@/components/Providers";
 import { Loading } from "@/components/ui";
 import { useAdmin } from "@/components/editors";
 import { THEMES, TONE_LABEL } from "@/lib/types";
+import { sideLines } from "@/lib/sidegames";
 import { formatName, handicapFor, inSentence, isMatch, roundFormats, usesPoints, winName, type DayFormat } from "@/lib/wizard";
 import { fromState } from "@/components/setup/fromState";
 import { GuideScreen, guideStatus } from "@/components/setup/GuideScreen";
@@ -23,7 +24,8 @@ import {
   NameScreen,
   PlayersScreen,
   PointsScreen,
-  PrizesScreen,
+  SideGamesScreen,
+  sideSetupOfDraft,
   Problems,
   TeamsScreen,
   TeeScreen,
@@ -51,7 +53,6 @@ interface Edit {
 }
 type SaveState = { state: "idle" | "saving" | "saved" | "error"; msg?: string; note?: string };
 
-const PRIZE_NAMES = { ctp: "closest the pin", ld: "long drive", nines: "front 9 and back 9", birdies: "most birdies", gir: "most greens", skins: "skins", bestround: "best round" } as const;
 const HOLES = { all: "All 18", front: "Front 9", back: "Back 9" } as const;
 const day = (iso: string) => new Date(iso).toLocaleDateString("en-IE", { weekday: "short", day: "numeric", month: "short" });
 const list = (xs: string[]) => (xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`);
@@ -140,6 +141,8 @@ export default function TournamentSetup() {
   const startedIds = new Set(st.entries.map((e) => e.round_id));
   const started = (i: number) => !!rounds[i] && startedIds.has(rounds[i].id);
   const scoredRounds = rounds.map((_, i) => i).filter(started);
+  // Holes already played in each round (round number → holes): their closest the pin and long drive stay as they are
+  const playedHoles: Record<string, number[]> = Object.fromEntries(rounds.map((r) => [String(r.number), [...new Set(st.entries.filter((e) => e.round_id === r.id).map((e) => e.hole))]]));
   const solo = base.who === "solo";
   const ko = base.win === "knockout";
   const legacy = !st.tournament.win;
@@ -323,7 +326,7 @@ export default function TournamentSetup() {
             {kind === "hcp" && <HandicapScreen {...props} i={i} />}
             {kind === "points" && <PointsScreen {...props} />}
             {kind === "groups" && <GroupsScreen {...props} />}
-            {kind === "prizes" && <PrizesScreen {...props} />}
+            {kind === "prizes" && <SideGamesScreen {...props} played={playedHoles} />}
             {kind === "extras" && <ExtrasScreen {...props} />}
             {kind === "watch" && <WatchScreen {...props} />}
             {kind === "look" && <LookScreen {...props} />}
@@ -431,10 +434,9 @@ export default function TournamentSetup() {
     if (base.allowance != null) bits.push(base.allowance === 0 ? "off scratch" : `${base.allowance}% handicaps`);
     return bits.join(", ");
   })();
-  // Every round's points in full (the nines too), and the bonus points, so nothing is hidden behind the row
+  // Every round's points in full (the nines too), so nothing is hidden behind the row; side games have their own row
   const n = (v: number) => (Number.isInteger(v) ? String(v) : `${Math.floor(v)}½`);
   const PLACES = ["1st", "2nd", "3rd", "4th", "5th", "6th"];
-  const BONUS_WORDS: Record<string, string> = { birdies: "a birdie", eagles: "an eagle", gir: "a green in regulation", ctp: "closest the pin", ld: "long drive" };
   const pointsLine = [
     ...base.rounds.map((r, i) => {
       const p = r.points;
@@ -443,9 +445,6 @@ export default function TournamentSetup() {
       if (r.format === "skins") return `R${i + 1}: ${n(p?.skin ?? 1)} a skin`;
       return `R${i + 1}: ${p?.positions?.length ? p.positions.map((v, k) => `${n(v)} for ${PLACES[k]}`).join(", ") : "places"}${nines}`;
     }),
-    ...(base.win === "points" && Object.values(base.bonus ?? {}).some((v) => (v ?? 0) > 0)
-      ? [`bonus: ${Object.entries(base.bonus ?? {}).filter(([, v]) => (v ?? 0) > 0).map(([k, v]) => `${n(v as number)} for ${BONUS_WORDS[k] ?? k}`).join(", ")}`]
-      : []),
   ].join("; ");
   const groupsLine = list(
     rounds.map((r, i) => {
@@ -498,7 +497,7 @@ export default function TournamentSetup() {
             {base.win !== "scramble" && (
               <Row label={ko ? "The draw" : "Who plays with whom"} value={ko ? (base.ko.draw === "pick" ? "Picked by you" : base.ko.draw === "seeded" ? "Seeded" : "Random") : groupsLine} onChange={() => open("groups")} saved={tick("groups")} />
             )}
-            <Row label="Prizes" value={base.prizes.length ? list(base.prizes.map((p) => PRIZE_NAMES[p.kind])) : "None"} onChange={() => open("prizes")} saved={tick("prizes")} />
+            <Row label="Side games" value={sideLines(sideSetupOfDraft(base)).join(" ") || "None"} onChange={() => open("prizes")} saved={tick("prizes")} />
           </ul>
         </>
       )}

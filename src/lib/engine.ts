@@ -180,6 +180,8 @@ export type StandingsMode = "points" | "stableford" | "stroke";
 
 /** Extra points in a points race, each time it happens. */
 export type BonusKind = "birdies" | "eagles" | "gir" | "ctp" | "ld";
+/** Closest the pin and long drive: the holes chosen in each round (round number → holes; [] = not that round). */
+export type SideHoles = Partial<Record<"ctp" | "ld", Record<string, number[]>>>;
 
 /** How the overall winner is decided. */
 export type WinRule =
@@ -188,7 +190,13 @@ export type WinRule =
   /** Net strokes to par over every round, added up; lowest wins */
   | { kind: "stroke" }
   /** Points for each round's result (places, matches, skins), plus any bonus points per birdie and the like */
-  | { kind: "points"; bonus?: Partial<Record<BonusKind, number>> }
+  | {
+      kind: "points";
+      bonus?: Partial<Record<BonusKind, number>>;
+      /** Closest the pin and long drive: the holes chosen in each round (round number → holes; [] = not that round;
+       *  a round missing = every par 3 or par 5). The same holes as the prize, when there's one. */
+      bonusHoles?: SideHoles;
+    }
   /** Two teams, Ryder Cup style: points for matches won, by team */
   | { kind: "matches" }
   /** Any number of teams: on every hole each team's best `count` Stableford scores count (0 = all of them) */
@@ -702,6 +710,12 @@ export interface TournamentSummary {
   prizes: PrizeResult[];
   /** Points race: bonus points per player (birdies and the like), already in the totals */
   bonus: Record<string, number>;
+  /** The same, by kind: player → birdies → points */
+  bonusBy: Record<string, Partial<Record<BonusKind, number>>>;
+  /** Points race: points won from prizes, per player (already in the totals) */
+  prizePoints: Record<string, number>;
+  /** What's still to play for, by where it comes from */
+  left: { rounds: number; prizes: number; holes: number };
 }
 
 /** Points on offer in a round (used for "points remaining"). */
@@ -1198,11 +1212,28 @@ export function sideGameHoles(cfg: Pick<TournamentCfg, "win" | "prizes">, round:
   const par = kind === "ctp" ? 3 : 5;
   const every = round.holes.filter((h) => h.par === par).map((h) => h.number);
   if (!cfg.win) return every;
-  if (cfg.win.kind === "points" && (cfg.win.bonus?.[kind] ?? 0) > 0) return every;
+  const bonus = cfg.win.kind === "points" && (cfg.win.bonus?.[kind] ?? 0) > 0;
   const p = (cfg.prizes ?? []).find((x) => x.kind === kind);
-  if (!p) return [];
-  const chosen = p.holesByRound?.[String(round.number)] ?? p.holes;
-  return chosen?.length ? every.filter((n) => chosen.includes(n)) : every;
+  if (!bonus && !p) return [];
+  // One choice of holes for the points and the prize: a round listed = those holes ([] = not that round)
+  const byRound = (cfg.win.kind === "points" ? cfg.win.bonusHoles?.[kind] : undefined) ?? p?.holesByRound ?? null;
+  const chosen = byRound && String(round.number) in byRound ? byRound[String(round.number)] : (p?.holes?.length ? p.holes : null);
+  return chosen ? every.filter((n) => chosen.includes(n)) : every;
+}
+
+/** Closest the pin / long drive won by each player, counted from the cards on the side game's holes only */
+export function holeWinCounts(cfg: TournamentCfg, entriesByRound: Record<string, HoleEntry[]>, kind: "ctp" | "ld", rs: RoundCfg[] = cfg.rounds): Record<string, number> {
+  const value = Object.fromEntries(cfg.players.map((p) => [p.id, 0]));
+  for (const r of rs) {
+    const holes = sideGameHoles(cfg, r, kind);
+    for (const g of r.games)
+      for (const e of entriesByRound[r.id] ?? []) {
+        if (e.game !== g.id || !holes.includes(e.hole)) continue;
+        const w = kind === "ctp" ? e.ctpWinner : e.ldWinner;
+        if (w) for (const pid of playersOfBall(w, g)) value[pid] = (value[pid] ?? 0) + 1;
+      }
+  }
+  return value;
 }
 
 export interface PrizeResult {
@@ -1245,30 +1276,16 @@ export function prizeResults(
     if (p.points && r.decided && r.leaders.length) for (const id of r.leaders) points[id] = p.points / r.leaders.length;
     return { ...r, points };
   };
-  // Closest the pin / long drive on chosen holes (default: par 3s / par 5s), counted from the cards
-  const holeWins = (kind: "ctp" | "ld", p: Prize, rs: RoundCfg[]) => {
-    const value = Object.fromEntries(pids.map((id) => [id, 0]));
-    for (const r of rs) {
-      const holes = p.holesByRound?.[String(r.number)] ?? p.holes;
-      for (const g of r.games)
-        for (const e of entriesByRound[r.id] ?? []) {
-          if (e.game !== g.id) continue;
-          const h = r.holes.find((x) => x.number === e.hole);
-          if (!h) continue;
-          const ok = holes?.length ? holes.includes(h.number) : kind === "ctp" ? h.par === 3 : h.par === 5;
-          const w = kind === "ctp" ? e.ctpWinner : e.ldWinner;
-          if (ok && w) for (const pid of playersOfBall(w, g)) value[pid] = (value[pid] ?? 0) + 1;
-        }
-    }
-    return value;
-  };
+  const holeWins = (kind: "ctp" | "ld", rs: RoundCfg[]) => holeWinCounts(cfg, entriesByRound, kind, rs);
   for (const p of cfg.prizes ?? []) {
     const scopes: { rs: RoundCfg[]; idx: number[]; roundId: string | null }[] =
       p.per === "round" || p.kind === "nines" ? cfg.rounds.map((r, i) => ({ rs: [r], idx: [i], roundId: r.id })) : [{ rs: cfg.rounds, idx: cfg.rounds.map((_, i) => i), roundId: null }];
     for (const sc of scopes) {
       const decided = sc.roundId ? sc.idx.every(roundDone) : complete;
       if (p.kind === "ctp" || p.kind === "ld") {
-        const value = holeWins(p.kind, p, sc.rs);
+        // Not played in this round (no holes chosen, or none of that par): no prize for it
+        if (sc.roundId && !sideGameHoles(cfg, sc.rs[0], p.kind).length) continue;
+        const value = holeWins(p.kind, sc.rs);
         out.push(award(p, { kind: p.kind, roundId: sc.roundId, value, lowerBetter: false, leaders: leadersOf(value, false, pids), decided }));
       } else if (p.kind === "birdies" || p.kind === "gir") {
         const k: "birdies" | "gir" = p.kind;
@@ -1397,8 +1414,18 @@ export function tournamentSummary(cfg: TournamentCfg, entriesByRound: Record<str
   // Points race bonus: so many points for every birdie, eagle, green in regulation, closest the pin and long drive
   const win = winRuleOf(cfg);
   const bonus = zero(pids);
+  const bonusBy: Record<string, Partial<Record<BonusKind, number>>> = Object.fromEntries(pids.map((p) => [p, {}]));
+  // Closest the pin and long drive count only on the holes chosen for them
+  const holeCounts: Partial<Record<"ctp" | "ld", Record<string, number>>> = {};
+  if (win.kind === "points") for (const k of ["ctp", "ld"] as const) if ((win.bonus?.[k] ?? 0) > 0) holeCounts[k] = holeWinCounts(cfg, entriesByRound, k);
   if (win.kind === "points" && win.bonus)
-    for (const p of pids) for (const [k, v] of Object.entries(win.bonus) as [BonusKind, number][]) bonus[p] += (tallies[k]?.[p] ?? 0) * (v || 0);
+    for (const p of pids)
+      for (const [k, v] of Object.entries(win.bonus) as [BonusKind, number][]) {
+        const n = k === "ctp" || k === "ld" ? (holeCounts[k]?.[p] ?? 0) : (tallies[k]?.[p] ?? 0);
+        const got = n * (v || 0);
+        bonus[p] += got;
+        if (got) bonusBy[p][k] = got;
+      }
   const ph = win.kind === "teamscore" || win.kind === "skins" || (cfg.prizes ?? []).length ? playerHoles(cfg, entriesByRound) : null;
   const prizes = ph ? prizeResults(cfg, entriesByRound, ph, rounds, complete) : [];
   const prizePts = zero(pids);
@@ -1435,6 +1462,7 @@ export function tournamentSummary(cfg: TournamentCfg, entriesByRound: Record<str
     if (acrossField(r) && !rs.games.every((g, gi) => g.full.complete || r.games[gi]?.free)) pointsRemaining += (r.points.positions ?? []).reduce((a, b) => a + b, 0);
   });
   if (!complete) pointsRemaining += sideGamePts;
+  const roundsLeft = pointsRemaining - (complete ? 0 : sideGamePts);
   pointsRemaining += prizePtsLeft + holeBonusPts.left;
 
   return {
@@ -1457,5 +1485,8 @@ export function tournamentSummary(cfg: TournamentCfg, entriesByRound: Record<str
     knockout: win.kind === "knockout" ? knockoutState(cfg, entriesByRound, win.knockout) : null,
     prizes,
     bonus,
+    bonusBy,
+    prizePoints: prizePts,
+    left: { rounds: roundsLeft, prizes: prizePtsLeft, holes: holeBonusPts.left },
   };
 }

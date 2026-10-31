@@ -4,7 +4,7 @@ import { adminClient } from "./admin";
 import { dropResearch, inputFor, kickResearch, startResearch } from "./research";
 import { syncTripDates } from "./trip-dates";
 import { slugify } from "./server-data";
-import { drawBracket, knockoutGames, type Entrant, type Game, type RoundCfg, type TournamentCfg, type WinRule } from "./engine";
+import { drawBracket, knockoutGames, sideGameHoles, type Entrant, type Game, type RoundCfg, type TournamentCfg, type WinRule } from "./engine";
 import { normalizeRound, type CourseTee, type PlayerRow, type RoundRow, type TournamentRow } from "./types";
 import { moveFiles } from "./files";
 import { WizardError, cleanWizard, roundCourse } from "./wizard-server";
@@ -328,9 +328,33 @@ export async function applySetupEdit(t: TournamentRow, raw: unknown, scope: stri
       break;
     }
 
-    case "prizes":
-      await updateT({ prizes: w.prizes });
+    case "prizes": {
+      // Side games: the prizes, and in a points race the points for each one (the win rule holds those)
+      const win = t.win?.kind === "points" && w.win === "points" ? winRule(w) : null;
+      const prizes = w.prizes.map((p) => ({ ...p }));
+      // A hole that's been played keeps how it was: closest the pin or long drive stays on it, or stays off
+      const { data: played } = rounds.length ? await db.from("hole_entries").select("round_id, hole").in("round_id", rounds.map((r) => r.id)) : { data: [] };
+      const before = { win: t.win ?? null, prizes: t.prizes ?? [] } as Pick<TournamentCfg, "win" | "prizes">;
+      const after = { win: win ?? t.win ?? null, prizes } as Pick<TournamentCfg, "win" | "prizes">;
+      for (const r of rounds) {
+        const done = new Set((played ?? []).filter((e) => e.round_id === r.id).map((e) => Number(e.hole)));
+        if (!done.size) continue;
+        for (const k of ["ctp", "ld"] as const) {
+          const was = sideGameHoles(before, r, k);
+          const now = sideGameHoles(after, r, k);
+          if (!now.length && !was.length) continue;
+          const kept = [...now.filter((n) => !done.has(n)), ...was.filter((n) => done.has(n))].sort((a, b) => a - b);
+          if (kept.join() === now.join()) continue;
+          const key = String(r.number);
+          if (win?.kind === "points" && (win.bonus?.[k] ?? 0) > 0) win.bonusHoles = { ...win.bonusHoles, [k]: { ...win.bonusHoles?.[k], [key]: kept } };
+          const p = prizes.find((x) => x.kind === k);
+          if (p) p.holesByRound = { ...p.holesByRound, [key]: kept };
+          if (!notes.length) notes.push("Holes already played stay as they were.");
+        }
+      }
+      await updateT(win ? { prizes, win } : { prizes });
       break;
+    }
 
     case "extras":
       await updateT({ feed_on: w.extras.feed, ai_on: w.extras.ai, auto_bulletins: w.extras.ai, video_enabled: w.extras.video, tone: w.tone, units: w.units, share_shape: w.share });

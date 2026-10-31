@@ -12,7 +12,7 @@ import { newsletterEmail, type NewsletterData } from "./newsletter";
 import { loadServerState } from "./server-data";
 import { courseInfo, forecast } from "./ai";
 import { roundPointsAvailable, tournamentSummary } from "./engine";
-import { totalsView } from "./live";
+import { pointsLine, pointsParts, totalsView } from "./live";
 import { SIDE_GAME_LABEL, formatLabel, sideLabel, toEntries, toRoundCfg, toTournamentCfg } from "./types";
 import { deliver, deliverMany, mailConfigured, newSendId, smtpFrom, type Outgoing } from "./mail/send";
 import { postmarkOn, postmarkSetup } from "./mail/postmark";
@@ -188,12 +188,13 @@ export async function buildNewsletter(t: TournamentRow, piece: AiPieceRow, site:
     hero,
     standings: totals
       ? totals.rows.slice(0, 6).map((r) => ({ name: `${r.pos ? `${r.pos}. ` : ""}${r.name}`, value: r.score, lead: !!r.pos && r.pos === "1" }))
-      : rows.slice(0, 6).map((r) => ({ name: r.name, value: fmt(r.v), lead: anyPoints && leaders.length === 1 && r.id === leaders[0].id })),
+      : rows.slice(0, 6).map((r) => ({ name: r.name, value: fmt(r.v), lead: anyPoints && leaders.length === 1 && r.id === leaders[0].id, sub: summary.win.kind === "points" && !teamMode ? pointsLine(pointsParts(summary, r.id, r.v)) : null })),
     standingsTitle: totals
       ? `${summary.complete ? "Final: " : ""}${totals.title}`
       : summary.complete ? "Final standings" : anyPoints ? "Overall points" : `${fmt(summary.pointsAvailable)} points to play for`,
     leadLine: totals ? null : leadLine,
-    tug: !totals && duel && anyPoints ? { left: duel[0].name, right: duel[1].name, leftPct: (duel[0].v / total) * 100, rightPct: (duel[1].v / total) * 100, target: `${fmt(total / 2 + 0.5)} wins it` } : null,
+    // The tug-of-war bar only where a fixed score wins it (matches won); a points race shows where the points came from
+    tug: !totals && duel && anyPoints && summary.win.kind === "matches" ? { left: duel[0].name, right: duel[1].name, leftPct: (duel[0].v / total) * 100, rightPct: (duel[1].v / total) * 100, target: `${fmt(total / 2 + 0.5)} wins it` } : null,
     awards: anyPoints ? awards : [],
     roundCard,
     results,

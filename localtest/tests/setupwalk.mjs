@@ -24,7 +24,7 @@ async function wizard(name, first, a = {}) {
   await p.goto(`${B}/new`, { waitUntil: "networkidle" });
   await p.getByText("I have the site owner's PIN").click();
   const h1 = async () => (await p.locator("h1").first().textContent()).trim();
-  const next = () => p.getByRole("button", { name: /^(Next|Skip for now|Skip|No prizes)$/ }).click();
+  const next = () => p.getByRole("button", { name: /^(Next|Skip for now|Skip|No side games)$/ }).click();
   const W = {
     p,
     next,
@@ -63,12 +63,22 @@ async function wizard(name, first, a = {}) {
       const want = a.formats?.[formatAt++];
       await (want ? p.locator(".wz-tile", { hasText: want }).first() : p.locator(".wz-tile[aria-pressed=true]").first()).click();
     } else if (/^Who plays with whom/.test(h)) await p.getByText(a.draw ?? "Random").first().click();
-    else if (/^Any prizes/.test(h)) {
-      for (const pr of a.prizes ?? []) await p.locator(".wz-prize-t", { hasText: pr }).click();
+    else if (/^Side games/.test(h)) {
+      for (const pr of a.prizes ?? []) {
+        await p.locator(".wz-prize-t", { hasText: pr }).click();
+        // Only the closest the pin box stays open (to choose its holes); the others fold
+        if (!(a.ctpHoles && pr === "Closest the pin")) await p.locator(".wz-prize.open").getByRole("button", { name: "Done" }).click();
+      }
       if (a.ctpHoles) {
         const box = p.locator(".wz-prize", { hasText: "Closest the pin" });
-        await box.getByRole("button", { name: "Choose the holes" }).click();
-        for (const n of a.ctpHoles) await box.locator(".wz-holes-pick .pick-tile", { hasText: new RegExp(`^${n}\\b`) }).click();
+        await box.getByRole("button", { name: "Choose holes" }).click();
+        // All ticked to start: leave out the ones not wanted
+        const tiles = box.locator(".wz-holes-pick .pick-tiles .pick-tile");
+        for (let i = 0; i < (await tiles.count()); i++) {
+          const n = Number((await tiles.nth(i).innerText()).match(/^\d+/)[0]);
+          if (!a.ctpHoles.includes(n)) await tiles.nth(i).click();
+        }
+        await box.getByRole("button", { name: "Done" }).click();
       }
       await next();
     } else if (/^Pick a look/.test(h)) await p.locator(".wz-theme").first().click();
@@ -199,7 +209,7 @@ await run("stableford", async () => {
       await W.p.getByText("Most Stableford points").click();
       await W.p.locator(".num-tile", { hasText: /^1$/ }).click();
     },
-    { draw: "Balanced by handicap", prizes: ["Most birdies", "Front 9 and back 9", "Closest the pin"], ctpHoles: [7] },
+    { draw: "Balanced by handicap", prizes: ["Birdies", "Front 9 and back 9", "Closest the pin"], ctpHoles: [7] },
   );
   if (!slug) return;
   ok(q(`select handicap from players p join tournaments t on t.id=p.tournament_id where t.slug='${slug}' and p.name='Ronan'`) === "-1.2", "stableford: a plus handicap is kept as plus");

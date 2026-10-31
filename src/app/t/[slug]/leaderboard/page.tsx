@@ -3,11 +3,10 @@
 import { useT } from "@/components/Providers";
 import { Board, Loading, pts } from "@/components/ui";
 import { SIDE_GAME_LABEL, formatLabel } from "@/lib/types";
-import { standings, totalsView } from "@/lib/live";
+import { BONUS_ORDER, BONUS_WORD, standings, stillToPlay, totalsView } from "@/lib/live";
 import { winBoard } from "@/lib/boards";
 import { PrizesPanel, WinBoardTables } from "@/components/WinBoards";
 import { roundStage } from "@/lib/scorecards";
-import { bonusOn as hasBonus, openBonusWords } from "@/lib/engine";
 
 const SERIES = ["var(--board)", "var(--red)", "var(--bracken)", "#1d4f91", "#6b4c9a", "#2e7d4f", "#b0582b", "#4a5560"];
 
@@ -27,11 +26,15 @@ export default function Leaderboard() {
   const played = summary.rounds.filter((r) => r.games.some((g) => g.holesPlayed > 0)).length;
   const totals = totalsView(state, summary);
   const wb = winBoard(state, summary, cfg);
-  // Points race: bonus points (birdies and the like) shown in their own column
-  const bonusOn = summary.win.kind === "points" && Object.values(summary.bonus).some((v) => v > 0);
-  const prizePts: Record<string, number> = {};
-  for (const pr of summary.prizes) for (const [k, v] of Object.entries(pr.points)) prizePts[k] = (prizePts[k] ?? 0) + v;
-  const prizesOn = !teamMode && Object.values(prizePts).some((v) => v > 0);
+  // Points race: a column for prizes worth points, then one for each bonus that's on, then the total
+  const race = summary.win.kind === "points";
+  const w = summary.win;
+  const bonusCols = !teamMode && w.kind === "points" ? BONUS_ORDER.filter((k) => (w.bonus?.[k] ?? 0) > 0) : [];
+  const prizePts = summary.prizePoints ?? {};
+  const prizesOn = !teamMode && ((cfg.prizes ?? []).some((p) => (p.points ?? 0) > 0) || Object.values(prizePts).some((v) => v > 0));
+  const totalLast = race && !teamMode;
+  const onTop = race ? stillToPlay(summary, cfg).onTop : null;
+  const cap = (x: string) => x[0].toUpperCase() + x.slice(1);
 
   if (wb)
     return (
@@ -139,49 +142,65 @@ export default function Leaderboard() {
             <thead>
               <tr>
                 <th>{teamMode ? "Team" : "Player"}</th>
-                <th>Total</th>
-                {st.moving && <th title="If everything finished as it stands now">Projected</th>}
+                {!totalLast && <th>Total</th>}
+                {!totalLast && st.moving && <th title="If everything finished as it stands now">Projected</th>}
                 {state.rounds.map((r) => (
                   <th key={r.id} title={`${r.course_name}: ${formatLabel(r)}`}>
                     R{r.number}
                   </th>
                 ))}
-                {bonusOn && <th title="Bonus points: birdies and the like">Bonus</th>}
                 {prizesOn && <th title="Points from prizes">Prizes</th>}
+                {bonusCols.map((k) => (
+                  <th key={k}>{cap(BONUS_WORD[k])}</th>
+                ))}
                 {awardsFor.map((a) => (
                   <th key={a.kind} title={SIDE_GAME_LABEL[a.kind]}>
                     {a.kind.toUpperCase()}
                   </th>
                 ))}
+                {totalLast && <th>Total</th>}
+                {totalLast && st.moving && <th title="If everything finished as it stands now">Projected</th>}
               </tr>
             </thead>
             <tbody>
               {entities.map((e) => (
                 <tr key={e.id}>
                   <td>{e.name}</td>
-                  <td className="num" style={{ fontWeight: 700 }}>
-                    {pts(e.total)}
-                  </td>
-                  {st.moving && <td className="num muted">{pts(e.proj)}</td>}
+                  {!totalLast && (
+                    <td className="num" style={{ fontWeight: 700 }}>
+                      {pts(e.total)}
+                    </td>
+                  )}
+                  {!totalLast && st.moving && <td className="num muted">{pts(e.proj)}</td>}
                   {e.perRound.map((v, i) => (
                     <td key={i} className={`num${roundStage(state, state.rounds[i].id) === "final" ? "" : " muted"}`} title={roundStage(state, state.rounds[i].id) === "final" ? undefined : "Not final yet"}>
                       {summary.rounds[i].games.some((g) => g.holesPlayed) ? pts(v) : ""}
                     </td>
                   ))}
-                  {bonusOn && <td className="num">{pts(summary.bonus[e.id] ?? 0)}</td>}
                   {prizesOn && <td className="num">{pts(prizePts[e.id] ?? 0)}</td>}
+                  {bonusCols.map((k) => (
+                    <td key={k} className="num">
+                      {pts(summary.bonusBy?.[e.id]?.[k] ?? 0)}
+                    </td>
+                  ))}
                   {awardsFor.map((a) => (
                     <td key={a.kind} className="num" title={`count ${a.counts[e.id] ?? 0}`}>
                       {fin ? pts(a.points[e.id] ?? 0) : <span className="muted">({pts(a.projected[e.id] ?? 0)})</span>}
                     </td>
                   ))}
+                  {totalLast && (
+                    <td className="num" style={{ fontWeight: 700 }}>
+                      {pts(e.total)}
+                    </td>
+                  )}
+                  {totalLast && st.moving && <td className="num muted">{pts(e.proj)}</td>}
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
         <p className="small muted">
-          {pts(summary.pointsAvailable)} points available{hasBonus(cfg) ? `, plus the bonus points for ${openBonusWords(cfg)}` : ""}. {st.moving && "Total counts final cards only. Projected is where everyone would finish if every match ended as it stands now. "}
+          {pts(summary.pointsAvailable)} points available.{onTop ? ` ${onTop}` : ""} {st.moving && "Total counts final cards only. Projected is where everyone would finish if every match ended as it stands now. "}
           {awardsFor.length > 0 && !fin && "Bracketed side-game points show who would win them if it ended now. "}
           {awardsFor.map((a) => `${a.kind.toUpperCase()} = ${SIDE_GAME_LABEL[a.kind].toLowerCase()}`).join(", ")}
         </p>

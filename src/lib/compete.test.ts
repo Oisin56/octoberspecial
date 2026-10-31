@@ -232,7 +232,9 @@ describe("prizes", () => {
 
   it("counts closest the pin on the par 3s, or on the holes chosen", () => {
     expect(run([{ kind: "ctp", per: "trip" }]).prizes[0].leaders).toEqual(["neil"]);
-    expect(run([{ kind: "ctp", per: "trip", holes: [1] }]).prizes[0].leaders).toEqual(["ronan"]);
+    // Only on the par 3s chosen: the 3rd chosen, Neil's counts; another par 3 chosen, nobody has one
+    expect(run([{ kind: "ctp", per: "trip", holes: [3] }]).prizes[0].leaders).toEqual(["neil"]);
+    expect(run([{ kind: "ctp", per: "trip", holes: [1, 7] }]).prizes[0].leaders).toEqual([]);
   });
 
   it("gives the front nine and back nine separately", () => {

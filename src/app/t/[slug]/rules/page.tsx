@@ -3,7 +3,7 @@
 import { useT } from "@/components/Providers";
 import { Loading, pts } from "@/components/ui";
 import { acrossField, bonusOn, openBonusWords, roundPointsAvailable, stageName } from "@/lib/engine";
-import { PRIZE_NAME, prizeHolesText } from "@/lib/boards";
+import { SIDE_KINDS, SIDE_NAME, isOn, sideLine, sideSetupOf, type SideKind } from "@/lib/sidegames";
 import { PLAY_LABEL, SCORING_LABEL, SIDE_GAME_LABEL, toRoundCfg } from "@/lib/types";
 
 const PLAY_RULE: Record<string, string> = {
@@ -33,6 +33,7 @@ export default function Rules() {
   const win = summary.win;
   const counted = win.kind === "points" || win.kind === "matches" || (!summary.totals && !summary.teamRows && !summary.skins && !summary.knockout);
   const countback = "A tie is settled on count-back: the better last round, then its last 9, 6, 3 and last hole.";
+  const sideCount = SIDE_KINDS.filter((k) => isOn(sideSetupOf(cfg), k)).length;
   const how = (() => {
     switch (win.kind) {
       case "stableford":
@@ -54,21 +55,23 @@ export default function Rules() {
       case "matches":
         return `Matches won: every match is worth points to its team (below). ${pts(summary.pointsAvailable)} points in all; the team with the most wins.`;
       default:
-        return `A points race: points from every round${(cfg.prizes ?? []).some((p) => (p.points ?? 0) > 0) ? " and the prizes" : ""}${win.kind === "points" && ((win.bonus?.ctp ?? 0) > 0 || (win.bonus?.ld ?? 0) > 0) ? ", closest the pin and long drive" : ""} (below), ${pts(summary.pointsAvailable)} in all${bonusOn(cfg) ? `, plus the bonus points for ${openBonusWords(cfg)}` : ""}. Most points wins.`;
+        return `A points race: points from every round${sideCount ? " and the side games" : ""} (below), ${pts(summary.pointsAvailable)} in all${bonusOn(cfg) ? `, with ${openBonusWords(cfg)} on top` : ""}. Most points wins.`;
     }
   })();
-  const bonus = win.kind === "points" && win.bonus ? (Object.entries(win.bonus) as [string, number][]).filter(([, v]) => v > 0) : [];
-  const BONUS_NAME: Record<string, string> = { birdies: "each birdie", eagles: "each eagle", gir: "each green in regulation", ctp: "each closest the pin won", ld: "each long drive won" };
-  const prizes = cfg.prizes ?? [];
-  const PRIZE_RULE: Record<string, string> = {
-    ctp: "nearest the hole from the tee, on the par 3s; the most won takes it",
-    ld: "the longest drive on the fairway, on the par 5s; the most won takes it",
-    nines: "the best score on the front 9 and on the back 9, every round",
-    birdies: "the most gross birdies",
-    gir: "the most greens in regulation (on in par minus two)",
-    skins: "the most holes won outright on net score, ties carried",
-    bestround: "the best single round",
+  // Side games: a line each (how it counts, what it's worth, which holes), then what it is
+  const side = sideSetupOf(cfg);
+  const SIDE_RULE: Record<SideKind, string> = {
+    ctp: "Nearest the hole from the tee; the ball must finish on the green.",
+    ld: "The longest drive that finishes on the fairway.",
+    birdies: "Gross birdies.",
+    eagles: "Gross eagles.",
+    gir: "On the green in par minus two.",
+    nines: "The best score on the front 9 and on the back 9.",
+    skins: "Holes won outright on net score, ties carried.",
+    bestround: "The best single round.",
   };
+  const sideOn = SIDE_KINDS.map((k) => ({ k, line: sideLine(side, k) })).filter((x): x is { k: SideKind; line: string } => !!x.line);
+  const sharedPts = win.kind === "points" && (cfg.prizes ?? []).some((p) => (p.points ?? 0) > 0);
 
   return (
     <article className="article" style={{ maxWidth: 760 }}>
@@ -78,7 +81,6 @@ export default function Rules() {
         {cfg.rounds.length} round{cfg.rounds.length === 1 ? "" : "s"}. {how}
         {teamMode && win.kind !== "teamscore" && win.kind !== "scramble" ? ` Team event: ${cfg.teams.map((t) => t.name).join(" v ")}.` : ""} The site keeps the scores only. Any money is settled separately.
       </p>
-      {bonus.length > 0 && <p>Bonus points: {bonus.map(([k, v]) => `${pts(v)} for ${BONUS_NAME[k] ?? k}`).join(", ")}.</p>}
 
       <h3>The rounds</h3>
       {cfg.rounds.map((r) => {
@@ -143,14 +145,14 @@ export default function Rules() {
         {counted ? "Any segment (nine, 18, or match) that finishes level splits its points. " : ""}Shots are taken on the holes with the lowest stroke index first.
       </p>
 
-      {prizes.length > 0 && <h3>Prizes</h3>}
-      {prizes.map((p) => (
-        <p key={p.kind}>
-          <strong>{PRIZE_NAME[p.kind]}</strong>: {(p.kind === "ctp" || p.kind === "ld") && prizeHolesText(p, null, cfg.rounds.length) ? PRIZE_RULE[p.kind].replace(/on the par [35]s/, prizeHolesText(p, null, cfg.rounds.length)!) : PRIZE_RULE[p.kind]}
-          {p.kind !== "nines" && cfg.rounds.length > 1 ? (p.per === "round" ? ", in every round" : ", over the whole trip") : ""}.{" "}
-          {p.points && win.kind === "points" ? `Worth ${pts(p.points)} point${p.points === 1 ? "" : "s"} in the race, shared if tied.` : "Played for alongside the winner; it doesn't change the standings."}
+      {sideOn.length > 0 && <h3>Side games</h3>}
+      {sideOn.map(({ k, line }) => (
+        <p key={k}>
+          <strong>{SIDE_NAME[k]}</strong>
+          {line.slice(SIDE_NAME[k].length)} {SIDE_RULE[k]}
         </p>
       ))}
+      {sideOn.length > 0 && <p>{sharedPts ? "A prize's points are shared if it's tied. " : ""}Prizes not worth points are played for alongside the winner and don&apos;t change the standings.</p>}
 
       {enabled.length > 0 && <h3>Side games, across the whole event</h3>}
       {sidePts.map((g) => (

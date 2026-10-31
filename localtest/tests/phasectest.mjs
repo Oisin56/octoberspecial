@@ -117,8 +117,8 @@ await next(p);
 // Running totals: no points screen; six players: who plays with whom
 ok((await q(p)) === "Who plays with whom?", "six players: who plays with whom");
 await tile(p, "Random").click();
-ok((await q(p)) === "Any prizes?", "then the prizes, all off");
-await next(p, "No prizes");
+ok((await q(p)) === "Side games", "then the side games, all off");
+await next(p, "No side games");
 ok((await q(p)) === "The extras", "the extras");
 ok((await p.locator(".wz-yn").count()) === 6, "feed, AI writing and its style, video and its shape, yards or metres");
 await p.screenshot({ path: "/var/tmp/ospg/shots/phasec-extras.png" });
@@ -254,7 +254,7 @@ await p.screenshot({ path: "/var/tmp/ospg/shots/phasec-points.png" });
 await next(p);
 ok((await q(p)) === "Who plays with whom?", "who plays with whom");
 await tile(p, "Random").click();
-await next(p, "No prizes");
+await next(p, "No side games");
 await p.locator(".wz-yn").nth(1).locator(".pick-tile", { hasText: "No" }).click();
 await next(p);
 await next(p); // who can watch: Friends and family

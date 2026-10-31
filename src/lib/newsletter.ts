@@ -20,7 +20,7 @@ export interface NewsletterData {
   title: string;
   body: string;
   hero?: { src: string; alt: string; credit?: string } | null;
-  standings: { name: string; value: string; lead: boolean }[];
+  standings: { name: string; value: string; lead: boolean; /** Points race: "Rounds 40, birdies 4" */ sub?: string | null }[];
   standingsTitle: string;
   leadLine?: string | null; // "Oisin leads by 12"
   tug?: { left: string; right: string; leftPct: number; rightPct: number; target: string } | null;
@@ -108,7 +108,7 @@ export function newsletterEmail(d: NewsletterData) {
     .map(
       (s, i) => `<tr><td style="padding:${i ? 10 : 2}px 0 2px;border-top:${i ? "1px solid rgba(255,255,255,.12)" : "0"}">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
-   <td style="font-family:${SANS};font-size:26px;font-weight:700;color:#ffffff;line-height:1.1">${esc(s.name)}${s.lead && d.leadLine ? ` <span style="display:inline-block;vertical-align:middle;background:${gold};color:#1b1408;font-size:11px;letter-spacing:1px;text-transform:uppercase;padding:3px 8px;border-radius:99px">${esc(d.leadLine)}</span>` : ""}</td>
+   <td style="font-family:${SANS};font-size:26px;font-weight:700;color:#ffffff;line-height:1.1">${esc(s.name)}${s.lead && d.leadLine ? ` <span style="display:inline-block;vertical-align:middle;background:${gold};color:#1b1408;font-size:11px;letter-spacing:1px;text-transform:uppercase;padding:3px 8px;border-radius:99px">${esc(d.leadLine)}</span>` : ""}${s.sub ? `<div style="font-size:14px;font-weight:500;color:#cfdcd3;line-height:1.35;padding-top:4px">${esc(s.sub)}</div>` : ""}</td>
    <td align="right"><table role="presentation" cellpadding="0" cellspacing="0"><tr>${tile(s.value, s.lead)}</tr></table></td>
   </tr></table></td></tr>`,
     )

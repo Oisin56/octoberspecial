@@ -68,7 +68,7 @@ ok(!!mr && !!mp, "report and preview test emails sent");
 const h = mr.html;
 ok(/Issue 1/.test(h) && /Match report · Round 1/.test(h), "masthead with issue number, label");
 ok(h.includes("Oisin conquers the Heath"), "headline in the hero");
-ok(/leads by/.test(h) && /wins it/.test(h), "scoreboard strip with lead tag and tug-of-war");
+ok(/leads by/.test(h) && !/wins it/.test(h), "scoreboard strip with lead tag (a points race: no tug-of-war)");
 ok(/Closest to the pin/.test(h) && /Greens in regulation/.test(h), "side-game tiles");
 ok(/nl-drop/.test(h) && /&ldquo;/.test(h), "drop cap and pull quote");
 ok(/Round 1 results/.test(h) && /Front 9/.test(h) && /18 holes/.test(h) && /Birdies/.test(h), "results table from the scoring engine");

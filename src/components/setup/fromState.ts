@@ -5,6 +5,7 @@
 import type { PointsRule } from "@/lib/engine";
 import type { RoundRow, TournamentState } from "@/lib/types";
 import { courseRefOf, defaultWin, formatOfRound, handicapFor, isMatch, type RoundPoints, type WinChoice, type Who } from "@/lib/wizard";
+import { sideHolesOf } from "@/lib/sidegames";
 import { TEAM_COLOURS, fresh, type DPlayer, type DRound, type Draft } from "./model";
 
 function pointsOf(r: RoundRow, f: DRound["format"]): RoundPoints | undefined {
@@ -71,6 +72,7 @@ export function fromState(s: Pick<TournamentState, "tournament" | "players" | "r
     skinsCarry: t.win?.kind === "skins" ? t.win.carry : true,
     teamCount: t.win?.kind === "teamscore" ? t.win.count : 2,
     bonus: t.win?.kind === "points" ? { ...(t.win.bonus ?? {}) } : {},
+    sideHoles: sideHolesOf(t.win, t.prizes, rounds),
     count: rounds.length,
     draw: "pick",
     prizes: t.prizes ?? [],

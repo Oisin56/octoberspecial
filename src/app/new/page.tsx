@@ -6,6 +6,7 @@ import { MARKETING_WORDING } from "@/lib/consent";
 import { useRouter } from "next/navigation";
 import { BRAND } from "@/lib/brand";
 import { formatName, inSentence, winName } from "@/lib/wizard";
+import { sideLines } from "@/lib/sidegames";
 import { fresh, named, settle, stepsFor, toWizard, type Draft } from "@/components/setup/model";
 import {
   AboutScreen,
@@ -19,7 +20,8 @@ import {
   NameScreen,
   PlayersScreen,
   PointsScreen,
-  PrizesScreen,
+  SideGamesScreen,
+  sideSetupOfDraft,
   Problems,
   Screen,
   TeamsScreen,
@@ -244,7 +246,7 @@ export default function NewTournament() {
         {kind === "when" && <WhenScreen key={ri} {...props} i={ri} />}
         {kind === "points" && <PointsScreen {...props} />}
         {kind === "groups" && <GroupsScreen {...props} />}
-        {kind === "prizes" && <PrizesScreen {...props} />}
+        {kind === "prizes" && <SideGamesScreen {...props} />}
         {kind === "extras" && <ExtrasScreen {...props} />}
         {kind === "watch" && <WatchScreen {...props} />}
         {kind === "look" && <LookScreen {...props} />}
@@ -369,7 +371,11 @@ function Summary({ d, onFix }: { d: Draft; onFix: (step: string) => void }) {
             {r.time ? ` at ${r.time}` : ""}
           </Line>
         ))}
-        {d.who !== "solo" && <Line step="prizes" onFix={onFix}>Prizes: {d.prizes.length ? d.prizes.map((p) => ({ ctp: "closest the pin", ld: "long drive", nines: "front 9 and back 9", birdies: "most birdies", gir: "most greens", skins: "skins", bestround: "best round" })[p.kind]).join(", ") : "none"}</Line>}
+        {d.who !== "solo" && (
+          <Line step="prizes" onFix={onFix}>
+            Side games: {sideLines(sideSetupOfDraft(d)).join(" ") || "none"}
+          </Line>
+        )}
         <Line step="watch" onFix={onFix}>
           Who can watch: {d.privacy === "private" ? `private${d.playersNeedEmail ? ", players sign in with their email" : ""}` : "friends and family (anyone with the link)"}
         </Line>
