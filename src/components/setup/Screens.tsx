@@ -1344,6 +1344,15 @@ function SideHolesPick({ d, set, kind, rounds, played }: { d: Draft; set: StepPr
           if (v === "every") set((x) => ({ ...x, sideHoles: Object.fromEntries(Object.entries(x.sideHoles ?? {}).filter(([k]) => k !== kind)) }));
         }}
       />
+      {!choosing && (
+        <ul className="wz-holes-list">
+          {withPar.map((r) => (
+            <li key={r.number}>
+              <strong>{`Round ${r.number}, ${r.course}`}</strong>: {and(parHoles(r, kind).map(ordinal))}
+            </li>
+          ))}
+        </ul>
+      )}
       {choosing &&
         groups.map((g) =>
           g.rounds.length > 1 ? (

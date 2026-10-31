@@ -1114,8 +1114,7 @@ table.card.compact .shotdot { display: none; }
 .tally-box { display: grid; justify-items: center; min-width: 64px; padding: 6px 10px 5px; border-radius: 10px; background: rgba(255,255,255,0.08); font-family: var(--font-display); line-height: 1.1; }
 .tally-box b { font-size: 21px; font-weight: 700; color: var(--tile); }
 .tally-box span { font-size: 13px; font-weight: 500; color: var(--board-soft); white-space: nowrap; }
-.board-left { flex-basis: 100%; display: grid; gap: 8px; }
-.board-left-k { font-size: 13px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--board-soft); }
+.board-row > .tally { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); gap: 6px; }
 .tb-small { font-family: var(--font-display); font-size: 17px; font-weight: 600; color: var(--board-soft); white-space: nowrap; }
 .tb-card { margin: 12px 0 0; font-family: var(--font-display); font-size: 15px; color: var(--board-soft); text-align: center; }
 .tb-session { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 4px 0 12px; }
@@ -1531,7 +1530,7 @@ html.has-tabbar .made-with { display: none; }
 [data-board="light"] .board .tile.red, [data-board="light"] .board-row.lead .tile { color: var(--red); box-shadow: inset 0 0 0 2px var(--red); }
 [data-board="light"] .lead-tag { background: var(--sb-ink); color: var(--sb-bg); }
 [data-board="light"] .board-foot, [data-board="light"] .board-pos, [data-board="light"] .board-sub, [data-board="light"] .board-split .k,
-[data-board="light"] .muted-on-dark, [data-board="light"] .tally-box span, [data-board="light"] .board-left-k, [data-board="light"] .tug-labels, [data-board="light"] .board-proj, [data-board="light"] .tb-small, [data-board="light"] .tb-card { color: var(--sb-soft); }
+[data-board="light"] .muted-on-dark, [data-board="light"] .tally-box span, [data-board="light"] .tug-labels, [data-board="light"] .board-proj, [data-board="light"] .tb-small, [data-board="light"] .tb-card { color: var(--sb-soft); }
 [data-board="light"] .board-foot b, [data-board="light"] .board-proj-v b, [data-board="light"] .board-split .v { color: var(--sb-ink); }
 [data-board="light"] .board-proj, [data-board="light"] .tally-box { background: var(--sb-wash); }
 [data-board="light"] .tally-box b { color: var(--sb-ink); }
@@ -2430,6 +2429,8 @@ textarea.fr-input { resize: vertical; }
 .wz-holes-pick .pick-tiles .pick-tile { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; line-height: 1.1; min-height: 64px; }
 .wz-holes-pick .pick-tile .wz-played { font-size: 12px; font-weight: 600; opacity: 0.8; }
 .wz-holes-pick .pick-tile:disabled { cursor: default; opacity: 0.75; }
+.wz-holes-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; font-size: 16px; line-height: 1.4; color: var(--ink-soft); }
+.wz-holes-list strong { color: var(--ink); font-weight: 600; }
 .wz-not-in { justify-self: start; min-height: 48px; padding: 0 18px; font-size: 17px; }
 .wz-holes-pick .pick-tiles { grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); }
 .wz-holes-pick .pick-tile small { font-weight: 500; opacity: 0.75; }

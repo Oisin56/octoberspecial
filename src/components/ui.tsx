@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useT } from "./Providers";
 import { cleanBody, cleanTitle } from "@/lib/cleanText";
 import { cardInfo, cardLabel } from "@/lib/scorecards";
-import { liveLine, pointsParts, pointsTally, roundBoard, standings, stillTally, toPar, totalsView, type TallyBox, type TotalsView } from "@/lib/live";
+import { liveLine, pointsTally, roundBoard, standings, toPar, totalsView, type TallyBox, type TotalsView } from "@/lib/live";
 import { CountUp, CourseImage, Icon } from "./visual";
 import { ballsOfGame, gameHole, holeShots, isNine, roundPointsAvailable, type Game, type GameSummary, type SegmentResult } from "@/lib/engine";
 import { winBoard } from "@/lib/boards";
@@ -150,7 +150,6 @@ export function Board() {
   const toWin = total / 2;
   // Points race: where each player's points came from, and what's still to play for
   const race = summary.win.kind === "points";
-  const left = race ? stillTally(summary) : null;
 
   return (
     <section className="board" aria-label="Overall standings">
@@ -169,9 +168,9 @@ export function Board() {
                   {r.name}
                   {lead && <span className="lead-tag">{second < best && rows.length > 1 ? `leads by ${pts(best - second)}` : "leads"}</span>}
                 </span>
-                {race && !teamMode && <Tally boxes={pointsTally(pointsParts(summary, r.id, r.value))} label={`${r.name}: where the points came from`} />}
               </div>
               <Tiles value={r.value} red={lead} small={small} />
+              {race && !teamMode && <Tally boxes={pointsTally(summary, cfg, r.id, r.value)} label={`${r.name}: points by side game`} />}
             </div>
           );
         })}
@@ -210,14 +209,7 @@ export function Board() {
       )}
 
       <div className="board-foot">
-        {left ? (
-          left.length > 0 && (
-            <div className="board-left">
-              <span className="board-left-k">Still to play for</span>
-              <Tally boxes={left} label="Still to play for" />
-            </div>
-          )
-        ) : (
+        {!race && (
           <span>
             <b className="num">{pts(summary.pointsRemaining)}</b> points still to play for
           </span>
@@ -240,14 +232,14 @@ export function Board() {
   );
 }
 
-/** Points race: small boxes, a number over a word (under a name: where the points came from; at the foot: what's left) */
+/** Points race: under a name, a small box for the rounds and each side game, empty until it has points */
 function Tally({ boxes, label }: { boxes: TallyBox[]; label: string }) {
   if (!boxes.length) return null;
   return (
     <ul className="tally" aria-label={label}>
       {boxes.map((b) => (
         <li key={b.key} className="tally-box">
-          <b className="num">{b.value}</b>
+          <b className="num">{b.value || "\u00a0"}</b>
           <span>{b.label}</span>
         </li>
       ))}

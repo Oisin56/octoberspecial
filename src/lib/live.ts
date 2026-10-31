@@ -4,7 +4,7 @@
  *   - the tournament: points banked (final cards) and projected (Ryder Cup style: as things stand now)
  * Pure: derived from the scoring engine and the cards.
  */
-import { acrossField, gameHole, gameShots, openBonusWords, positionPoints, sideName, type BonusKind, type Game, type GameSummary, type RoundCfg, type SegmentResult, type TournamentCfg, type TournamentSummary } from "./engine";
+import { acrossField, gameHole, gameShots, openBonusWords, positionPoints, sideName, type Game, type GameSummary, type RoundCfg, type SegmentResult, type TournamentCfg, type TournamentSummary } from "./engine";
 import { cardInfo, type CardStage } from "./scorecards";
 import { toEntries, toRoundCfg, toTournamentCfg, type RoundRow, type TournamentState } from "./types";
 
@@ -359,30 +359,47 @@ export function totalsView(s: TournamentState, summary: TournamentSummary): Tota
 
 // ---------------------------------------------------------------- points race: where the points came from
 
-export const BONUS_ORDER: BonusKind[] = ["birdies", "eagles", "gir", "ctp", "ld"];
-export const BONUS_WORD: Record<BonusKind, string> = { birdies: "birdies", eagles: "eagles", gir: "greens in regulation", ctp: "closest the pin", ld: "long drive" };
+/** The parts of a points race total, in the order they're shown: the rounds, then each side game */
+export type PartKey = "rounds" | "birdies" | "eagles" | "ctp" | "ld" | "gir" | "nines" | "skins" | "bestround";
+export const PART_ORDER: PartKey[] = ["rounds", "birdies", "eagles", "ctp", "ld", "gir", "nines", "skins", "bestround"];
+/** In a small box or a column heading */
+export const PART_LABEL: Record<PartKey, string> = { rounds: "Rounds", birdies: "Birdies", eagles: "Eagles", ctp: "CTP", ld: "Long drive", gir: "GIR", nines: "Front/back 9", skins: "Skins", bestround: "Best round" };
+/** In a sentence */
+export const PART_WORD: Record<PartKey, string> = { rounds: "rounds", birdies: "birdies", eagles: "eagles", ctp: "closest the pin", ld: "long drive", gir: "greens in regulation", nines: "front and back 9", skins: "skins", bestround: "best round" };
 
 export interface PointsPart {
-  key: "rounds" | "prizes" | BonusKind;
+  key: PartKey;
   label: string;
   value: number;
 }
 
 /**
- * A player's total in a points race, split by where it came from: the rounds, prizes, then each bonus. `total` is the
- * total being shown (banked); the rounds are what's left after the prizes and bonuses, so the parts always add up.
+ * Which parts a points race has: the rounds, then each side game worth points (each one, or its prize, or both,
+ * counted together under the side game's own name).
  */
+export function partsOn(summary: TournamentSummary, cfg: Pick<TournamentCfg, "prizes">): PartKey[] {
+  const w = summary.win;
+  if (w.kind !== "points") return [];
+  const on = new Set<PartKey>(["rounds"]);
+  for (const [k, v] of Object.entries(w.bonus ?? {})) if ((v ?? 0) > 0) on.add(k as PartKey);
+  for (const p of cfg.prizes ?? []) if ((p.points ?? 0) > 0) on.add(p.kind as PartKey);
+  return PART_ORDER.filter((k) => on.has(k));
+}
+
+/** A player's points by part. `total` is the total being shown (banked); the rounds are what's left after the side games, so the parts always add up. */
+export function pointsBy(summary: TournamentSummary, pid: string, total: number): Record<PartKey, number> {
+  const out = Object.fromEntries(PART_ORDER.map((k) => [k, 0])) as Record<PartKey, number>;
+  for (const [k, v] of Object.entries(summary.bonusBy?.[pid] ?? {})) out[k as PartKey] += v ?? 0;
+  for (const pr of summary.prizes ?? []) out[pr.kind as PartKey] += pr.points?.[pid] ?? 0;
+  const side = PART_ORDER.reduce((a, k) => (k === "rounds" ? a : a + out[k]), 0);
+  out.rounds = Math.max(0, Math.round((total - side) * 100) / 100);
+  return out;
+}
+
+/** The parts with points, for a sentence */
 export function pointsParts(summary: TournamentSummary, pid: string, total: number): PointsPart[] {
-  const by = summary.bonusBy?.[pid] ?? {};
-  const prizes = summary.prizePoints?.[pid] ?? 0;
-  const bonus = BONUS_ORDER.reduce((a, k) => a + (by[k] ?? 0), 0);
-  const rounds = Math.max(0, Math.round((total - prizes - bonus) * 100) / 100);
-  const parts: PointsPart[] = [
-    { key: "rounds", label: "rounds", value: rounds },
-    { key: "prizes", label: "prizes", value: prizes },
-    ...BONUS_ORDER.map((k) => ({ key: k, label: BONUS_WORD[k], value: by[k] ?? 0 })),
-  ];
-  return parts.filter((p) => p.value > 0);
+  const by = pointsBy(summary, pid, total);
+  return PART_ORDER.filter((k) => by[k] > 0).map((k) => ({ key: k, label: PART_WORD[k], value: by[k] }));
 }
 
 /** "Rounds 40, birdies 4, closest the pin 3" (null when there's nothing but rounds, or nothing at all) */
@@ -392,53 +409,29 @@ export function pointsLine(parts: PointsPart[]): string | null {
   return s[0].toUpperCase() + s.slice(1);
 }
 
-const up = (s: string) => (s ? s[0].toUpperCase() + s.slice(1) : s);
-
-/**
- * The board's foot in a points race: "Still to play for: 20 from the rounds, 12 from closest the pin and long
- * drive." and "Birdies and eagles on top." Either can be null.
- */
-export function stillToPlay(summary: TournamentSummary, cfg: Pick<TournamentCfg, "win" | "standings" | "teams">): { left: string | null; onTop: string | null } {
-  const l = summary.left ?? { rounds: summary.pointsRemaining, prizes: 0, holes: 0, ctp: 0, ld: 0 };
-  const rounds = Math.max(0, summary.pointsRemaining - l.prizes - l.holes);
-  const w = summary.win;
-  const holeWords = (["ctp", "ld"] as const).filter((k) => w.kind === "points" && (w.bonus?.[k] ?? 0) > 0).map((k) => BONUS_WORD[k]).join(" and ");
-  const bits = [rounds > 0 ? `${fmtPts(rounds)} from the rounds` : "", l.holes > 0 ? `${fmtPts(l.holes)} from ${holeWords}` : "", l.prizes > 0 ? `${fmtPts(l.prizes)} from prizes` : ""].filter(Boolean);
-  const open = openBonusWords(cfg);
-  return {
-    left: bits.length ? `Still to play for: ${bits.join(", ")}.` : null,
-    onTop: open && !summary.complete ? `${up(open)} on top.` : null,
-  };
-}
-
 export interface TallyBox {
-  key: string;
-  /** "60", or "+2" for so many each */
+  key: PartKey;
+  /** The points ("" while there are none yet) */
   value: string;
-  /** "Rounds", "Closest the pin", "Each birdie" */
   label: string;
 }
 
-const TALLY_LABEL: Record<BonusKind, string> = { birdies: "Birdies", eagles: "Eagles", gir: "Greens", ctp: "Closest the pin", ld: "Long drive" };
-const EACH_LABEL: Record<string, string> = { birdies: "Each birdie", eagles: "Each eagle", gir: "Each green" };
-
-/** A player's breakdown as small boxes: Rounds 40, Birdies 2, Closest the pin 3 (none when it's rounds alone) */
-export function pointsTally(parts: PointsPart[]): TallyBox[] {
-  if (!parts.length || (parts.length === 1 && parts[0].key === "rounds")) return [];
-  return parts.map((p) => ({ key: p.key, value: fmtPts(p.value), label: p.key === "rounds" ? "Rounds" : p.key === "prizes" ? "Prizes" : TALLY_LABEL[p.key] }));
+/** A player's tally on the scoreboard: a box for every part, empty until it has points */
+export function pointsTally(summary: TournamentSummary, cfg: Pick<TournamentCfg, "prizes">, pid: string, total: number): TallyBox[] {
+  const on = partsOn(summary, cfg);
+  if (on.length < 2) return [];
+  const by = pointsBy(summary, pid, total);
+  return on.map((k) => ({ key: k, value: by[k] > 0 ? fmtPts(by[k]) : "", label: PART_LABEL[k] }));
 }
 
-/** What's still to play for, as small boxes: Rounds 60, Closest the pin 18, Long drive 18, Prizes 10, then +2 each birdie */
-export function stillTally(summary: TournamentSummary): TallyBox[] {
+/** The writers: what's still to play for, and the bonuses with no limit ("Birdies and eagles"). */
+export function stillToPlay(summary: TournamentSummary, cfg: Pick<TournamentCfg, "win" | "standings" | "teams">): { left: string | null; onTop: string | null } {
   const l = summary.left ?? { rounds: summary.pointsRemaining, prizes: 0, holes: 0, ctp: 0, ld: 0 };
   const rounds = Math.max(0, summary.pointsRemaining - l.prizes - l.holes);
-  const out: TallyBox[] = [];
-  if (rounds > 0) out.push({ key: "rounds", value: fmtPts(rounds), label: "Rounds" });
-  if (l.ctp > 0) out.push({ key: "ctp", value: fmtPts(l.ctp), label: "Closest the pin" });
-  if (l.ld > 0) out.push({ key: "ld", value: fmtPts(l.ld), label: "Long drive" });
-  if (l.prizes > 0) out.push({ key: "prizes", value: fmtPts(l.prizes), label: "Prizes" });
-  const w = summary.win;
-  if (w.kind === "points" && !summary.complete)
-    for (const k of ["birdies", "eagles", "gir"] as const) if ((w.bonus?.[k] ?? 0) > 0) out.push({ key: k, value: `+${fmtPts(w.bonus![k]!)}`, label: EACH_LABEL[k] });
-  return out;
+  const bits = [rounds > 0 ? `${fmtPts(rounds)} from the rounds` : "", l.ctp > 0 ? `${fmtPts(l.ctp)} from closest the pin` : "", l.ld > 0 ? `${fmtPts(l.ld)} from long drive` : "", l.prizes > 0 ? `${fmtPts(l.prizes)} from prizes worth points` : ""].filter(Boolean);
+  const open = openBonusWords(cfg);
+  return {
+    left: bits.length ? `Still to play for: ${bits.join(", ")}.` : null,
+    onTop: open && !summary.complete ? `${open[0].toUpperCase()}${open.slice(1)} on top.` : null,
+  };
 }

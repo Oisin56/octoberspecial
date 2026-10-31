@@ -3,7 +3,7 @@
 import { useT } from "@/components/Providers";
 import { Board, Loading, pts } from "@/components/ui";
 import { SIDE_GAME_LABEL, formatLabel } from "@/lib/types";
-import { BONUS_ORDER, BONUS_WORD, standings, stillToPlay, totalsView } from "@/lib/live";
+import { PART_LABEL, partsOn, pointsBy, standings, totalsView } from "@/lib/live";
 import { winBoard } from "@/lib/boards";
 import { PrizesPanel, WinBoardTables } from "@/components/WinBoards";
 import { roundStage } from "@/lib/scorecards";
@@ -28,13 +28,9 @@ export default function Leaderboard() {
   const wb = winBoard(state, summary, cfg);
   // Points race: a column for prizes worth points, then one for each bonus that's on, then the total
   const race = summary.win.kind === "points";
-  const w = summary.win;
-  const bonusCols = !teamMode && w.kind === "points" ? BONUS_ORDER.filter((k) => (w.bonus?.[k] ?? 0) > 0) : [];
-  const prizePts = summary.prizePoints ?? {};
-  const prizesOn = !teamMode && ((cfg.prizes ?? []).some((p) => (p.points ?? 0) > 0) || Object.values(prizePts).some((v) => v > 0));
+  // Each side game worth points has its own column (points for each one and its prize together)
+  const sideCols = !teamMode ? partsOn(summary, cfg).filter((k) => k !== "rounds") : [];
   const totalLast = race && !teamMode;
-  const onTop = race ? stillToPlay(summary, cfg).onTop : null;
-  const cap = (x: string) => x[0].toUpperCase() + x.slice(1);
 
   if (wb)
     return (
@@ -149,9 +145,8 @@ export default function Leaderboard() {
                     R{r.number}
                   </th>
                 ))}
-                {prizesOn && <th title="Points from prizes">Prizes</th>}
-                {bonusCols.map((k) => (
-                  <th key={k}>{cap(BONUS_WORD[k])}</th>
+                {sideCols.map((k) => (
+                  <th key={k}>{PART_LABEL[k]}</th>
                 ))}
                 {awardsFor.map((a) => (
                   <th key={a.kind} title={SIDE_GAME_LABEL[a.kind]}>
@@ -177,10 +172,9 @@ export default function Leaderboard() {
                       {summary.rounds[i].games.some((g) => g.holesPlayed) ? pts(v) : ""}
                     </td>
                   ))}
-                  {prizesOn && <td className="num">{pts(prizePts[e.id] ?? 0)}</td>}
-                  {bonusCols.map((k) => (
+                  {sideCols.map((k) => (
                     <td key={k} className="num">
-                      {pts(summary.bonusBy?.[e.id]?.[k] ?? 0)}
+                      {pts(pointsBy(summary, e.id, e.total)[k])}
                     </td>
                   ))}
                   {awardsFor.map((a) => (
@@ -200,7 +194,7 @@ export default function Leaderboard() {
           </table>
         </div>
         <p className="small muted">
-          {pts(summary.pointsAvailable)} points available.{onTop ? ` ${onTop}` : ""} {st.moving && "Total counts final cards only. Projected is where everyone would finish if every match ended as it stands now. "}
+          {race ? "" : `${pts(summary.pointsAvailable)} points available. `}{st.moving && "Total counts final cards only. Projected is where everyone would finish if every match ended as it stands now. "}
           {awardsFor.length > 0 && !fin && "Bracketed side-game points show who would win them if it ended now. "}
           {awardsFor.map((a) => `${a.kind.toUpperCase()} = ${SIDE_GAME_LABEL[a.kind].toLowerCase()}`).join(", ")}
         </p>

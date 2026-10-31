@@ -491,6 +491,20 @@ describe("a two-player points race: what's on offer", () => {
     expect(s.complete).toBe(true);
     expect(s.pointsRemaining).toBe(0);
   });
+  it("every par 3 and par 5 in both rounds: 4 + 2 par 3s and 4 + 2 par 5s, 3 points each, one group: 18 and 18", () => {
+    const s = tournamentSummary(cfg, {});
+    expect(r1.holes.filter((h) => h.par === 3).length + r2.holes.filter((h) => h.par === 3).length).toBe(6);
+    expect(r1.holes.filter((h) => h.par === 5).length + r2.holes.filter((h) => h.par === 5).length).toBe(6);
+    expect(s.left).toEqual({ rounds: 58, prizes: 2, holes: 36, ctp: 18, ld: 18 });
+  });
+  it("two groups: each has its own closest the pin and long drive on every hole, so twice the points", () => {
+    const four: Player[] = [...players, { id: "a", name: "Aoife", handicap: 8 }, { id: "b", name: "Brian", handicap: 14 }];
+    const two: Game[] = [duel[0], { id: "g2", sides: [{ id: "a", playerIds: ["a"] }, { id: "b", playerIds: ["b"] }] }];
+    const c2: TournamentCfg = { ...cfg, players: four, rounds: [{ ...r1, games: two }, { ...r2, games: two }] };
+    const s = tournamentSummary(c2, {});
+    expect(s.left.ctp).toBe(36);
+    expect(s.left.ld).toBe(36);
+  });
   it("closest the pin on chosen holes only: two in round 1, none in round 2", () => {
     const chosen: TournamentCfg = { ...cfg, win: { kind: "points", bonus: { birdies: 2, eagles: 5, ctp: 3, ld: 3 }, bonusHoles: { ctp: { "1": [3, 12], "2": [] } } } };
     expect(sideGameHoles(chosen, r1, "ctp")).toEqual([3, 12]);
