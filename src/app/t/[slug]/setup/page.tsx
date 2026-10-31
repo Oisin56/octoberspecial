@@ -431,15 +431,21 @@ export default function TournamentSetup() {
     if (base.allowance != null) bits.push(base.allowance === 0 ? "off scratch" : `${base.allowance}% handicaps`);
     return bits.join(", ");
   })();
+  // Every round's points in full (the nines too), and the bonus points, so nothing is hidden behind the row
+  const n = (v: number) => (Number.isInteger(v) ? String(v) : `${Math.floor(v)}½`);
+  const PLACES = ["1st", "2nd", "3rd", "4th", "5th", "6th"];
+  const BONUS_WORDS: Record<string, string> = { birdies: "a birdie", eagles: "an eagle", gir: "a green in regulation", ctp: "closest the pin", ld: "long drive" };
   const pointsLine = [
-    ...new Set(
-      base.rounds.map((r) => {
-        const p = r.points;
-        if (r.format && isMatch(r.format)) return `${p?.win ?? 1} a match`;
-        if (r.format === "skins") return `${p?.skin ?? 1} a skin`;
-        return p?.positions?.length ? `${p.positions.join("-")} for the places` : "places";
-      }),
-    ),
+    ...base.rounds.map((r, i) => {
+      const p = r.points;
+      const nines = holesOf(r) === 18 && r.holeSet === "all" && p?.nines ? `, front 9 ${n(p.nines.front)}, back 9 ${n(p.nines.back)}` : "";
+      if (r.format && isMatch(r.format)) return `R${i + 1}: ${n(p?.win ?? 1)} a match${nines}`;
+      if (r.format === "skins") return `R${i + 1}: ${n(p?.skin ?? 1)} a skin`;
+      return `R${i + 1}: ${p?.positions?.length ? p.positions.map((v, k) => `${n(v)} for ${PLACES[k]}`).join(", ") : "places"}${nines}`;
+    }),
+    ...(base.win === "points" && Object.values(base.bonus ?? {}).some((v) => (v ?? 0) > 0)
+      ? [`bonus: ${Object.entries(base.bonus ?? {}).filter(([, v]) => (v ?? 0) > 0).map(([k, v]) => `${n(v as number)} for ${BONUS_WORDS[k] ?? k}`).join(", ")}`]
+      : []),
   ].join("; ");
   const groupsLine = list(
     rounds.map((r, i) => {
