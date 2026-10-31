@@ -1308,6 +1308,12 @@ export function prizeResults(
   return out;
 }
 
+/** A points race with bonus points (each birdie, eagle…): the total can't be known in advance */
+export const bonusOn = (cfg: Pick<TournamentCfg, "win" | "standings" | "teams">) => {
+  const w = winRuleOf(cfg);
+  return w.kind === "points" && Object.values(w.bonus ?? {}).some((v) => (v ?? 0) > 0);
+};
+
 export function tournamentSummary(cfg: TournamentCfg, entriesByRound: Record<string, HoleEntry[]>): TournamentSummary {
   const pids = cfg.players.map((p) => p.id);
   const tids = cfg.teams.map((t) => t.id);
@@ -1364,7 +1370,10 @@ export function tournamentSummary(cfg: TournamentCfg, entriesByRound: Record<str
   const withBonus = (base: Record<string, number>) => Object.fromEntries(Object.entries(base).map(([k, v]) => [k, v + (bonus[k] ?? 0) + (prizePts[k] ?? 0)]));
 
   const sideGamePts = cfg.sideGames.filter((g) => g.enabled).reduce((a, g) => a + g.points, 0);
-  const pointsAvailable = cfg.rounds.reduce((t, r) => t + roundPointsAvailable(r), 0) + sideGamePts;
+  // Prizes that count as points: each one's points, once per time it's awarded (each round, each nine, or the trip)
+  const prizePtsOn = prizes.reduce((a, pr) => a + (cfg.prizes ?? []).filter((p) => p.kind === pr.kind && (p.points ?? 0) > 0).reduce((x, p) => x + (p.points ?? 0), 0), 0);
+  const prizePtsLeft = prizes.filter((pr) => !pr.decided).reduce((a, pr) => a + (cfg.prizes ?? []).filter((p) => p.kind === pr.kind && (p.points ?? 0) > 0).reduce((x, p) => x + (p.points ?? 0), 0), 0);
+  const pointsAvailable = cfg.rounds.reduce((t, r) => t + roundPointsAvailable(r), 0) + sideGamePts + prizePtsOn;
 
   let pointsRemaining = 0;
   cfg.rounds.forEach((r, i) => {
@@ -1389,6 +1398,7 @@ export function tournamentSummary(cfg: TournamentCfg, entriesByRound: Record<str
     if (acrossField(r) && !rs.games.every((g, gi) => g.full.complete || r.games[gi]?.free)) pointsRemaining += (r.points.positions ?? []).reduce((a, b) => a + b, 0);
   });
   if (!complete) pointsRemaining += sideGamePts;
+  pointsRemaining += prizePtsLeft;
 
   return {
     rounds,

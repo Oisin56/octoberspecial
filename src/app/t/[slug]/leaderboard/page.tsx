@@ -7,6 +7,7 @@ import { standings, totalsView } from "@/lib/live";
 import { winBoard } from "@/lib/boards";
 import { PrizesPanel, WinBoardTables } from "@/components/WinBoards";
 import { roundStage } from "@/lib/scorecards";
+import { bonusOn as hasBonus } from "@/lib/engine";
 
 const SERIES = ["var(--board)", "var(--red)", "var(--bracken)", "#1d4f91", "#6b4c9a", "#2e7d4f", "#b0582b", "#4a5560"];
 
@@ -180,7 +181,7 @@ export default function Leaderboard() {
           </table>
         </div>
         <p className="small muted">
-          {pts(summary.pointsAvailable)} points available. {st.moving && "Total counts final cards only. Projected is where everyone would finish if every match ended as it stands now. "}
+          {pts(summary.pointsAvailable)} points available{hasBonus(cfg) ? ", plus bonus points" : ""}. {st.moving && "Total counts final cards only. Projected is where everyone would finish if every match ended as it stands now. "}
           {awardsFor.length > 0 && !fin && "Bracketed side-game points show who would win them if it ended now. "}
           {awardsFor.map((a) => `${a.kind.toUpperCase()} = ${SIDE_GAME_LABEL[a.kind].toLowerCase()}`).join(", ")}
         </p>

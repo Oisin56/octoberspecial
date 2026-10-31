@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import * as old from "./scoring";
 import {
   tournamentSummary,
+  roundPointsAvailable,
+  bonusOn,
   roundSummary,
   gameShots,
   oneBallHandicap,
@@ -438,5 +440,43 @@ describe("match play: conceded holes and early finishes", () => {
     expect(gs.full.matchLabel).toBe("a won 4&3");
     expect(gs.full.complete).toBe(true);
     expect(gs.points.a).toBe(30); // front nine (4 up) + the match
+  });
+});
+
+describe("a two-player points race: what's on offer", () => {
+  // Round 1: stroke play, 18 for the round, 10 for each nine. Round 2: a 9-hole match worth 20. Bonus points for
+  // birdies, eagles, greens and long drives; most greens over the trip worth 2.
+  const players: Player[] = [
+    { id: "o", name: "Oisin", handicap: 10 },
+    { id: "n", name: "Neil", handicap: 12 },
+  ];
+  const duel: Game[] = [{ id: "g1", sides: [{ id: "o", playerIds: ["o"] }, { id: "n", playerIds: ["n"] }] }];
+  const r1 = { ...round("singles", "stroke", duel, { points: { front: 10, back: 10, full: 0, positions: [18], across: true } }), id: "r1" };
+  const r2 = { ...round("singles", "match", duel, { points: { front: 0, back: 0, full: 20 } }), id: "r2", number: 2, holes: holes.slice(0, 9) };
+  const cfg: TournamentCfg = {
+    players,
+    teams: [],
+    sideGames: [],
+    sideGamesBy: "player",
+    rounds: [r1, r2],
+    win: { kind: "points", bonus: { birdies: 1, eagles: 2, gir: 1, ld: 1 } },
+    prizes: [{ kind: "gir", per: "trip", points: 2 }],
+  };
+  it("38 for round 1, 20 for the 9-hole match, 2 for the prize: 60, with bonuses on top", () => {
+    expect(roundPointsAvailable(r1)).toBe(38);
+    expect(roundPointsAvailable(r2)).toBe(20);
+    const s = tournamentSummary(cfg, {});
+    expect(s.pointsAvailable).toBe(60);
+    expect(s.pointsRemaining).toBe(60);
+    expect(bonusOn(cfg)).toBe(true);
+  });
+  it("the stroke play winner takes the 18 and the nines; the prize's 2 are decided at the end", () => {
+    const e1 = entries("g1", { o: flat(0), n: flat(1) });
+    const e2 = entries("g1", { o: flat(1), n: flat(0) }).filter((e) => e.hole <= 9);
+    const s = tournamentSummary(cfg, { r1: e1, r2: e2 });
+    expect(s.rounds[0].playerPoints).toEqual({ o: 38, n: 0 });
+    expect(s.rounds[1].playerPoints).toEqual({ o: 0, n: 20 });
+    expect(s.complete).toBe(true);
+    expect(s.pointsRemaining).toBe(0);
   });
 });

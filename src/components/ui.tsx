@@ -6,7 +6,7 @@ import { cleanBody, cleanTitle } from "@/lib/cleanText";
 import { cardInfo, cardLabel } from "@/lib/scorecards";
 import { liveLine, roundBoard, standings, toPar, totalsView, type TotalsView } from "@/lib/live";
 import { CountUp, CourseImage, Icon } from "./visual";
-import { ballsOfGame, gameHole, holeShots, isNine, type Game, type GameSummary, type SegmentResult } from "@/lib/engine";
+import { ballsOfGame, bonusOn, gameHole, holeShots, isNine, roundPointsAvailable, type Game, type GameSummary, type SegmentResult } from "@/lib/engine";
 import { winBoard } from "@/lib/boards";
 import { WinBoardView } from "@/components/WinBoards";
 import {
@@ -148,6 +148,8 @@ export function Board() {
   const duel = rows.length === 2 ? (teamMode ? rows : cfg.players.map((p) => rows.find((r) => r.id === p.id)!)) : null;
   const total = summary.pointsAvailable || 1;
   const toWin = total / 2;
+  // Bonus points (each birdie, eagle…) have no ceiling, so no score is sure to win it
+  const open = bonusOn(cfg);
 
   return (
     <section className="board" aria-label="Overall standings">
@@ -187,7 +189,7 @@ export function Board() {
       )}
 
       {duel && (
-        <div className="tug" aria-label={`${pts(toWin + 0.5)} points wins it`}>
+        <div className="tug" aria-label={open ? "The race between them" : `${pts(toWin + 0.5)} points wins it`}>
           <div className="tug-bar">
             {st.moving && <span className="tug-a proj" style={{ width: `${(duel[0].proj / total) * 100}%` }} />}
             {st.moving && <span className="tug-b proj" style={{ width: `${(duel[1].proj / total) * 100}%` }} />}
@@ -197,7 +199,7 @@ export function Board() {
           </div>
           <div className="tug-labels">
             <span>{duel[0].name}</span>
-            <span className="muted-on-dark">{pts(toWin + 0.5)} wins it</span>
+            <span className="muted-on-dark">{open ? "" : `${pts(toWin + 0.5)} wins it`}</span>
             <span>{duel[1].name}</span>
           </div>
         </div>
@@ -205,7 +207,7 @@ export function Board() {
 
       <div className="board-foot">
         <span>
-          <b className="num">{pts(summary.pointsRemaining)}</b> points still to play for
+          <b className="num">{pts(summary.pointsRemaining)}</b> points still to play for{open ? ", plus bonus points" : ""}
         </span>
         {live && liveLabel && (
           <span>
@@ -544,10 +546,7 @@ export function RoundItem({ round, index }: { round: RoundRow; index: number }) 
         .map((x) => `${x.n} ${pts(x.v)}`)
         .join(" · ");
   }
-  const total =
-    rcfg.scoring === "skins"
-      ? null
-      : rcfg.games.reduce((t, g) => t + (g.sides.length > 2 && rcfg.points.positions?.length ? rcfg.points.front + rcfg.points.back + rcfg.points.positions.reduce((a, b) => a + b, 0) : rcfg.points.front + rcfg.points.back + rcfg.points.full), 0);
+  const total = rcfg.scoring === "skins" ? null : roundPointsAvailable(rcfg);
   const status = round.status === "live" ? "live" : round.status === "complete" ? "final" : played ? "in progress" : "upcoming";
   return (
     <Link href={href(`/rounds/${round.number}`)} className={`round-card ${round.status}`}>

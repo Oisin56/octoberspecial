@@ -7,7 +7,10 @@ import { GUIDES } from "@/data/course-guides";
 import { prizeLines, winBoard } from "./boards";
 import { cleanBody, cleanTitle } from "./cleanText";
 import {
+  acrossField,
   ballsOfGame,
+  isNine,
+  roundPointsAvailable,
   gameHole,
   gameSummary,
   roundSummary,
@@ -145,7 +148,12 @@ function standingsText(s: TournamentState) {
   const totals = totalsView(s, t);
   const wb = winBoard(s, t, cfg);
   const prizes = prizeLines(s, t, cfg);
-  const prizeText = prizes.length ? "Prizes (played for alongside the winner; they don't change the standings" + (t.win.kind === "points" ? " unless marked with points" : "") + "): " + prizes.map((l) => `${l.title}: ${l.detail || "nobody yet"}${l.detail ? ` (${l.status.toLowerCase()})` : ""}${l.points ? ` ${l.points}` : ""}`).join("; ") : null;
+  // A prize that counts as points in the race: say what it's worth
+  const worth = (key: string) => {
+    const p = (cfg.prizes ?? []).find((x) => key.startsWith(`${x.kind}-`));
+    return p?.points ? ` (worth ${fmt(p.points)} point${p.points === 1 ? "" : "s"} in the race)` : "";
+  };
+  const prizeText = prizes.length ? "Prizes (played for alongside the winner; they don't change the standings" + (t.win.kind === "points" ? " unless marked with points" : "") + "): " + prizes.map((l) => `${l.title}${worth(l.key)}: ${l.detail || "nobody yet"}${l.detail ? ` (${l.status.toLowerCase()})` : ""}${l.points ? ` ${l.points}` : ""}`).join("; ") : null;
   if (wb) {
     // Team score, Texas scramble, skins, the knockout: their own standings, no points table
     if (wb.kind === "teams") {
@@ -180,8 +188,14 @@ function standingsText(s: TournamentState) {
           .map((r) => `${r.pos ? `${r.pos}. ` : ""}${r.name} ${r.score}${r.gross ? ` (${r.gross.toLowerCase()})` : ""}${r.thru != null ? ` thru ${r.thru}` : ""}`)
           .join(", "),
     );
-  } else
-  lines.push(`Tournament: ${s.tournament.name}. ${fmt(t.pointsAvailable)} points available in total; ${fmt(t.pointsRemaining)} still to be decided.`);
+  } else {
+    const bonus = t.win.kind === "points" && t.win.bonus ? Object.entries(t.win.bonus).filter(([, v]) => (v ?? 0) > 0) : [];
+    const bonusWords: Record<string, string> = { birdies: "birdie", eagles: "eagle", gir: "green in regulation", ctp: "closest the pin won", ld: "long drive won" };
+    lines.push(
+      `Tournament: ${s.tournament.name}. ${fmt(t.pointsAvailable)} points available from the rounds${(cfg.prizes ?? []).some((p) => (p.points ?? 0) > 0) ? " and the prizes" : ""}; ${fmt(t.pointsRemaining)} of them still to be decided.` +
+        (bonus.length ? ` On top of those, bonus points with no limit: ${bonus.map(([k, v]) => `${fmt(v as number)} for each ${bonusWords[k] ?? k}`).join(", ")}. Never say how many points are left to win in total.` : ""),
+    );
+  }
   if (cfg.teams.length) {
     lines.push(
       "Team standings: " +
@@ -247,12 +261,16 @@ function roundDetails(r: RoundRow, s: TournamentState) {
   const info = courseInfo(r);
   const par = r.holes.reduce((a, h) => a + h.par, 0);
   const yards = r.holes.reduce((a, h) => a + (h.yards ?? 0), 0);
+  // What the round is worth, in the same terms the scoring engine pays it
+  const nine = isNine(cfg);
+  const places = ["1st", "2nd", "3rd", "4th", "5th", "6th"];
+  const nines = !nine && cfg.points.front + cfg.points.back > 0 ? ` Front 9: ${fmt(cfg.points.front)}, back 9: ${fmt(cfg.points.back)}${cfg.games.length > 1 && !acrossField(cfg) ? " (in each match or group)" : ""}.` : "";
   const pts =
     cfg.scoring === "skins"
       ? `Skins worth ${cfg.points.skin ?? 1} point(s) each, ties carry over.`
-      : cfg.games.some((g) => g.sides.length > 2) && cfg.points.positions?.length
-        ? `Points by finishing position: ${cfg.points.positions.join(", ")}.`
-        : `Points per match: front 9 = ${cfg.points.front}, back 9 = ${cfg.points.back}, full 18 = ${cfg.points.full}.`;
+      : cfg.points.positions?.length && (acrossField(cfg) || cfg.games.some((g) => g.sides.length > 2))
+        ? `Points for the ${nine ? "9" : "18"} holes by finishing position${acrossField(cfg) && cfg.games.length > 1 ? " across the whole field" : ""}: ${cfg.points.positions.map((p, i) => `${places[i]} ${fmt(p)}`).join(", ")}.${nines} Worth ${fmt(roundPointsAvailable(cfg))} points in all.`
+        : `Points for winning the ${nine ? "9-hole " : ""}match: ${fmt(cfg.points.full)}.${nines} Worth ${fmt(roundPointsAvailable(cfg))} points in all.`;
   const entries = toEntries(s.entries)[r.id] ?? [];
   const players = toTournamentCfg(s).players;
   const games = cfg.games

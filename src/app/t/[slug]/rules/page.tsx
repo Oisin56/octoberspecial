@@ -2,7 +2,7 @@
 
 import { useT } from "@/components/Providers";
 import { Loading, pts } from "@/components/ui";
-import { acrossField, roundPointsAvailable, stageName } from "@/lib/engine";
+import { acrossField, bonusOn, roundPointsAvailable, stageName } from "@/lib/engine";
 import { PRIZE_NAME, prizeHolesText } from "@/lib/boards";
 import { PLAY_LABEL, SCORING_LABEL, SIDE_GAME_LABEL, toRoundCfg } from "@/lib/types";
 
@@ -54,7 +54,7 @@ export default function Rules() {
       case "matches":
         return `Matches won: every match is worth points to its team (below). ${pts(summary.pointsAvailable)} points in all; the team with the most wins.`;
       default:
-        return `A points race: points from every round (below), ${pts(summary.pointsAvailable)} in all. Most points wins.`;
+        return `A points race: points from every round${(cfg.prizes ?? []).some((p) => (p.points ?? 0) > 0) ? " and the prizes" : ""} (below), ${pts(summary.pointsAvailable)} in all${bonusOn(cfg) ? ", plus the bonus points" : ""}. Most points wins.`;
     }
   })();
   const bonus = win.kind === "points" && win.bonus ? (Object.entries(win.bonus) as [string, number][]).filter(([, v]) => v > 0) : [];
@@ -90,10 +90,14 @@ export default function Rules() {
             ? `${pts(rc.points.skin ?? 1)} point per skin`
             : summary.totals
               ? "counts towards the running totals"
-              : acrossField(rc)
-              ? `points by finishing position across the whole field: ${(rc.points.positions ?? []).map(pts).join(", ")}`
-              : field && rc.points.positions?.length
-              ? `points by finishing position: ${rc.points.positions.map(pts).join(", ")}`
+              : acrossField(rc) || (field && rc.points.positions?.length)
+              ? [
+                  rc.holes.length > 9 && rc.points.front > 0 && `front 9 ${pts(rc.points.front)}`,
+                  rc.holes.length > 9 && rc.points.back > 0 && `back 9 ${pts(rc.points.back)}`,
+                  `the ${rc.holes.length > 9 ? "18" : `${rc.holes.length} holes`} by finishing position${acrossField(rc) && rc.games.length > 1 ? " across the whole field" : ""}: ${(rc.points.positions ?? []).map((v, i) => `${["1st", "2nd", "3rd", "4th", "5th", "6th"][i]} ${pts(v)}`).join(", ")}`,
+                ]
+                  .filter(Boolean)
+                  .join(", ")
               : (rc.holes.length <= 9
                   ? [`the ${rc.holes.length} holes ${pts(rc.points.full)}`]
                   : [rc.points.front > 0 && `front 9 ${pts(rc.points.front)}`, rc.points.back > 0 && `back 9 ${pts(rc.points.back)}`, `the 18 ${pts(rc.points.full)}`])
