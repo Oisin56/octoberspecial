@@ -7,6 +7,7 @@ import { useT } from "./Providers";
 import { groupPlayers } from "@/lib/courseCards";
 import { KIND_LABEL, tagsFor, type HoleInfo, type ShotKind } from "@/lib/shots";
 import { shotWords } from "@/lib/detail";
+import type { StrokeRow } from "@/lib/strokes";
 import { flushClips, queueClip } from "@/lib/trimmer";
 import { StrokeTeller, nth, useHoleTelling } from "./AddDetail";
 import { readScorePos } from "@/lib/scorePos";
@@ -100,9 +101,25 @@ export function ClipDetail({
     if (session?.playerId && players.some((p) => p.id === session.playerId)) return session.playerId;
     return players[0]?.id ?? null;
   };
+  /** Shots added past par with "+ Shot N", by player */
+  const [more, setMore] = useState<Record<string, number>>({});
+  /**
+   * The shots to pick from. Score in: one for each stroke. Not in yet: shot 1 to par (or as far as anything's been
+   * told or filmed), and "+ Shot N" adds one more for a higher shot.
+   */
+  const listFor = (pid: string): StrokeRow[] => {
+    const rows = T.rowsFor(pid);
+    const sc = T.scoreOf(pid);
+    if (sc.gross != null || sc.pickedUp) return rows;
+    const n = Math.min(15, Math.max(rows.length, T.par || 4) + (more[pid] ?? 0));
+    const out = [...rows];
+    while (out.length < n) out.push({ seq: out.length + 1, shot: null, from: null, reading: null, drive: null, clip: null, auto: null });
+    return out;
+  };
+  const scoreIn = (pid: string) => T.scoreOf(pid).gross != null || T.scoreOf(pid).pickedUp;
   /** The next stroke for this player: the one after the last told (or filmed), never past the score */
   const nextSeq = (pid: string) => {
-    const rows = T.rowsFor(pid);
+    const rows = listFor(pid);
     const lastTold = Math.max(0, ...rows.filter((r) => r.shot || r.clip).map((r) => r.seq));
     return Math.max(1, Math.min(lastTold + 1, rows.length || 1));
   };
@@ -375,7 +392,7 @@ export function ClipDetail({
           </div>
           {tab && (
             <ol className="dtl-shots">
-              {T.rowsFor(tab).map((r) => (
+              {listFor(tab).map((r) => (
                 <li key={r.seq} className={`dtl-shot${r.shot ? " told" : ""}${tab === one && r.seq === strokeNo ? " open" : ""}`}>
                   <button
                     className="dtl-card-main"
@@ -398,6 +415,11 @@ export function ClipDetail({
                 </li>
               ))}
             </ol>
+          )}
+          {tab && !scoreIn(tab) && listFor(tab).length < 15 && (
+            <button type="button" className="cd-tile soft cd-more-shot" onClick={() => setMore((m) => ({ ...m, [tab]: (m[tab] ?? 0) + 1 }))}>
+              + Shot {listFor(tab).length + 1}
+            </button>
           )}
           {players.length > 1 && (
             <button className="cd-tile soft cd-group" onClick={() => (setWho(players.map((p) => p.id)), setSeq(null), go("confirm"))}>

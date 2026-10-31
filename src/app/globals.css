@@ -2998,6 +2998,7 @@ a.con-fig:hover { border-color: var(--board); box-shadow: var(--shadow-sm); }
 .cd-confirm { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .cd-add-detail { appearance: none; min-height: 56px; border-radius: 14px; border: 1.5px dashed color-mix(in srgb, var(--board) 40%, var(--rule)); background: transparent; font-family: var(--font-display); font-size: 20px; font-weight: 700; color: var(--board); cursor: pointer; padding: 6px 12px; }
 .cd-group { min-height: 60px; margin-top: 8px; }
+.cd-more-shot { width: 100%; min-height: 56px; margin-top: 8px; font-size: 20px; }
 .cd-body .dtl-tabs { margin-bottom: 8px; }
 .cd-caption-voice .talk-btn { background: var(--paper); color: var(--board); box-shadow: inset 0 0 0 2px var(--board); min-height: 56px; font-size: 19px; }
 .cd-caption-voice .talk-btn.listening { background: var(--red); color: #fff; box-shadow: none; }
